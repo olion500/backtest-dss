@@ -19,16 +19,15 @@
     "start_T": 0,
     "buy_full": false
   },
-  "shared_divisions": [5, 7, 9],
+  "shared_divisions": [7],
   "safe_params": {
-    "max_hold_days": [20, 30],
-    "buy_threshold_pct": [2.5, 3.0, 3.5],
-    "sell_threshold_pct": [0.2, 0.3]
+    "max_hold_days": [30],
+    "buy_threshold_pct": [3],
+    "sell_threshold_pct": [0.2]
   },
   "aggressive_params": {
-    "max_hold_days": [5, 7],
-    "buy_threshold_pct": [4.0, 5.0, 6.0],
-    "sell_threshold_pct": [2.0, 2.5, 3.0]
-  },
-  "sleep_seconds": 0.5
+    "max_hold_days": [7],
+    "buy_threshold_pct": [5],
+    "sell_threshold_pct": [2.5]
+  }
 }

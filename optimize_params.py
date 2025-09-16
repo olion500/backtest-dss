@@ -12,10 +12,11 @@ import argparse
 import copy
 import itertools
 import json
+import math
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, MutableMapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, MutableMapping, Optional, Sequence, Tuple, Union
 
 import requests
 
@@ -97,6 +98,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Persist the full JSON response for each attempt in the output file (can be large).",
     )
+    parser.add_argument(
+        "--drawdown-weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Penalty multiplier applied to max_drawdown_pct when ranking results. "
+            "Higher values favour lower drawdowns."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -107,12 +117,18 @@ def load_config(path: Path) -> Dict[str, Any]:
         return json.load(fh)
 
 
-def _ensure_sequence_of_numbers(values: Iterable[Any], label: str) -> List[float]:
-    result: List[float] = []
+Number = Union[int, float]
+
+
+def _ensure_sequence_of_numbers(values: Iterable[Any], label: str) -> List[Number]:
+    result: List[Number] = []
     for item in values:
-        if not isinstance(item, (int, float)):
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
             raise TypeError(f"'{label}' entries must be numeric, got {item!r}")
-        result.append(float(item))
+        if isinstance(item, int) and not isinstance(item, bool):
+            result.append(int(item))
+        else:
+            result.append(float(item))
     if not result:
         raise ValueError(f"'{label}' must not be empty")
     return result
@@ -126,20 +142,44 @@ def _condense_text(text: str, limit: int = 400) -> str:
     return preview
 
 
-def expand_param_grid(grid: MutableMapping[str, Iterable[Any]], *, kind: str) -> List[List[float]]:
+def expand_param_grid(
+    grid: MutableMapping[str, Iterable[Any]],
+    *,
+    kind: str,
+    divisions: Optional[Sequence[Number]] = None,
+) -> List[List[Number]]:
     """Return a list of parameter arrays in UI order."""
-    sequences: List[List[float]] = []
+    sequences: List[List[Number]] = []
     for field in _PARAM_ORDER:
+        if field == "divisions" and divisions is not None:
+            sequences.append(_ensure_sequence_of_numbers(divisions, f"{kind}.{field}"))
+            continue
         if field not in grid:
             raise KeyError(f"Missing '{field}' inside {kind}_params")
         sequences.append(_ensure_sequence_of_numbers(grid[field], f"{kind}.{field}"))
-    combinations: List[List[float]] = []
+    combinations: List[List[Number]] = []
     for combination in itertools.product(*sequences):
-        combinations.append([float(value) for value in combination])
+        combinations.append(list(combination))
     return combinations
 
 
-def build_payload(base_payload: Dict[str, Any], safe: Sequence[float], aggressive: Sequence[float]) -> Dict[str, Any]:
+def _group_combinations_by_division(
+    combos: Sequence[Sequence[Number]],
+) -> Dict[Number, List[Sequence[Number]]]:
+    grouped: Dict[Number, List[Sequence[Number]]] = {}
+    for combo in combos:
+        if not combo:
+            continue
+        division = combo[0]
+        grouped.setdefault(division, []).append(combo)
+    return grouped
+
+
+def build_payload(
+    base_payload: Dict[str, Any],
+    safe: Sequence[Number],
+    aggressive: Sequence[Number],
+) -> Dict[str, Any]:
     payload = copy.deepcopy(base_payload)
     payload["safe_params"] = list(safe)
     payload["aggressive_params"] = list(aggressive)
@@ -168,9 +208,9 @@ def extract_cagr(data: Any) -> Optional[float]:
 
 
 def iter_combinations(
-    safe_combos: Sequence[Sequence[float]],
-    aggressive_combos: Sequence[Sequence[float]],
-) -> Iterator[Tuple[int, Sequence[float], Sequence[float]]]:
+    safe_combos: Sequence[Sequence[Number]],
+    aggressive_combos: Sequence[Sequence[Number]],
+) -> Iterator[Tuple[int, Sequence[Number], Sequence[Number]]]:
     total = len(safe_combos) * len(aggressive_combos)
     index = 0
     for safe in safe_combos:
@@ -192,10 +232,50 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except KeyError as exc:
         raise KeyError("Config must define 'base_payload', 'safe_params' and 'aggressive_params'") from exc
 
-    safe_combos = expand_param_grid(safe_grid, kind="safe")
-    aggressive_combos = expand_param_grid(aggressive_grid, kind="aggressive")
+    shared_divisions_raw = config.get("shared_divisions")
+    shared_divisions: Optional[List[Number]] = None
+    if shared_divisions_raw is not None:
+        shared_divisions = _ensure_sequence_of_numbers(shared_divisions_raw, "shared_divisions")
 
-    total_combinations = len(safe_combos) * len(aggressive_combos)
+    safe_combos = expand_param_grid(safe_grid, kind="safe", divisions=shared_divisions)
+    aggressive_combos = expand_param_grid(aggressive_grid, kind="aggressive", divisions=shared_divisions)
+
+    if shared_divisions:
+        safe_groups = _group_combinations_by_division(safe_combos)
+        aggressive_groups = _group_combinations_by_division(aggressive_combos)
+
+        missing_safe = [div for div in shared_divisions if div not in safe_groups]
+        if missing_safe:
+            raise ValueError(
+                f"Safe parameter grid does not define combinations for divisions {missing_safe}"
+            )
+        missing_aggressive = [div for div in shared_divisions if div not in aggressive_groups]
+        if missing_aggressive:
+            raise ValueError(
+                "Aggressive parameter grid does not define combinations for divisions "
+                f"{missing_aggressive}"
+            )
+
+        total_combinations = sum(
+            len(safe_groups[div]) * len(aggressive_groups[div]) for div in shared_divisions
+        )
+
+        def combination_iter() -> Iterator[Tuple[int, Sequence[Number], Sequence[Number]]]:
+            index = 0
+            for division in shared_divisions:
+                for safe in safe_groups[division]:
+                    for aggressive in aggressive_groups[division]:
+                        index += 1
+                        yield index, safe, aggressive
+            if index == 0:
+                raise ValueError("Search space is empty")
+
+    else:
+        total_combinations = len(safe_combos) * len(aggressive_combos)
+
+        def combination_iter() -> Iterator[Tuple[int, Sequence[Number], Sequence[Number]]]:
+            yield from iter_combinations(safe_combos, aggressive_combos)
+
     if total_combinations == 0:
         print("No combinations to evaluate.")
         return 1
@@ -215,13 +295,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     if args.dry_run:
-        for idx, safe, aggressive in iter_combinations(safe_combos, aggressive_combos):
+        for idx, safe, aggressive in combination_iter():
             payload = build_payload(base_payload, safe, aggressive)
             print(f"[DRY-RUN] {idx:4d}/{total_combinations}: safe={safe} aggressive={aggressive}")
             print(json.dumps(payload, ensure_ascii=False))
         return 0
 
-    for idx, safe, aggressive in iter_combinations(safe_combos, aggressive_combos):
+    for idx, safe, aggressive in combination_iter():
         payload = build_payload(base_payload, safe, aggressive)
         print(f"{idx:4d}/{total_combinations}: safe={safe} aggressive={aggressive}")
         try:
@@ -275,18 +355,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             continue
 
         cagr = extract_cagr(data)
+        drawdown: Optional[float] = None
+        if isinstance(data, dict) and "max_drawdown_pct" in data:
+            try:
+                drawdown = float(data["max_drawdown_pct"])
+            except (TypeError, ValueError):
+                drawdown = None
         if cagr is None:
             print("  Warning: 'cagr_pct' not found in response.")
         else:
             print(f"  CAGR: {cagr:.4f}%")
+        if drawdown is not None:
+            print(f"  Max drawdown: {drawdown:.4f}%")
 
         record = {
             "safe_params": list(safe),
             "aggressive_params": list(aggressive),
             "cagr_pct": cagr,
+            "max_drawdown_pct": drawdown,
         }
         if args.include_response:
             record["response"] = data
+
+        score: Optional[float] = None
+        if cagr is not None:
+            penalty = drawdown if drawdown is not None else 0.0
+            score = cagr - args.drawdown_weight * penalty
+            record["score"] = score
         results.append(record)
 
         if cagr is not None:
@@ -295,6 +390,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "safe_params": list(safe),
                     "aggressive_params": list(aggressive),
                     "cagr_pct": cagr,
+                    "max_drawdown_pct": drawdown,
                     "response": data,
                 }
 
@@ -315,6 +411,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "safe_params": best["safe_params"],
                     "aggressive_params": best["aggressive_params"],
                     "cagr_pct": best["cagr_pct"],
+                    "max_drawdown_pct": best.get("max_drawdown_pct"),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -325,13 +422,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.top_k and results:
         valid_results = [r for r in results if r.get("cagr_pct") is not None]
-        valid_results.sort(key=lambda item: item["cagr_pct"], reverse=True)
         if valid_results:
-            print(f"\nTop {min(args.top_k, len(valid_results))} combinations:")
-            for rank, record in enumerate(valid_results[: args.top_k], start=1):
+            sorted_by_score = sorted(
+                valid_results,
+                key=lambda item: (
+                    math.inf if item.get("score") is None else -item["score"],
+                    -item["cagr_pct"],
+                    item.get("max_drawdown_pct", float("inf")),
+                ),
+            )
+            print(f"\nTop {min(args.top_k, len(sorted_by_score))} combinations (score=cagr - drawdown×{args.drawdown_weight}):")
+            for rank, record in enumerate(sorted_by_score[: args.top_k], start=1):
+                drawdown_text = (
+                    f"{record['max_drawdown_pct']:.4f}%" if record.get("max_drawdown_pct") is not None else "n/a"
+                )
+                score_text = (
+                    f"{record['score']:.4f}" if record.get("score") is not None else "n/a"
+                )
                 print(
-                    f"  #{rank}: CAGR={record['cagr_pct']:.4f}% "
-                    f"safe={record['safe_params']} aggressive={record['aggressive_params']}"
+                    f"  #{rank}: score={score_text} CAGR={record['cagr_pct']:.4f}% "
+                    f"drawdown={drawdown_text} safe={record['safe_params']} aggressive={record['aggressive_params']}"
                 )
 
     return 0
