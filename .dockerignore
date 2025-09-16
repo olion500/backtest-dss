@@ -1,0 +1,7 @@
+.git
+__pycache__
+*.py[cod]
+*.jsonl
+runs
+.env
+.DS_Store

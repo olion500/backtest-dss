@@ -11,6 +11,24 @@ Utility scripts for experimenting with the hidden Algori-C backtest API.
 spoofing the headers sent by the official website. The script records the best
 `cagr_pct` metric returned by the server.
 
+## Docker + Make quick start
+
+With Docker and GNU Make installed you can drive everything through the
+`Makefile`:
+
+```bash
+make help        # list available commands
+make build       # build the Docker image once (optional, run automatically)
+make run         # execute the optimiser with the default sample config
+make dry-run     # preview payloads without issuing HTTP requests
+```
+
+- Override the config by passing `CONFIG=path/to/your.json`.
+- Supply additional CLI flags via `RUN_ARGS="--top-k 10 --include-response"`.
+- `make shell` opens an interactive shell inside the image for ad-hoc commands.
+
+## Manual execution (without Docker)
+
 ### 1. Install dependencies
 
 ```bash
