@@ -1,0 +1,48 @@
+{
+  "base_payload": {
+    "initial_capital": 100000,
+    "start_date": "2024-01-01",
+    "end_date": "2025-09-01",
+    "safe_params": [5, 30, 3, 0.2],
+    "aggressive_params": [5, 7, 5, 2.5],
+    "capital_update_interval": 10,
+    "symbol": "SOXL",
+    "rsi_etf": "QQQ",
+    "loss_compound_rate": 30,
+    "profit_compound_rate": 80,
+    "commission_rate": 0.044,
+    "base_index": "SOXX",
+    "start_withdrawal_rate": 0,
+    "end_withdrawal_rate": 0,
+    "exponential_N": 2,
+    "withdrawal_T": 250,
+    "start_T": 0,
+    "buy_full": false
+  },
+  "shared_divisions": [5, 7],
+  "safe_params": {
+    "max_hold_days": [20, 30],
+    "buy_threshold_pct": [2.5, 3.0, 3.5],
+    "sell_threshold_pct": [0.2, 0.3]
+  },
+  "aggressive_params": {
+    "max_hold_days": [5, 7],
+    "buy_threshold_pct": [4.0, 5.0, 6.0],
+    "sell_threshold_pct": [2.0, 2.5, 3.0]
+  },
+  "mode_rules": {
+    "indicator": "wilder_rsi",
+    "period": 14,
+    "safe": {
+      "falling_above": 65,
+      "falling_between": [40, 50],
+      "cross_below": 50
+    },
+    "aggressive": {
+      "rising_below": 35,
+      "rising_between": [50, 60],
+      "cross_above": 50
+    }
+  },
+  "sleep_seconds": 0.5
+}

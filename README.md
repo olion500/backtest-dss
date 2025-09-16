@@ -75,6 +75,20 @@ make backtest BACKTEST_ARGS="--top-k 5 --drawdown-weight 1.0"
   data.
 - Pass `BACKTEST_ARGS="--output results/local.jsonl"` to persist every evaluated combination
   (ignored by git via `.gitignore`).
+- To explore the RSI-gated strategy, point the config to `configs/rsi_strategy_search_space.json`.
+
+## RSI mode rules
+
+`configs/rsi_strategy_search_space.json` demonstrates how to shape trading
+regimes with Wilder's 14-period RSI:
+
+- Safe entries require the RSI to be falling from extreme or mid-zone levels
+  (above 65, inside 40–50, or crossing below 50) before applying the usual
+  `buy_threshold_pct` drop and `sell_threshold_pct` exit.
+- Aggressive entries demand a rising RSI that either bounces from <35, lifts
+  through the 50–60 band, or crosses back above 50.
+- The optimiser still sweeps the familiar `divisions`/threshold grids while the
+  entry gates decide which leg is allowed to add exposure on any given day.
 
 ## Price data downloads
 

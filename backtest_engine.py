@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,18 @@ class _Position:
     days_held: int = 0
 
 
+@dataclass(frozen=True)
+class EntryGatePair:
+    """Precomputed booleans controlling whether new entries are allowed."""
+
+    safe: Sequence[bool]
+    aggressive: Sequence[bool]
+
+    def __post_init__(self) -> None:
+        if len(self.safe) != len(self.aggressive):
+            raise ValueError("Safe and aggressive gate sequences must share the same length")
+
+
 class _StrategyLedger:
     """Tracks cash and open positions for a single strategy leg."""
 
@@ -50,10 +62,12 @@ class _StrategyLedger:
         self.commission_rate = float(commission_rate)
         self._positions: List[_Position] = []
 
-    def handle_day(self, price: float, previous_price: float | None) -> None:
+    def handle_day(self, price: float, previous_price: float | None, *, allow_entry: bool = True) -> None:
         """Update holdings based on the latest close price."""
         self._age_and_close_positions(price)
         if previous_price is None:
+            return
+        if not allow_entry:
             return
         drop_pct = self._percentage_change(previous_price, price) * -1.0
         if drop_pct < self.params.buy_threshold_pct:
@@ -112,6 +126,8 @@ class BacktestEngine:
         settings: BacktestSettings,
         safe_params: StrategyParameters,
         aggressive_params: StrategyParameters,
+        *,
+        entry_gates: Optional[EntryGatePair] = None,
     ) -> BacktestMetrics:
         safe_cash = settings.initial_capital / 2.0
         aggressive_cash = settings.initial_capital - safe_cash
@@ -120,10 +136,22 @@ class BacktestEngine:
         aggressive_ledger = _StrategyLedger(aggressive_params, aggressive_cash, commission_fraction)
 
         equity_curve: List[float] = []
+        safe_gates: Optional[Sequence[bool]] = None
+        aggressive_gates: Optional[Sequence[bool]] = None
+        if entry_gates is not None:
+            if len(entry_gates.safe) != len(self.prices):
+                raise ValueError("Safe gate sequence length must match price series length")
+            if len(entry_gates.aggressive) != len(self.prices):
+                raise ValueError("Aggressive gate sequence length must match price series length")
+            safe_gates = entry_gates.safe
+            aggressive_gates = entry_gates.aggressive
         previous_price: float | None = None
         for price in self.prices:
-            safe_ledger.handle_day(price, previous_price)
-            aggressive_ledger.handle_day(price, previous_price)
+            index = len(equity_curve)
+            safe_allow = True if safe_gates is None else bool(safe_gates[index])
+            aggressive_allow = True if aggressive_gates is None else bool(aggressive_gates[index])
+            safe_ledger.handle_day(price, previous_price, allow_entry=safe_allow)
+            aggressive_ledger.handle_day(price, previous_price, allow_entry=aggressive_allow)
             total_value = safe_ledger.total_value(price) + aggressive_ledger.total_value(price)
             equity_curve.append(total_value)
             previous_price = price

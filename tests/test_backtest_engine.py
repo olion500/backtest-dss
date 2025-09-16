@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from backtest_engine import BacktestEngine, BacktestSettings, StrategyParameters
+from backtest_engine import BacktestEngine, BacktestSettings, EntryGatePair, StrategyParameters
 from backtest_local import read_price_series
 
 
@@ -33,3 +33,15 @@ def test_read_price_series_parses_closes(tmp_path: Path):
     csv_path.write_text("date,close\n2024-01-01,10\n2024-01-02,11\n", encoding="utf-8")
     closes = read_price_series(csv_path)
     assert closes == [10.0, 11.0]
+
+
+def test_entry_gates_prevent_new_trades():
+    prices = [100.0, 98.0, 96.0, 94.0]
+    settings = BacktestSettings(initial_capital=1000.0, commission_rate=0.0, trading_days_per_year=4)
+    params = StrategyParameters(divisions=2, max_hold_days=5, buy_threshold_pct=1.0, sell_threshold_pct=1.0)
+    engine = BacktestEngine(prices)
+
+    gates = EntryGatePair(safe=[False] * len(prices), aggressive=[False] * len(prices))
+    metrics = engine.run(settings, params, params, entry_gates=gates)
+
+    assert metrics.final_capital == settings.initial_capital
