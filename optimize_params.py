@@ -118,6 +118,14 @@ def _ensure_sequence_of_numbers(values: Iterable[Any], label: str) -> List[float
     return result
 
 
+def _condense_text(text: str, limit: int = 400) -> str:
+    """Return a single-line preview of text limited to `limit` characters."""
+    preview = " ".join(text.split())
+    if len(preview) > limit:
+        preview = preview[:limit].rstrip() + "…"
+    return preview
+
+
 def expand_param_grid(grid: MutableMapping[str, Iterable[Any]], *, kind: str) -> List[List[float]]:
     """Return a list of parameter arrays in UI order."""
     sequences: List[List[float]] = []
@@ -218,11 +226,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"{idx:4d}/{total_combinations}: safe={safe} aggressive={aggressive}")
         try:
             response = session.post(args.url, json=payload, timeout=args.timeout)
-            response.raise_for_status()
-            consecutive_errors = 0
         except requests.RequestException as exc:
             consecutive_errors += 1
-            print(f"  Request failed ({consecutive_errors} consecutive errors): {exc}")
+            print(
+                f"  Request error ({consecutive_errors} consecutive errors): "
+                f"{exc.__class__.__name__}: {exc}"
+            )
             if consecutive_errors >= args.max_errors:
                 print("Too many consecutive errors; aborting search.")
                 break
@@ -230,11 +239,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 time.sleep(sleep_seconds)
             continue
 
+        if response.status_code >= 400:
+            consecutive_errors += 1
+            reason = response.reason or "Unknown"
+            print(
+                f"  HTTP {response.status_code} error ({consecutive_errors} consecutive errors): {reason}"
+            )
+            preview = _condense_text(response.text)
+            if preview:
+                print(f"  Response preview: {preview}")
+            if consecutive_errors >= args.max_errors:
+                print("Too many consecutive errors; aborting search.")
+                break
+            if sleep_seconds:
+                time.sleep(sleep_seconds)
+            continue
+
+        consecutive_errors = 0
+
         try:
             data = response.json()
         except ValueError:
             consecutive_errors += 1
-            print(f"  Failed to decode JSON response ({consecutive_errors} consecutive errors).")
+            preview = _condense_text(response.text)
+            print(
+                f"  Failed to decode JSON response ({consecutive_errors} consecutive errors)."
+            )
+            if preview:
+                print(f"  Response preview: {preview}")
             if consecutive_errors >= args.max_errors:
                 print("Too many consecutive errors; aborting search.")
                 break
