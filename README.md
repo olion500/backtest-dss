@@ -1,9 +1,11 @@
 # backtest-dss
 
-CLI tooling for probing the Algori-C backtest endpoint. The optimiser walks
-through shared safe/aggressive parameter grids, mirrors the browser headers, and
-now grades each result with `score = cagr_pct - drawdown_weight × max_drawdown_pct`
-so high-growth ideas with smaller drawdowns rise to the top.
+CLI tooling for probing the Algori-C backtest endpoint and a lightweight local
+simulator for iterating on strategy ideas without touching the network. The
+optimiser walks through shared safe/aggressive parameter grids, mirrors the
+browser headers, and grades each result with `score = cagr_pct -
+drawdown_weight × max_drawdown_pct` so high-growth ideas with smaller drawdowns
+rise to the top.
 
 ## Quick start (Docker)
 
@@ -12,6 +14,10 @@ make help         # discover available targets
 make run          # run optimise_params.py with configs/sample_search_space.json
 make dry-run      # print the payloads only
 make shell        # open an interactive shell inside the container
+make test         # run pytest inside Docker
+make backtest     # evaluate configs with the local simulator
+make fetch-prices # download OHLCV data for a ticker via Yahoo Finance
+make exec         # run an arbitrary one-off command inside the container
 ```
 
 - Pass another config with `CONFIG=configs/focused_search_space.json`.
@@ -51,7 +57,37 @@ Common flags:
 - `--max-errors`: abort after N consecutive failures.
 
 Install dependencies for local execution with `python -m pip install -r
-requirements.txt`.
+requirements.txt` or rely on Docker via the `make` targets above.
+
+## Local backtesting workflow
+
+The repository ships a deterministic price sample under `data/sample_prices.csv`
+and a pure-Python simulator (`backtest_engine.py`). Run the same optimiser
+configs locally to gauge relative performance without sending HTTP requests:
+
+```bash
+make backtest BACKTEST_ARGS="--top-k 5 --drawdown-weight 1.0"
+```
+
+- Horizons, capital, and fees are pulled from `base_payload` just like the
+  remote optimiser.
+- `--prices` accepts any CSV with a `close` column if you want to swap in other
+  data.
+- Pass `BACKTEST_ARGS="--output results/local.jsonl"` to persist every evaluated combination
+  (ignored by git via `.gitignore`).
+
+## Price data downloads
+
+Use the bundled Yahoo Finance helper to source OHLCV history before running
+local simulations:
+
+```bash
+make fetch-prices TICKER=SOXL START=2023-01-01 END=2024-01-01
+```
+
+- Files land under `market_data/` by default and stay out of version control.
+- Override `FETCH_ARGS="--output data/custom.csv"` for a custom destination or
+  `INTERVAL=1wk` to switch aggregation.
 
 ## Latest focused run (shared divisions 5 & 7)
 
@@ -71,11 +107,12 @@ when you want to test additional capital slices.
 
 ## Output management
 
-- `--output results/run.jsonl` appends one JSON object per evaluated pair.
-- Add `--include-response` when you need the entire payload (daily equity curve,
-  sortino, etc.).
-- Generated artefacts should live under a dedicated directory (e.g. `runs/`) and
-  be ignored by git.
+- `--output results/run.jsonl` appends one JSON object per evaluated pair for
+  both the remote optimiser and the local simulator.
+- Add `--include-response` to the remote optimiser when you need the entire
+  payload (daily equity curve, sortino, etc.).
+- Generated artefacts should live under a dedicated directory (e.g. `results/`)
+  and are ignored by git.
 
 ## Networking
 
