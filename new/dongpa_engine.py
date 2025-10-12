@@ -240,6 +240,7 @@ class DongpaBacktester:
                             "매수금액": money_to_float(trade_value),
                             "TP목표가": money_to_float(tp),
                             "최대보유일": int(m.max_hold_days),
+                            "수익률(%)": None,
                             "매도일자": None,
                             "매도평균": None,
                             "매도수량": 0,
@@ -287,6 +288,9 @@ class DongpaBacktester:
                     cost_basis = money(Decimal(lot['qty']) * lot['fill'])
                     pnl = money(proceeds - cost_basis)
                     realized_today = money(realized_today + pnl)
+                    pnl_pct = None
+                    if cost_basis > Decimal("0"):
+                        pnl_pct = round(float((pnl / cost_basis) * Decimal("100")), 2)
 
                     trade_entry = trades[lot['trade_idx']]
                     hold_days = int((i - lot['buy_idx']) + 1)
@@ -299,6 +303,7 @@ class DongpaBacktester:
                         "매도금액": money_to_float(proceeds),
                         "보유기간(일)": hold_days,
                         "실현손익": money_to_float(pnl),
+                        "수익률(%)": pnl_pct,
                         "청산사유": sell_reason,
                         "상태": "청산",
                     })

@@ -8,6 +8,67 @@ from pathlib import Path
 
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
 
+
+def compute_trade_metrics(trade_log: pd.DataFrame | None, initial_cash: float) -> dict[str, float | int | None] | None:
+    if trade_log is None or trade_log.empty:
+        return None
+
+    closed = trade_log[trade_log["상태"] == "청산"].copy()
+    if closed.empty:
+        return {
+            "period_return_pct": None,
+            "trade_count": 0,
+            "moc_count": 0,
+            "net_profit": 0.0,
+            "avg_hold_days": None,
+            "avg_return_pct": None,
+            "avg_gain": None,
+            "avg_loss": None,
+        }
+
+    for col in ("실현손익", "보유기간(일)", "수익률(%)"):
+        if col in closed.columns:
+            closed[col] = pd.to_numeric(closed[col], errors="coerce")
+
+    closed = closed.dropna(subset=["실현손익"])
+    if closed.empty:
+        return {
+            "period_return_pct": None,
+            "trade_count": 0,
+            "moc_count": 0,
+            "net_profit": 0.0,
+            "avg_hold_days": None,
+            "avg_return_pct": None,
+            "avg_gain": None,
+            "avg_loss": None,
+        }
+
+    net_profit = float(closed["실현손익"].sum())
+    trade_count = int(len(closed))
+    moc_count = int((closed["청산사유"] == "MOC").sum()) if "청산사유" in closed.columns else 0
+    avg_hold = float(closed["보유기간(일)"].mean()) if "보유기간(일)" in closed.columns else None
+    avg_return_pct = None
+    if "수익률(%)" in closed.columns and closed["수익률(%)"].notna().any():
+        avg_return_pct = float(closed["수익률(%)"].dropna().mean())
+    gain_series = closed.loc[closed["실현손익"] > 0, "실현손익"]
+    loss_series = closed.loc[closed["실현손익"] < 0, "실현손익"]
+    avg_gain = float(gain_series.mean()) if not gain_series.empty else None
+    avg_loss = float(loss_series.mean()) if not loss_series.empty else None
+    period_return_pct = None
+    if initial_cash > 0:
+        period_return_pct = (net_profit / initial_cash) * 100.0
+
+    return {
+        "period_return_pct": period_return_pct,
+        "trade_count": trade_count,
+        "moc_count": moc_count,
+        "net_profit": net_profit,
+        "avg_hold_days": avg_hold,
+        "avg_return_pct": avg_return_pct,
+        "avg_gain": avg_gain,
+        "avg_loss": avg_loss,
+    }
+
 st.set_page_config(page_title="동파법 백테스트 (LOC, 일일 N등분)", layout="wide")
 
 today = date.today()
@@ -86,6 +147,7 @@ if run:
         eq = res['equity']
         journal = res['journal']
         trade_log = res.get('trade_log')
+        trade_metrics = compute_trade_metrics(trade_log, float(init_cash))
 
         st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
 
@@ -99,13 +161,29 @@ if run:
         with col2:
             st.subheader("요약 지표")
             c1, c2, c3 = st.columns(3)
-            c1.metric("Final Equity", f"{summary_metrics['Final Equity']:,.0f}")
+            c1.metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
             c2.metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
             c3.metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
 
             c4, c5 = st.columns(2)
             c4.metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
             c5.metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+
+            if trade_metrics is not None:
+                st.markdown("**실현 지표**")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("기간 내 이익률", f"{trade_metrics['period_return_pct']:.2f}%" if trade_metrics['period_return_pct'] is not None else "-")
+                m2.metric("거래횟수", f"{trade_metrics['trade_count']:,}")
+                m3.metric("MOC 횟수", f"{trade_metrics['moc_count']:,}")
+
+                m4, m5, m6 = st.columns(3)
+                m4.metric("이익금", f"${trade_metrics['net_profit']:,.2f}")
+                m5.metric("평균 보유일", f"{trade_metrics['avg_hold_days']:.2f}" if trade_metrics['avg_hold_days'] is not None else "-")
+                m6.metric("평균 이익률", f"{trade_metrics['avg_return_pct']:.2f}%" if trade_metrics['avg_return_pct'] is not None else "-")
+
+                m7, m8 = st.columns(2)
+                m7.metric("평균 실현이익", f"${trade_metrics['avg_gain']:,.2f}" if trade_metrics['avg_gain'] is not None else "-")
+                m8.metric("평균 실현손해", f"${trade_metrics['avg_loss']:,.2f}" if trade_metrics['avg_loss'] is not None else "-")
 
         st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
         st.dataframe(journal, use_container_width=True, height=360)
