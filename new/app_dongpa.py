@@ -60,7 +60,6 @@ if run:
             refresh_cycle_days=int(cyc),
             profit_compound_rate=float(pcr),
             loss_compound_rate=float(lcr),
-            per_trade_fee=0.0,
             slippage_pct=0.0,
         )
 
