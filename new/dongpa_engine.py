@@ -164,10 +164,19 @@ class DongpaBacktester:
 
     def run(self):
         dates = self.df.index
-        mode = "defense"
         cash = money(self.c.initial_cash)
         initial_cash = cash
-        lots = []   # [{'qty', 'fill', 'tp', 'days'}], qty is integer shares
+
+        if len(dates) == 0:
+            equity_series = pd.Series(dtype=float, name='Equity')
+            journal_df = pd.DataFrame()
+            self.results = {"equity": equity_series, "journal": journal_df, "cash_end": money_to_float(cash), "open_positions": 0}
+            return self.results
+
+        mode = "defense"
+        lots = []   # [{'qty', 'fill', 'tp', 'days', 'buy_date', 'trade_idx'}]
+        trades = []
+        daily_rows = []
         equity_curve = []
         eq_dates = []
         day_in_cycle = 0
@@ -175,58 +184,102 @@ class DongpaBacktester:
         profit_compound = to_decimal(self.c.profit_compound_rate)
         loss_compound = to_decimal(self.c.loss_compound_rate)
 
-        def tranche_budget_for(slices: int) -> Decimal:
-            return money(cash / Decimal(max(1, slices)))
+        realized_cumulative = Decimal("0")
+
+        def tranche_budget_for(slices: int, base_cash: Decimal) -> Decimal:
+            return money(base_cash / Decimal(max(1, slices)))
 
         m = self.p.defense
-        tranche_budget = tranche_budget_for(m.slices)
-
-        journal = []
+        tranche_base_cash = cash
+        tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
+        pending_tranche_base = None
         prev_close = money(self.df['Close'].iloc[0])
+
+        peak_equity = float(cash)
 
         for i, d in enumerate(dates):
             close = money(self.df.loc[d, 'Close'])
+
+            if pending_tranche_base is not None:
+                tranche_base_cash = pending_tranche_base
+                pending_tranche_base = None
 
             # Mode decision (weekly RSI based)
             new_mode = self._decide_mode(d, mode)
             if new_mode != mode and self.p.reset_on_mode_change:
                 mode = new_mode
-                m = self.p.offense if mode=="offense" else self.p.defense
-                tranche_budget = tranche_budget_for(m.slices)
+                m = self.p.offense if mode == "offense" else self.p.defense
             else:
                 mode = new_mode
-                m = self.p.offense if mode=="offense" else self.p.defense
+                m = self.p.offense if mode == "offense" else self.p.defense
+
+            tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
 
             # LOC Buy (once per day) with integer share enforcement
-            buy_limit = money(prev_close * (ONE + to_decimal(m.buy_cond_pct)/HUNDRED)) if i>0 else None
-            buy_qty = 0
-            buy_amt = Decimal("0")
-            buy_avg = None
-            if buy_limit is not None and close <= buy_limit and tranche_budget > Decimal("0"):
-                # integer shares by floor division
-                shares = int(tranche_budget // close)
+            buy_limit = money(prev_close * (ONE + to_decimal(m.buy_cond_pct) / HUNDRED)) if i > 0 else None
+            buy_trade_id = None
+            buy_qty_executed = 0
+            buy_amt_value = Decimal("0")
+            if buy_limit is not None and close <= buy_limit and tranche_budget > Decimal("0") and buy_limit > Decimal("0"):
+                shares = int(tranche_budget // buy_limit)
                 if shares > 0:
                     trade_value = money(Decimal(shares) * close)
-                    if trade_value <= cash:
+                    order_value = money(Decimal(shares) * buy_limit)
+                    if order_value <= tranche_budget and trade_value <= cash:
                         cash = money(cash - trade_value)
-                        tp = money(close * (ONE + to_decimal(m.tp_pct)/HUNDRED))
-                        lots.append({'qty': shares, 'fill': close, 'tp': tp, 'days': 0})
-                        buy_qty = shares
-                        buy_amt = trade_value
-                        buy_avg = close
+                        tp = money(close * (ONE + to_decimal(m.tp_pct) / HUNDRED))
+                        mode_label = "공세" if mode == "offense" else "안전"
+                        trade_entry = {
+                            "거래ID": len(trades) + 1,
+                            "매수일자": d.strftime("%Y-%m-%d"),
+                            "매수모드": mode_label,
+                            "매수조건(%)": round(m.buy_cond_pct, 2),
+                            "매수주문가": money_to_float(buy_limit) if buy_limit is not None else None,
+                            "매수체결가": money_to_float(close),
+                            "매수수량": int(shares),
+                            "매수금액": money_to_float(trade_value),
+                            "TP목표가": money_to_float(tp),
+                            "최대보유일": int(m.max_hold_days),
+                            "매도일자": None,
+                            "매도평균": None,
+                            "매도수량": 0,
+                            "매도금액": None,
+                            "보유기간(일)": None,
+                            "실현손익": None,
+                            "청산사유": None,
+                            "상태": "보유중",
+                            "_buy_timestamp": d,
+                        }
+                        trades.append(trade_entry)
+                        lots.append({
+                            'qty': shares,
+                            'fill': close,
+                            'tp': tp,
+                            'days': 0,
+                            'buy_date': d,
+                            'trade_idx': len(trades) - 1,
+                            'max_hold': int(m.max_hold_days),
+                            'buy_idx': i,
+                        })
+                        buy_trade_id = trade_entry["거래ID"]
+                        buy_qty_executed = shares
+                        buy_amt_value = trade_value
 
             # LOC Sell (TP or timeout)
-            sell_qty = 0
-            sell_amt = Decimal("0")
-            sell_avg = None
             realized_today = Decimal("0")
             remaining = []
+            sell_qty_total = 0
+            sell_amt_total = Decimal("0")
+            sell_trade_ids: list[int] = []
             for lot in lots:
                 sell_now = False
+                sell_reason = None
                 if close >= lot['tp']:
                     sell_now = True
-                elif lot['days'] + 1 >= m.max_hold_days:
+                    sell_reason = "TP"
+                elif lot['days'] + 1 >= lot['max_hold']:
                     sell_now = True
+                    sell_reason = "MOC"
 
                 if sell_now:
                     proceeds = money(Decimal(lot['qty']) * close)
@@ -234,14 +287,30 @@ class DongpaBacktester:
                     cost_basis = money(Decimal(lot['qty']) * lot['fill'])
                     pnl = money(proceeds - cost_basis)
                     realized_today = money(realized_today + pnl)
-                    sell_qty += lot['qty']
-                    sell_amt = money(sell_amt + proceeds)
+
+                    trade_entry = trades[lot['trade_idx']]
+                    hold_days = int((i - lot['buy_idx']) + 1)
+                    if sell_reason == "MOC":
+                        hold_days = min(hold_days + 1, lot['max_hold'])
+                    trade_entry.update({
+                        "매도일자": d.strftime("%Y-%m-%d"),
+                        "매도평균": money_to_float(close),
+                        "매도수량": int(lot['qty']),
+                        "매도금액": money_to_float(proceeds),
+                        "보유기간(일)": hold_days,
+                        "실현손익": money_to_float(pnl),
+                        "청산사유": sell_reason,
+                        "상태": "청산",
+                    })
+                    sell_qty_total += lot['qty']
+                    sell_amt_total = money(sell_amt_total + proceeds)
+                    sell_trade_ids.append(trade_entry["거래ID"])
                 else:
                     lot['days'] += 1
                     remaining.append(lot)
             lots = remaining
-            if sell_qty > 0:
-                sell_avg = money(sell_amt / Decimal(sell_qty))
+
+            realized_cumulative = money(realized_cumulative + realized_today)
 
             # Capital refresh
             day_in_cycle += 1
@@ -251,59 +320,80 @@ class DongpaBacktester:
                     cash = money(cash + money(cycle_pnl * profit_compound))
                 else:
                     cash = money(cash + money(cycle_pnl * loss_compound))
-                tranche_budget = tranche_budget_for(m.slices)
+                pending_tranche_base = money(max(Decimal("0"), initial_cash + realized_cumulative))
                 cycle_pnl = Decimal("0")
                 day_in_cycle = 0
 
-            # Mark-to-close and journal
-            position_qty = sum(l['qty'] for l in lots)  # integer
+            # Mark-to-close (for equity curve)
+            position_qty = sum(l['qty'] for l in lots)
             position_val = money(Decimal(position_qty) * close)
             equity = money(cash + position_val)
-            equity_curve.append(float(equity)); eq_dates.append(d)
-
-            peak = max(equity_curve) if equity_curve else float(equity)
-            dd = (float(equity) - peak)/peak if peak>0 else 0.0
-
-            tp_target = None
-            if position_qty>0:
+            tp_avg_open = None
+            if position_qty > 0:
                 weighted_tp = sum(Decimal(l['qty']) * l['tp'] for l in lots)
-                tp_target = money(weighted_tp / Decimal(position_qty))
+                tp_avg_open = money(weighted_tp / Decimal(position_qty))
+            equity_curve.append(float(equity))
+            eq_dates.append(d)
+
+            if float(equity) > peak_equity:
+                peak_equity = float(equity)
+            drawdown_pct = 0.0
+            if peak_equity > 0:
+                drawdown_pct = round(((float(equity) / peak_equity) - 1) * 100, 2)
 
             cumulative_return = 0.0
             if initial_cash != Decimal("0"):
-                cumulative_return = round(float((equity / initial_cash - ONE) * Decimal("100")), 2)
+                cumulative_return = round(float((realized_cumulative / initial_cash) * Decimal("100")), 2)
 
-            journal.append({
+            daily_row = {
                 "거래일자": d.strftime("%Y-%m-%d"),
+                "모드": "공세" if mode == "offense" else "안전",
                 "종가": money_to_float(close),
-                "모드": "공세" if mode=="offense" else "안전",
-                "등락률(%)": round(((float(close)/float(prev_close))-1)*100,2) if i>0 else 0.0,
-                "매수조건(%)": round(m.buy_cond_pct,2),
-                "매수주문가": money_to_float(buy_limit) if buy_limit else None,
-                "매수평균": money_to_float(buy_avg) if buy_qty>0 and buy_avg is not None else None,
-                "매수수량": int(buy_qty),
-                "매수금액": money_to_float(buy_amt),
-                "TP목표가": money_to_float(tp_target) if tp_target else None,
-                "매도평균": money_to_float(sell_avg) if sell_qty>0 and sell_avg is not None else None,
-                "매도수량": int(sell_qty),
-                "매도금액": money_to_float(sell_amt),
+                "등락률(%)": round(((float(close) / float(prev_close)) - 1) * 100, 2) if i > 0 else 0.0,
+                "매수조건(%)": round(m.buy_cond_pct, 2),
+                "매수주문가": money_to_float(buy_limit) if buy_limit is not None else None,
+                "매수체결가": money_to_float(close) if buy_trade_id else None,
+                "매수수량": int(buy_qty_executed),
+                "매수금액": money_to_float(buy_amt_value) if buy_trade_id else 0.0,
+                "매수거래ID": buy_trade_id,
+                "매도평균": money_to_float(sell_amt_total / Decimal(sell_qty_total)) if sell_qty_total > 0 else None,
+                "매도수량": int(sell_qty_total),
+                "매도금액": money_to_float(sell_amt_total) if sell_qty_total > 0 else 0.0,
+                "매도거래ID목록": ",".join(str(tid) for tid in sell_trade_ids) if sell_trade_ids else None,
                 "실현손익": money_to_float(realized_today),
-                "누적손익": money_to_float(equity - initial_cash),
                 "현금": money_to_float(cash),
                 "보유수량": int(position_qty),
                 "평가금액": money_to_float(position_val),
                 "Equity": money_to_float(equity),
+                "누적손익": money_to_float(realized_cumulative),
                 "누적수익률(%)": cumulative_return,
-                "낙폭(DD%)": round(dd*100,2),
+                "낙폭(DD%)": drawdown_pct,
                 "일일트렌치예산": money_to_float(tranche_budget),
-                "분할수(N)": m.slices,
-            })
+                "TP평균(보유)": money_to_float(tp_avg_open) if tp_avg_open is not None else None,
+            }
+            daily_rows.append(daily_row)
 
             prev_close = close
 
+        # Update open trades with current holding period
+        last_index = len(dates) - 1
+        for lot in lots:
+            trade_entry = trades[lot['trade_idx']]
+            trade_entry["보유기간(일)"] = int((last_index - lot['buy_idx']) + 1)
+
         equity_series = pd.Series(equity_curve, index=pd.DatetimeIndex(eq_dates, name='Date'), name='Equity')
-        journal_df = pd.DataFrame(journal)
-        self.results = {"equity": equity_series, "journal": journal_df, "cash_end": money_to_float(cash), "open_positions": len(lots)}
+        trades_df = pd.DataFrame(trades)
+        if not trades_df.empty and "_buy_timestamp" in trades_df.columns:
+            trades_df = trades_df.drop(columns=["_buy_timestamp"])
+        daily_df = pd.DataFrame(daily_rows)
+
+        self.results = {
+            "equity": equity_series,
+            "journal": daily_df,
+            "trade_log": trades_df,
+            "cash_end": money_to_float(cash),
+            "open_positions": len(lots),
+        }
         return self.results
 
 # ---------------------- Metrics ----------------------

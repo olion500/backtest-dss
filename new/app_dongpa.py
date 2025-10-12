@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import date
+from pathlib import Path
 
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
 
@@ -46,12 +47,19 @@ run = st.button("백테스트 실행")
 
 if run:
     st.info("데이터 로딩 중...")
-    df_t = yf.download(target, start=start, end=end, progress=False)
-    df_m = yf.download(momentum, start=start, end=end, progress=False)
+    df_t = yf.download(target, start=start, end=end, progress=False, auto_adjust=False)
+    df_m = yf.download(momentum, start=start, end=end, progress=False, auto_adjust=False)
 
     if df_t.empty or df_m.empty:
         st.error("데이터가 비어 있습니다. 티커/기간을 확인하세요.")
     else:
+        outputs_dir = Path("outputs")
+        outputs_dir.mkdir(exist_ok=True)
+        target_path = outputs_dir / f"{target}_{start:%Y%m%d}_{end:%Y%m%d}_target.csv"
+        momo_path = outputs_dir / f"{momentum}_{start:%Y%m%d}_{end:%Y%m%d}_momentum.csv"
+        df_t.to_csv(target_path)
+        df_m.to_csv(momo_path)
+
         defense = ModeParams(buy_cond_pct=cond1, tp_pct=tp1, max_hold_days=int(hold1), slices=int(s1))
         offense = ModeParams(buy_cond_pct=cond2, tp_pct=tp2, max_hold_days=int(hold2), slices=int(s2))
 
@@ -77,8 +85,9 @@ if run:
         res = bt.run()
         eq = res['equity']
         journal = res['journal']
+        trade_log = res.get('trade_log')
 
-        st.success("완료!")
+        st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
 
         summary_metrics = summarize(eq)
 
@@ -98,12 +107,18 @@ if run:
             c4.metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
             c5.metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
 
-        st.subheader("거래 일지 (일자별 요약, 정수 주식 기준)")
-        st.dataframe(journal, use_container_width=True, height=420)
+        st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
+        st.dataframe(journal, use_container_width=True, height=360)
 
-        st.download_button("거래일지 CSV 다운로드", data=journal.to_csv(index=False).encode('utf-8-sig'),
-                           file_name=f"dongpa_journal_{target}.csv", mime="text/csv")
+        st.download_button("일일 요약 CSV 다운로드", data=journal.to_csv(index=False).encode('utf-8-sig'),
+                           file_name=f"dongpa_daily_{target}.csv", mime="text/csv")
+
+        if trade_log is not None and not trade_log.empty:
+            st.subheader("트랜치별 매수·매도 기록")
+            st.dataframe(trade_log, use_container_width=True, height=360)
+            st.download_button("트랜치 로그 CSV 다운로드", data=trade_log.to_csv(index=False).encode('utf-8-sig'),
+                               file_name=f"dongpa_trades_{target}.csv", mime="text/csv")
         st.download_button("Equity CSV 다운로드", data=eq.to_csv().encode('utf-8'),
                            file_name=f"equity_{target}.csv", mime="text/csv")
 
-        st.caption("거래일지 컬럼은 한국어입니다. (Equity 등 성과 지표는 영문 표기)")
+        st.caption("일일 요약과 트랜치 로그 모두 한국어 컬럼을 사용합니다. 트랜치 로그의 상태=보유중은 미청산 트랜치입니다. (Equity 등 성과 지표는 영문 표기)")
