@@ -9,6 +9,37 @@ from pathlib import Path
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
 
 
+def compute_buy_and_hold_return(df: pd.DataFrame) -> float | None:
+    if df.empty or "Close" not in df.columns:
+        return None
+    closes = df["Close"]
+    if isinstance(closes, pd.DataFrame):
+        closes = closes.squeeze("columns")
+    closes = closes.dropna()
+    if closes.empty:
+        return None
+    first_val = closes.iloc[0]
+    last_val = closes.iloc[-1]
+    try:
+        first_val = float(first_val)
+        last_val = float(last_val)
+    except (TypeError, ValueError):
+        return None
+    if first_val == 0:
+        return None
+    return ((last_val / first_val) - 1) * 100.0
+
+
+def compute_equity_return(series: pd.Series) -> float | None:
+    if series.empty:
+        return None
+    start = float(series.iloc[0])
+    end = float(series.iloc[-1])
+    if start == 0:
+        return None
+    return ((end / start) - 1) * 100.0
+
+
 def compute_trade_metrics(trade_log: pd.DataFrame | None, initial_cash: float) -> dict[str, float | int | None] | None:
     if trade_log is None or trade_log.empty:
         return None
@@ -174,17 +205,34 @@ if run:
         st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
 
         summary_metrics = summarize(eq)
+        momentum_hold_pct = compute_buy_and_hold_return(df_m)
+        target_hold_pct = compute_buy_and_hold_return(df_t)
+        strategy_perf_pct = compute_equity_return(eq)
 
         st.subheader("Equity Curve")
         st.line_chart(eq)
 
         st.subheader("요약 지표")
-        eq_col, cagr_col, sharpe_col, vol_col, dd_col = st.columns([1, 1, 1, 1, 1])
-        eq_col.metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
-        cagr_col.metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
-        sharpe_col.metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
-        vol_col.metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
-        dd_col.metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+        summary_top = st.columns(4)
+        summary_top[0].metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
+        summary_top[1].metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
+        summary_top[2].metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
+        summary_top[3].metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+
+        summary_bottom = st.columns(4)
+        summary_bottom[0].metric(
+            f"{momentum} 보유 수익률",
+            f"{momentum_hold_pct:.2f}%" if momentum_hold_pct is not None else "-",
+        )
+        summary_bottom[1].metric(
+            f"{target} 보유 수익률",
+            f"{target_hold_pct:.2f}%" if target_hold_pct is not None else "-",
+        )
+        summary_bottom[2].metric(
+            "전략 누적 수익률",
+            f"{strategy_perf_pct:.2f}%" if strategy_perf_pct is not None else "-",
+        )
+        summary_bottom[3].metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
 
         if trade_metrics is not None:
             st.markdown("---")
