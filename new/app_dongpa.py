@@ -86,6 +86,13 @@ with st.sidebar:
     start = st.date_input("시작일", value=year_start)
     end = st.date_input("종료일", value=today)
 
+    st.header("거래 옵션")
+    enable_netting = st.checkbox(
+        "퉁치기(동일 종가 상쇄)",
+        value=True,
+        help="같은 날 종가 기준으로 실행된 매수·매도 물량을 순매수/순매도로 상쇄합니다.",
+    )
+
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input("이익복리율 PCR (%)", value=80, step=1) / 100.0
     lcr = st.number_input("손실복리율 LCR (%)", value=30, step=1) / 100.0
@@ -138,6 +145,7 @@ if run:
             benchmark_ticker=bench if bench.strip() else None,
             rsi_period=14,
             reset_on_mode_change=True,
+            enable_netting=enable_netting,
             defense=defense,
             offense=offense,
         )

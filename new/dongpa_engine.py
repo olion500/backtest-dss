@@ -106,6 +106,7 @@ class StrategyParams:
     benchmark_ticker: str | None
     rsi_period: int = 14
     reset_on_mode_change: bool = True
+    enable_netting: bool = True
     defense: ModeParams = None
     offense: ModeParams = None
 
@@ -350,6 +351,42 @@ class DongpaBacktester:
             if initial_cash != Decimal("0"):
                 cumulative_return = round(float((realized_cumulative / initial_cash) * Decimal("100")), 2)
 
+            raw_buy_qty = int(buy_qty_executed)
+            raw_buy_amt = buy_amt_value
+            raw_sell_qty = int(sell_qty_total)
+            raw_sell_amt = sell_amt_total
+
+            net_buy_qty = raw_buy_qty
+            net_sell_qty = raw_sell_qty
+            net_buy_amt = raw_buy_amt
+            net_sell_amt = raw_sell_amt
+            netting_applied = False
+            netting_detail = None
+
+            if self.p.enable_netting and raw_buy_qty > 0 and raw_sell_qty > 0:
+                offset_qty = min(raw_buy_qty, raw_sell_qty)
+                if offset_qty > 0:
+                    offset_amt = money(Decimal(offset_qty) * close)
+                    net_buy_qty = raw_buy_qty - offset_qty
+                    net_sell_qty = raw_sell_qty - offset_qty
+                    net_buy_amt = money(max(Decimal("0"), net_buy_amt - offset_amt))
+                    net_sell_amt = money(max(Decimal("0"), net_sell_amt - offset_amt))
+                    netting_applied = True
+                    if net_buy_qty > 0:
+                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 순매수 {net_buy_qty}주"
+                    elif net_sell_qty > 0:
+                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 순매도 {net_sell_qty}주"
+                    else:
+                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 상쇄"
+
+            net_sell_avg = None
+            if net_sell_qty > 0:
+                net_sell_avg = money_to_float(money(net_sell_amt / Decimal(net_sell_qty)))
+
+            raw_sell_avg = None
+            if raw_sell_qty > 0:
+                raw_sell_avg = money_to_float(money(raw_sell_amt / Decimal(raw_sell_qty)))
+
             daily_row = {
                 "거래일자": d.strftime("%Y-%m-%d"),
                 "모드": "공세" if mode == "offense" else "안전",
@@ -358,12 +395,12 @@ class DongpaBacktester:
                 "매수조건(%)": round(m.buy_cond_pct, 2),
                 "매수주문가": money_to_float(buy_limit) if buy_limit is not None else None,
                 "매수체결가": money_to_float(close) if buy_trade_id else None,
-                "매수수량": int(buy_qty_executed),
-                "매수금액": money_to_float(buy_amt_value) if buy_trade_id else 0.0,
+                "매수수량": int(net_buy_qty),
+                "매수금액": money_to_float(net_buy_amt) if net_buy_qty > 0 else 0.0,
                 "매수거래ID": buy_trade_id,
-                "매도평균": money_to_float(sell_amt_total / Decimal(sell_qty_total)) if sell_qty_total > 0 else None,
-                "매도수량": int(sell_qty_total),
-                "매도금액": money_to_float(sell_amt_total) if sell_qty_total > 0 else 0.0,
+                "매도평균": net_sell_avg,
+                "매도수량": int(net_sell_qty),
+                "매도금액": money_to_float(net_sell_amt) if net_sell_qty > 0 else 0.0,
                 "매도거래ID목록": ",".join(str(tid) for tid in sell_trade_ids) if sell_trade_ids else None,
                 "실현손익": money_to_float(realized_today),
                 "현금": money_to_float(cash),
@@ -375,6 +412,13 @@ class DongpaBacktester:
                 "낙폭(DD%)": drawdown_pct,
                 "일일트렌치예산": money_to_float(tranche_budget),
                 "TP평균(보유)": money_to_float(tp_avg_open) if tp_avg_open is not None else None,
+                "원매수수량": raw_buy_qty,
+                "원매수금액": money_to_float(raw_buy_amt) if raw_buy_qty > 0 else 0.0,
+                "원매도수량": raw_sell_qty,
+                "원매도금액": money_to_float(raw_sell_amt) if raw_sell_qty > 0 else 0.0,
+                "원매도평균": raw_sell_avg,
+                "퉁치기적용": netting_applied,
+                "퉁치기상세": netting_detail,
             }
             daily_rows.append(daily_row)
 
