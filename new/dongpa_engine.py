@@ -222,12 +222,24 @@ class DongpaBacktester:
             buy_trade_id = None
             buy_qty_executed = 0
             buy_amt_value = Decimal("0")
-            if buy_limit is not None and close <= buy_limit and tranche_budget > Decimal("0") and buy_limit > Decimal("0"):
-                shares = int(tranche_budget // buy_limit)
-                if shares > 0:
-                    trade_value = money(Decimal(shares) * close)
-                    order_value = money(Decimal(shares) * buy_limit)
-                    if order_value <= tranche_budget and trade_value <= cash:
+            planned_buy_qty = 0
+            planned_buy_order_value = Decimal("0")
+            if buy_limit is not None and tranche_budget > Decimal("0") and buy_limit > Decimal("0"):
+                planned_buy_qty = int(tranche_budget // buy_limit)
+                if planned_buy_qty > 0:
+                    planned_buy_order_value = money(Decimal(planned_buy_qty) * buy_limit)
+
+            if (
+                buy_limit is not None
+                and close <= buy_limit
+                and tranche_budget > Decimal("0")
+                and buy_limit > Decimal("0")
+                and planned_buy_qty > 0
+            ):
+                shares = planned_buy_qty
+                trade_value = money(Decimal(shares) * close)
+                order_value = planned_buy_order_value
+                if order_value <= tranche_budget and trade_value <= cash:
                         cash = money(cash - trade_value)
                         tp = money(close * (ONE + to_decimal(m.tp_pct) / HUNDRED))
                         sl = None
@@ -352,6 +364,26 @@ class DongpaBacktester:
             equity_curve.append(float(equity))
             eq_dates.append(d)
 
+            buy_summary = "매수 없음"
+            if planned_buy_qty > 0 and buy_limit is not None:
+                buy_price = money_to_float(buy_limit)
+                buy_budget = money_to_float(planned_buy_order_value)
+                buy_summary = f"매수 {planned_buy_qty}주 @ {buy_price:.2f} (예산 ${buy_budget:,.2f})"
+
+            sell_summary = "매도 없음"
+            if lots:
+                tp_groups: dict[Decimal, int] = {}
+                for lot in lots:
+                    tp_price = money(lot['tp'])
+                    tp_groups[tp_price] = tp_groups.get(tp_price, 0) + int(lot['qty'])
+                sell_entries = [
+                    f"{qty}주 @ {money_to_float(tp):.2f}"
+                    for tp, qty in sorted(tp_groups.items(), key=lambda item: float(item[0]))
+                ]
+                sell_summary = "매도 " + ", ".join(sell_entries)
+
+            order_summary = f"{buy_summary} | {sell_summary}" if buy_summary or sell_summary else "예약 없음"
+
             if float(equity) > peak_equity:
                 peak_equity = float(equity)
             drawdown_pct = 0.0
@@ -430,6 +462,7 @@ class DongpaBacktester:
                 "원매도평균": raw_sell_avg,
                 "퉁치기적용": netting_applied,
                 "퉁치기상세": netting_detail,
+                "예약요약": order_summary,
             }
             daily_rows.append(daily_row)
 
