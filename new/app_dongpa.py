@@ -103,12 +103,14 @@ with st.sidebar:
     s1 = st.number_input("분할수(N) - 안전", value=7, step=1)
     cond1 = st.number_input("매수조건(%) - 안전", value=3.0, step=0.1, format="%.2f")
     tp1 = st.number_input("익절(%) - 안전", value=0.2, step=0.1, format="%.2f")
+    sl1 = st.number_input("손절(%) - 안전", value=0.0, step=0.1, format="%.2f")
     hold1 = st.number_input("최대 보유일(거래일) - 안전", value=30, step=1)
 
     st.header("공세 모드")
     s2 = st.number_input("분할수(N) - 공세", value=7, step=1)
     cond2 = st.number_input("매수조건(%) - 공세", value=5.0, step=0.1, format="%.2f")
     tp2 = st.number_input("익절(%) - 공세", value=2.5, step=0.1, format="%.2f")
+    sl2 = st.number_input("손절(%) - 공세", value=0.0, step=0.1, format="%.2f")
     hold2 = st.number_input("최대 보유일(거래일) - 공세", value=7, step=1)
 
 run = st.button("백테스트 실행")
@@ -128,8 +130,20 @@ if run:
         df_t.to_csv(target_path)
         df_m.to_csv(momo_path)
 
-        defense = ModeParams(buy_cond_pct=cond1, tp_pct=tp1, max_hold_days=int(hold1), slices=int(s1))
-        offense = ModeParams(buy_cond_pct=cond2, tp_pct=tp2, max_hold_days=int(hold2), slices=int(s2))
+        defense = ModeParams(
+            buy_cond_pct=cond1,
+            tp_pct=tp1,
+            max_hold_days=int(hold1),
+            slices=int(s1),
+            stop_loss_pct=float(sl1) if sl1 > 0 else None,
+        )
+        offense = ModeParams(
+            buy_cond_pct=cond2,
+            tp_pct=tp2,
+            max_hold_days=int(hold2),
+            slices=int(s2),
+            stop_loss_pct=float(sl2) if sl2 > 0 else None,
+        )
 
         cap = CapitalParams(
             initial_cash=float(init_cash),
@@ -161,37 +175,32 @@ if run:
 
         summary_metrics = summarize(eq)
 
-        col1, col2 = st.columns([2,1])
-        with col1:
-            st.subheader("Equity Curve")
-            st.line_chart(eq)
+        st.subheader("Equity Curve")
+        st.line_chart(eq)
 
-        with col2:
-            st.subheader("요약 지표")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
-            c2.metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
-            c3.metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
+        st.subheader("요약 지표")
+        eq_col, cagr_col, sharpe_col, vol_col, dd_col = st.columns([1, 1, 1, 1, 1])
+        eq_col.metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
+        cagr_col.metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
+        sharpe_col.metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
+        vol_col.metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
+        dd_col.metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
 
-            c4, c5 = st.columns(2)
-            c4.metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
-            c5.metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+        if trade_metrics is not None:
+            st.markdown("---")
+            st.subheader("실현 지표")
+            tm_row1 = st.columns(4)
+            tm_row1[0].metric("기간 내 이익률", f"{trade_metrics['period_return_pct']:.2f}%" if trade_metrics['period_return_pct'] is not None else "-")
+            tm_row1[1].metric("거래횟수", f"{trade_metrics['trade_count']:,}")
+            tm_row1[2].metric("MOC 횟수", f"{trade_metrics['moc_count']:,}")
+            tm_row1[3].metric("이익금", f"${trade_metrics['net_profit']:,.2f}")
 
-            if trade_metrics is not None:
-                st.markdown("**실현 지표**")
-                m1, m2, m3 = st.columns(3)
-                m1.metric("기간 내 이익률", f"{trade_metrics['period_return_pct']:.2f}%" if trade_metrics['period_return_pct'] is not None else "-")
-                m2.metric("거래횟수", f"{trade_metrics['trade_count']:,}")
-                m3.metric("MOC 횟수", f"{trade_metrics['moc_count']:,}")
-
-                m4, m5, m6 = st.columns(3)
-                m4.metric("이익금", f"${trade_metrics['net_profit']:,.2f}")
-                m5.metric("평균 보유일", f"{trade_metrics['avg_hold_days']:.2f}" if trade_metrics['avg_hold_days'] is not None else "-")
-                m6.metric("평균 이익률", f"{trade_metrics['avg_return_pct']:.2f}%" if trade_metrics['avg_return_pct'] is not None else "-")
-
-                m7, m8 = st.columns(2)
-                m7.metric("평균 실현이익", f"${trade_metrics['avg_gain']:,.2f}" if trade_metrics['avg_gain'] is not None else "-")
-                m8.metric("평균 실현손해", f"${trade_metrics['avg_loss']:,.2f}" if trade_metrics['avg_loss'] is not None else "-")
+            tm_row2 = st.columns(4)
+            tm_row2[0].metric("평균 보유일", f"{trade_metrics['avg_hold_days']:.2f}" if trade_metrics['avg_hold_days'] is not None else "-")
+            tm_row2[1].metric("평균 이익률", f"{trade_metrics['avg_return_pct']:.2f}%" if trade_metrics['avg_return_pct'] is not None else "-")
+            tm_row2[2].metric("평균 실현이익", f"${trade_metrics['avg_gain']:,.2f}" if trade_metrics['avg_gain'] is not None else "-")
+            tm_row2[3].metric("평균 실현손해", f"${trade_metrics['avg_loss']:,.2f}" if trade_metrics['avg_loss'] is not None else "-")
+            st.markdown("---")
 
         st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
         st.dataframe(journal, use_container_width=True, height=360)

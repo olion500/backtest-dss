@@ -90,6 +90,7 @@ class ModeParams:
     tp_pct: float           # Take profit (%)
     max_hold_days: int      # Max holding days
     slices: int             # N tranches (cash split by N)
+    stop_loss_pct: float | None = None
 
 @dataclass
 class CapitalParams:
@@ -229,6 +230,11 @@ class DongpaBacktester:
                     if order_value <= tranche_budget and trade_value <= cash:
                         cash = money(cash - trade_value)
                         tp = money(close * (ONE + to_decimal(m.tp_pct) / HUNDRED))
+                        sl = None
+                        if m.stop_loss_pct is not None and m.stop_loss_pct > 0:
+                            stop_loss_factor = ONE - to_decimal(m.stop_loss_pct) / HUNDRED
+                            if stop_loss_factor > Decimal("0"):
+                                sl = money(close * stop_loss_factor)
                         mode_label = "공세" if mode == "offense" else "안전"
                         trade_entry = {
                             "거래ID": len(trades) + 1,
@@ -240,6 +246,7 @@ class DongpaBacktester:
                             "매수수량": int(shares),
                             "매수금액": money_to_float(trade_value),
                             "TP목표가": money_to_float(tp),
+                            "SL목표가": money_to_float(sl) if sl is not None else None,
                             "최대보유일": int(m.max_hold_days),
                             "수익률(%)": None,
                             "매도일자": None,
@@ -257,6 +264,7 @@ class DongpaBacktester:
                             'qty': shares,
                             'fill': close,
                             'tp': tp,
+                            'sl': sl,
                             'days': 0,
                             'buy_date': d,
                             'trade_idx': len(trades) - 1,
@@ -276,7 +284,10 @@ class DongpaBacktester:
             for lot in lots:
                 sell_now = False
                 sell_reason = None
-                if close >= lot['tp']:
+                if lot.get('sl') is not None and close <= lot['sl']:
+                    sell_now = True
+                    sell_reason = "SL"
+                elif close >= lot['tp']:
                     sell_now = True
                     sell_reason = "TP"
                 elif lot['days'] + 1 >= lot['max_hold']:
