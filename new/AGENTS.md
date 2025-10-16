@@ -30,3 +30,7 @@
 ## Security & Configuration Tips
 - Keep credentials out of source and configs; rely on environment variables if secrets become necessary.
 - Be mindful of Yahoo Finance rate limits and avoid committing large CSV exports or proprietary datasets.
+
+## Documentation Map
+- `dongpa_strategy.md`: 전략 로직과 파라미터, 위험관리 규칙을 정리한 참고 문서.
+- `dongpa_visualize.md`: Streamlit 대시보드 구성, 요약 지표 배치, 출력 컬럼 정의 등 UI 관련 지침.
