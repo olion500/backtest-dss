@@ -103,22 +103,34 @@ class OptimizerConfig:
 
 # Default parameter candidates (hand curated to balance exploration vs cost)
 DEFENSE_CANDIDATES: tuple[dict[str, float | int | None], ...] = (
-    {"buy_cond_pct": 2.5, "tp_pct": 0.30, "max_hold_days": 30, "slices": 7, "stop_loss_pct": None},
-    {"buy_cond_pct": 3.0, "tp_pct": 0.25, "max_hold_days": 25, "slices": 6, "stop_loss_pct": None},
-    {"buy_cond_pct": 3.5, "tp_pct": 0.20, "max_hold_days": 20, "slices": 5, "stop_loss_pct": 2.0},
+    {"buy_cond_pct": 2.0, "tp_pct": 0.40, "max_hold_days": 35, "slices": 8, "stop_loss_pct": None},
+    {"buy_cond_pct": 2.0, "tp_pct": 0.40, "max_hold_days": 35, "slices": 8, "stop_loss_pct": 4.0},
+    {"buy_cond_pct": 2.5, "tp_pct": 0.32, "max_hold_days": 32, "slices": 7, "stop_loss_pct": 6.0},
+    {"buy_cond_pct": 2.5, "tp_pct": 0.32, "max_hold_days": 32, "slices": 7, "stop_loss_pct": 8.0},
+    {"buy_cond_pct": 3.0, "tp_pct": 0.28, "max_hold_days": 28, "slices": 6, "stop_loss_pct": 10.0},
+    {"buy_cond_pct": 3.0, "tp_pct": 0.28, "max_hold_days": 28, "slices": 6, "stop_loss_pct": 12.0},
+    {"buy_cond_pct": 3.5, "tp_pct": 0.24, "max_hold_days": 24, "slices": 5, "stop_loss_pct": 14.0},
+    {"buy_cond_pct": 3.5, "tp_pct": 0.24, "max_hold_days": 24, "slices": 5, "stop_loss_pct": 16.0},
 )
 
 OFFENSE_CANDIDATES: tuple[dict[str, float | int | None], ...] = (
-    {"buy_cond_pct": 4.0, "tp_pct": 1.5, "max_hold_days": 15, "slices": 8, "stop_loss_pct": None},
-    {"buy_cond_pct": 4.5, "tp_pct": 2.0, "max_hold_days": 10, "slices": 7, "stop_loss_pct": None},
-    {"buy_cond_pct": 5.0, "tp_pct": 2.5, "max_hold_days": 7, "slices": 6, "stop_loss_pct": 3.0},
-    {"buy_cond_pct": 5.5, "tp_pct": 1.8, "max_hold_days": 12, "slices": 5, "stop_loss_pct": None},
+    {"buy_cond_pct": 4.0, "tp_pct": 1.5, "max_hold_days": 15, "slices": 8, "stop_loss_pct": 6.0},
+    {"buy_cond_pct": 4.0, "tp_pct": 1.5, "max_hold_days": 15, "slices": 8, "stop_loss_pct": 8.0},
+    {"buy_cond_pct": 4.5, "tp_pct": 2.0, "max_hold_days": 12, "slices": 7, "stop_loss_pct": 10.0},
+    {"buy_cond_pct": 4.5, "tp_pct": 2.0, "max_hold_days": 12, "slices": 7, "stop_loss_pct": 12.0},
+    {"buy_cond_pct": 5.0, "tp_pct": 2.5, "max_hold_days": 10, "slices": 6, "stop_loss_pct": 14.0},
+    {"buy_cond_pct": 5.0, "tp_pct": 2.5, "max_hold_days": 10, "slices": 6, "stop_loss_pct": 16.0},
+    {"buy_cond_pct": 5.5, "tp_pct": 3.0, "max_hold_days": 8, "slices": 5, "stop_loss_pct": 12.0},
+    {"buy_cond_pct": 5.5, "tp_pct": 3.0, "max_hold_days": 8, "slices": 5, "stop_loss_pct": 15.0},
+    {"buy_cond_pct": 6.0, "tp_pct": 3.5, "max_hold_days": 7, "slices": 5, "stop_loss_pct": 18.0},
+    {"buy_cond_pct": 6.5, "tp_pct": 4.0, "max_hold_days": 6, "slices": 4, "stop_loss_pct": 20.0},
 )
 
 CAPITAL_CANDIDATES: tuple[dict[str, float | int], ...] = (
-    {"refresh_cycle_days": 7, "profit_compound_rate": 0.8, "loss_compound_rate": 0.3, "slippage_pct": 0.0},
-    {"refresh_cycle_days": 10, "profit_compound_rate": 0.7, "loss_compound_rate": 0.4, "slippage_pct": 0.0},
-    {"refresh_cycle_days": 15, "profit_compound_rate": 0.9, "loss_compound_rate": 0.2, "slippage_pct": 0.0},
+    {"refresh_cycle_days": 5, "profit_compound_rate": 0.75, "loss_compound_rate": 0.35, "slippage_pct": 0.0},
+    {"refresh_cycle_days": 7, "profit_compound_rate": 0.80, "loss_compound_rate": 0.30, "slippage_pct": 0.0},
+    {"refresh_cycle_days": 10, "profit_compound_rate": 0.70, "loss_compound_rate": 0.40, "slippage_pct": 0.0},
+    {"refresh_cycle_days": 15, "profit_compound_rate": 0.90, "loss_compound_rate": 0.25, "slippage_pct": 0.0},
 )
 
 

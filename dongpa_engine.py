@@ -32,6 +32,14 @@ def cross_up(prev: float, curr: float, level: float) -> bool:
 def cross_down(prev: float, curr: float, level: float) -> bool:
     return prev > level and curr <= level
 
+
+def _scalar(value):
+    if isinstance(value, pd.Series):
+        if value.empty:
+            return float("nan")
+        return value.iloc[0]
+    return value
+
 # Monetary rounding helpers (2 decimal places for trade calculations)
 MONEY_QUANT = Decimal("0.01")
 ONE = Decimal("1")
@@ -145,12 +153,16 @@ class DongpaBacktester:
         self.daily_prev_week = self.weekly_rsi.shift(1).reindex(self.df.index, method='ffill')
 
     def _decide_mode(self, idx, prev_mode) -> str:
-        rsi = float(self.daily_rsi.loc[idx])
-        prev_w = float(self.daily_prev_week.loc[idx]) if not math.isnan(self.daily_prev_week.loc[idx]) else rsi
-        delta = float(self.daily_rsi_delta.loc[idx]) if not math.isnan(self.daily_rsi_delta.loc[idx]) else 0.0
-
-        if math.isnan(rsi) or math.isnan(prev_w):
+        rsi_raw = _scalar(self.daily_rsi.loc[idx])
+        if pd.isna(rsi_raw):
             return prev_mode or "defense"
+        rsi = float(rsi_raw)
+
+        prev_raw = _scalar(self.daily_prev_week.loc[idx])
+        prev_w = float(prev_raw) if not pd.isna(prev_raw) else rsi
+
+        delta_raw = _scalar(self.daily_rsi_delta.loc[idx])
+        delta = float(delta_raw) if not pd.isna(delta_raw) else 0.0
 
         is_down = delta < 0
         is_up   = delta > 0
