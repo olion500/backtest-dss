@@ -5,7 +5,7 @@ PORT ?= 8501
 DEV_IMAGE := $(APP_NAME)-dev
 DOCKER_RUN := docker run --rm -p $(PORT):8501 $(APP_NAME):latest
 
-.PHONY: help install run-local build build-dev run shell dev clean
+.PHONY: help install run-local build build-dev run shell dev clean optimize
 
 help:
 	@echo "Dongpa backtest helpers"
@@ -17,6 +17,7 @@ help:
 	@echo "make shell      Open a bash shell inside the app container"
 	@echo "make build-dev  Build the live-reload dev image ($(DEV_IMAGE):latest)"
 	@echo "make dev        Run dev container with source mounted"
+	@echo "make optimize   Run dongpa_optimizer.py and refresh strategy report"
 	@echo "make clean      Remove built Docker images"
 
 install:
@@ -42,3 +43,11 @@ dev: build-dev
 
 clean:
 	- docker rmi $(APP_NAME):latest $(DEV_IMAGE):latest
+
+optimize: build-dev
+	docker run --rm \
+		-v "$(CURDIR)":/app \
+		--workdir /app \
+		--entrypoint python3 \
+		$(DEV_IMAGE):latest \
+	dongpa_optimizer.py
