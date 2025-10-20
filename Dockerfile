@@ -1,15 +1,16 @@
-# syntax=docker/dockerfile:1
-
 FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-COPY requirements.txt ./requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY dongpa_engine.py app_dongpa.py ./
 
-CMD ["python", "optimize_params.py", "--help"]
+EXPOSE 8501
+
+ENTRYPOINT ["streamlit", "run", "app_dongpa.py", "--server.address=0.0.0.0", "--server.port=8501"]
+
