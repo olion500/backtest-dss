@@ -9,6 +9,28 @@ from pathlib import Path
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
 
 
+NAV_LINKS = [
+    ("app_dongpa.py", "backtest"),
+    ("pages/1_Optimizer.py", "Optimizer"),
+    ("pages/2_LOC_Scheduler.py", "orderBook"),
+]
+
+
+def render_navigation() -> None:
+    st.markdown(
+        """
+        <style>
+        [data-testid='stSidebarNav'] {display: none;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.sidebar.markdown("### Pages")
+    for path, label in NAV_LINKS:
+        st.sidebar.page_link(path, label=label)
+    st.sidebar.divider()
+
+
 def compute_buy_and_hold_return(df: pd.DataFrame) -> float | None:
     if df.empty or "Close" not in df.columns:
         return None
@@ -104,13 +126,15 @@ def compute_trade_metrics(trade_log: pd.DataFrame | None, initial_cash: float) -
         "avg_loss": avg_loss,
     }
 
-st.set_page_config(page_title="동파법 백테스트 (LOC, 일일 N등분)", layout="wide")
+st.set_page_config(page_title="backtest", layout="wide")
 
 today = date.today()
 year_start = date(today.year, 1, 1)
 
-st.title("동파법 백테스트 (LOC 전용, 일일 N등분 매수)")
-st.caption("주문은 LOC 기준 · 레일 없음 · 하루 최대 1회 매수(트렌치 예산 한도, 정수 주식만). 결과 지표는 Equity 등 영문 용어 사용.")
+st.title("backtest")
+st.caption("동파법 백테스트 (LOC 전용, 일일 N등분 매수). 주문은 LOC 기준 · 레일 없음 · 하루 최대 1회 매수(트렌치 예산 한도, 정수 주식만). 결과 지표는 Equity 등 영문 용어 사용.")
+
+render_navigation()
 
 with st.sidebar:
     st.header("기본 설정")
