@@ -19,14 +19,14 @@ from dongpa_engine import (
 )
 
 
-SETTINGS_PATH = Path("outputs") / "loc_scheduler_settings.json"
-HISTORY_PATH = Path("outputs") / "loc_trade_history.csv"
+SETTINGS_PATH = Path("config") / "order_book_settings.json"
+HISTORY_PATH = Path("outputs") / "order_book_history.csv"
 LOOKBACK_DAYS = 400
 
 NAV_LINKS = [
-    ("app_dongpa.py", "backtest"),
+    ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
-    ("pages/2_LOC_Scheduler.py", "orderBook"),
+    ("pages/2_orderBook.py", "orderBook"),
 ]
 
 
@@ -58,7 +58,7 @@ def _load_settings() -> dict:
 
 
 def _save_settings(payload: dict) -> None:
-    SETTINGS_PATH.parent.mkdir(exist_ok=True)
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with SETTINGS_PATH.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
 

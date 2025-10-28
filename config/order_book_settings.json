@@ -1,0 +1,20 @@
+{
+  "target": "SOXL",
+  "momentum": "QQQ",
+  "bench": "SOXX",
+  "enable_netting": true,
+  "pcr": 0.8,
+  "lcr": 0.3,
+  "cycle": 7,
+  "init_cash": 10000.0,
+  "defense_slices": 5,
+  "defense_buy": 3.5,
+  "defense_tp": 0.2,
+  "defense_sl": 16.0,
+  "defense_hold": 24,
+  "offense_slices": 5,
+  "offense_buy": 6.0,
+  "offense_tp": 3.5,
+  "offense_sl": 18.0,
+  "offense_hold": 7
+}

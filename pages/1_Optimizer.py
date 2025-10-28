@@ -11,9 +11,9 @@ import streamlit as st
 from dongpa_optimizer import OptimizerConfig, optimize
 
 NAV_LINKS = [
-    ("app_dongpa.py", "backtest"),
+    ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
-    ("pages/2_LOC_Scheduler.py", "orderBook"),
+    ("pages/2_orderBook.py", "orderBook"),
 ]
 
 

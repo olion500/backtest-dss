@@ -10,9 +10,9 @@ from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBack
 
 
 NAV_LINKS = [
-    ("app_dongpa.py", "backtest"),
+    ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
-    ("pages/2_LOC_Scheduler.py", "orderBook"),
+    ("pages/2_orderBook.py", "orderBook"),
 ]
 
 
