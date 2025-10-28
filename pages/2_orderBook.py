@@ -20,7 +20,7 @@ from dongpa_engine import (
 
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
-HISTORY_PATH = Path("outputs") / "order_book_history.csv"
+HISTORY_PATH = Path("config") / "order_book_history.csv"
 LOOKBACK_DAYS = 400
 
 NAV_LINKS = [
@@ -108,19 +108,40 @@ def _prepare_defaults(saved: dict) -> dict:
     }
 
 
-def _build_buy_orders(daily_row: pd.Series) -> pd.DataFrame:
-    orders: list[dict[str, object]] = []
-    qty = _safe_int(daily_row.get("원매수수량", 0))
-    if pd.notna(daily_row.get("매수주문가")) and qty > 0:
-        orders.append(
-            {
-                "주문가": daily_row["매수주문가"],
-                "수량": qty,
-                "예상금액": daily_row["원매수금액"],
-                "트렌치예산": daily_row.get("일일트렌치예산"),
-            }
-        )
-    return pd.DataFrame(orders)
+def _build_buy_orders(daily_row: pd.Series, available_cash: float | None = None) -> pd.DataFrame:
+    limit_price = _safe_float(daily_row.get("매수주문가"))
+    tranche_budget = _safe_float(daily_row.get("일일트렌치예산"))
+    if limit_price is None or limit_price <= 0 or tranche_budget is None or tranche_budget <= 0:
+        return pd.DataFrame()
+
+    effective_budget = tranche_budget
+    if available_cash is not None and available_cash > 0:
+        effective_budget = min(effective_budget, available_cash)
+
+    qty = int(effective_budget // limit_price)
+    raw_qty = _safe_int(daily_row.get("원매수수량", 0))
+    if qty <= 0 and raw_qty > 0:
+        qty = raw_qty
+    if raw_qty > 0:
+        qty = min(qty, raw_qty)
+
+    if qty <= 0:
+        return pd.DataFrame()
+
+    planned_value = limit_price * qty
+    if planned_value > effective_budget:
+        planned_value = effective_budget
+
+    record = {
+        "주문가": limit_price,
+        "수량": qty,
+        "예상금액": planned_value,
+        "트렌치예산": tranche_budget,
+    }
+    if available_cash is not None:
+        record["사용가능현금"] = available_cash
+
+    return pd.DataFrame([record])
 
 
 def _build_sell_orders(trades: pd.DataFrame, target_day: pd.Timestamp) -> pd.DataFrame:
@@ -232,9 +253,19 @@ def _load_trade_history() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def _save_trade_history(trades: pd.DataFrame) -> None:
-    HISTORY_PATH.parent.mkdir(exist_ok=True)
-    trades.to_csv(HISTORY_PATH, index=False, encoding="utf-8-sig")
+def _save_trade_history(new_trades: pd.DataFrame, existing: pd.DataFrame | None = None) -> pd.DataFrame:
+    if existing is not None and not existing.empty:
+        combined = pd.concat([existing, new_trades], ignore_index=True)
+        dedupe_cols = [col for col in ("거래ID", "매수일자", "매수체결가") if col in combined.columns]
+        if dedupe_cols:
+            combined = combined.drop_duplicates(subset=dedupe_cols, keep="last")
+        combined = combined.sort_values(by=dedupe_cols or combined.columns.tolist()).reset_index(drop=True)
+    else:
+        combined = new_trades.copy().reset_index(drop=True)
+
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(HISTORY_PATH, index=False, encoding="utf-8-sig")
+    return combined
 
 
 def _compute_metrics(trade_log: pd.DataFrame, initial_cash: float) -> dict[str, float | int | None] | None:
@@ -457,7 +488,7 @@ if journal.empty:
     st.stop()
 
 journal["거래일자"] = pd.to_datetime(journal["거래일자"], errors="coerce")
-plan_row = journal.iloc[-1]
+plan_row = journal.iloc[-1].copy()
 plan_date = plan_row["거래일자"].date()
 plan_timestamp = pd.Timestamp(plan_date)
 
@@ -490,6 +521,32 @@ if not open_trades_df.empty:
         if col in open_trades_df.columns:
             open_trades_df[col] = pd.to_datetime(open_trades_df[col], errors="coerce")
 
+if history_df.empty:
+    cash_available = float(ui_values["init_cash"])
+    position_qty = 0
+    slices = ui_values["offense_slices"] if plan_mode == "offense" else ui_values["defense_slices"]
+    tranche_budget = cash_available / max(1, slices)
+    plan_row["일일트렌치예산"] = tranche_budget
+
+    limit_price = _safe_float(plan_row.get("매수주문가"))
+    if limit_price is not None and limit_price > 0:
+        qty = int(tranche_budget // limit_price)
+        if qty > 0:
+            buy_value = limit_price * qty
+            for col in ("원매수수량", "매수수량", "순매수수량"):
+                plan_row[col] = qty
+            for col in ("원매수금액", "매수금액", "순매수금액"):
+                plan_row[col] = buy_value
+        else:
+            for col in ("원매수수량", "매수수량", "순매수수량"):
+                plan_row[col] = 0
+            for col in ("원매수금액", "매수금액", "순매수금액"):
+                plan_row[col] = 0.0
+else:
+    if cash_available is None:
+        cash_available = float(ui_values["init_cash"])
+    position_qty = position_qty if position_qty is not None else 0
+
 st.subheader(f"{plan_date:%Y-%m-%d} LOC 주문 계획")
 mode_label = "공세" if plan_mode == "offense" else "안전"
 mode_line = f"현재 모드: **{mode_label}**"
@@ -505,7 +562,7 @@ col_buy, col_sell = st.columns(2)
 
 with col_buy:
     st.markdown("**매수 주문**")
-    buy_df = _build_buy_orders(plan_row)
+    buy_df = _build_buy_orders(plan_row, cash_available)
     if buy_df.empty:
         st.write("매수 주문 없음")
     else:
@@ -528,9 +585,16 @@ net_df = _build_net_summary(plan_row)
 st.dataframe(net_df, use_container_width=True)
 
 if st.button("이 주문대로 실행 완료", type="primary"):
-    _save_trade_history(trade_log)
-    st.success("거래 내역을 저장했습니다.")
-    st.experimental_rerun()
+    plan_date_str = plan_date.strftime("%Y-%m-%d")
+    today_trades = pd.DataFrame()
+    if not trade_log.empty and "매수일자" in trade_log.columns:
+        today_trades = trade_log.loc[trade_log["매수일자"] == plan_date_str].copy()
+
+    if today_trades.empty:
+        st.info("오늘 기준으로 저장할 신규 트랜치가 없습니다.")
+    else:
+        history_df = _save_trade_history(today_trades, history_df if not history_df.empty else None)
+        st.success("거래 내역을 저장했습니다.")
 
 st.caption(
     "매도 주문은 선택한 거래일 시작 시점 기준 보유 중인 트랜치의 TP/SL/MOC 설정입니다. "
