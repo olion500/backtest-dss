@@ -10,6 +10,32 @@ import streamlit as st
 
 from dongpa_optimizer import OptimizerConfig, optimize
 
+NAV_LINKS = [
+    ("backtest.py", "backtest"),
+    ("pages/1_Optimizer.py", "Optimizer"),
+    ("pages/2_orderBook.py", "orderBook"),
+]
+
+
+def render_navigation() -> None:
+    st.markdown(
+        """
+        <style>
+        [data-testid='stSidebarNav'] {display: none;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.sidebar.markdown("### Pages")
+    for path, label in NAV_LINKS:
+        st.sidebar.page_link(path, label=label)
+    st.sidebar.divider()
+
+
+st.set_page_config(page_title="Optimizer", layout="wide")
+
+render_navigation()
+
 st.title("동파 파라미터 최적화")
 st.caption(
     "2022년과 2025년 데이터를 학습 구간으로, 2023~2024년을 테스트 구간으로 사용합니다. "

@@ -24,7 +24,7 @@ install:
 	python -m pip install --requirement requirements.txt
 
 run-local:
-	streamlit run app_dongpa.py --server.address=0.0.0.0 --server.port=$(PORT)
+	streamlit run backtest.py --server.address=0.0.0.0 --server.port=$(PORT)
 
 build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .

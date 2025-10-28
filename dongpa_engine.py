@@ -341,7 +341,7 @@ class DongpaBacktester:
                         "실현손익": money_to_float(pnl),
                         "수익률(%)": pnl_pct,
                         "청산사유": sell_reason,
-                        "상태": "청산",
+                        "상태": "완료",
                     })
                     sell_qty_total += lot['qty']
                     sell_amt_total = money(sell_amt_total + proceeds)

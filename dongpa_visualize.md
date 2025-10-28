@@ -1,8 +1,8 @@
 # 동파법 대시보드 시각화 가이드
 
 ## 1) 개요
-- `app_dongpa.py`는 Streamlit 기반 대시보드로 전략 입력값을 받고 결과를 시각화한다.
-- 실행 명령: `streamlit run app_dongpa.py`
+- `backtest.py`는 Streamlit 기반 대시보드로 전략 입력값을 받고 결과를 시각화한다.
+- 실행 명령: `streamlit run backtest.py`
 - 다운로드된 시세는 `outputs/` 폴더에 CSV로 저장되어 재사용할 수 있다.
 
 ---

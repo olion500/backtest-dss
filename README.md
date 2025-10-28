@@ -5,7 +5,7 @@ Streamlit front-end for the Dongpa LOC backtest engine. The app lets you load ta
 ## Quick Start
 
 - `make install` installs the Python dependencies locally.
-- `make run-local` launches `streamlit run app_dongpa.py` on port 8501.
+- `make run-local` launches `streamlit run backtest.py` on port 8501.
 - `make build && make run` builds the Docker image (`dongpa:latest`) and serves the app via Docker.
 - `make build-dev && make dev` mounts the working tree into a dev container for live code reloads.
 
@@ -13,7 +13,7 @@ The app writes downloaded pricing data under `outputs/` (ignored by git). Delete
 
 ## Project Layout
 
-- `app_dongpa.py` — Streamlit UI for configuring the strategy and rendering metrics.
+- `backtest.py` — Streamlit UI for configuring the strategy and rendering metrics.
 - `dongpa_engine.py` — vectorised LOC backtest core with weekly RSI mode switching.
 - `Dockerfile` / `Dockerfile.dev` — container definitions for production and mounted dev workflows.
 - `Makefile` — helper targets for local installs, Docker builds, shells, and dev loops.
@@ -25,4 +25,3 @@ The app writes downloaded pricing data under `outputs/` (ignored by git). Delete
 - Use `make shell` after `make build` to drop into a bash shell inside the container.
 - Streamlit serves on `http://localhost:8501`; override the host port with `PORT=xxxx make run-local`.
 - The backtester enforces integer share sizes, LOC execution, and mode-dependent tranche management. Read `dongpa_strategy.md` for the complete ruleset.
-
