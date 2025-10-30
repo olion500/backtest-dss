@@ -16,11 +16,11 @@ from dongpa_engine import (
     DongpaBacktester,
     ModeParams,
     StrategyParams,
+    summarize,
 )
 
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
-HISTORY_PATH = Path("config") / "order_book_history.csv"
 LOOKBACK_DAYS = 400
 
 NAV_LINKS = [
@@ -108,96 +108,6 @@ def _prepare_defaults(saved: dict) -> dict:
     }
 
 
-def _build_buy_orders(daily_row: pd.Series, available_cash: float | None = None) -> pd.DataFrame:
-    limit_price = _safe_float(daily_row.get("매수주문가"))
-    tranche_budget = _safe_float(daily_row.get("일일트렌치예산"))
-    if limit_price is None or limit_price <= 0 or tranche_budget is None or tranche_budget <= 0:
-        return pd.DataFrame()
-
-    effective_budget = tranche_budget
-    if available_cash is not None and available_cash > 0:
-        effective_budget = min(effective_budget, available_cash)
-
-    qty = int(effective_budget // limit_price)
-    raw_qty = _safe_int(daily_row.get("원매수수량", 0))
-    if qty <= 0 and raw_qty > 0:
-        qty = raw_qty
-    if raw_qty > 0:
-        qty = min(qty, raw_qty)
-
-    if qty <= 0:
-        return pd.DataFrame()
-
-    planned_value = limit_price * qty
-    if planned_value > effective_budget:
-        planned_value = effective_budget
-
-    record = {
-        "주문가": limit_price,
-        "수량": qty,
-        "예상금액": planned_value,
-        "트렌치예산": tranche_budget,
-    }
-    if available_cash is not None:
-        record["사용가능현금"] = available_cash
-
-    return pd.DataFrame([record])
-
-
-def _build_sell_orders(trades: pd.DataFrame, target_day: pd.Timestamp) -> pd.DataFrame:
-    if trades.empty:
-        return pd.DataFrame()
-
-    df = trades.copy()
-    df["매수일자"] = pd.to_datetime(df["매수일자"], errors="coerce")
-    df["매도일자"] = pd.to_datetime(df["매도일자"], errors="coerce")
-    df = df.loc[
-        (df["매수일자"] <= target_day)
-        & (df["매도일자"].isna() | (df["매도일자"] >= target_day))
-    ].copy()
-    if df.empty:
-        return pd.DataFrame()
-
-    df["매수수량"] = pd.to_numeric(df.get("매수수량"), errors="coerce")
-    df["최대보유일"] = pd.to_numeric(df.get("최대보유일"), errors="coerce")
-    df = df.dropna(subset=["매수수량", "최대보유일"])
-    if df.empty:
-        return pd.DataFrame()
-
-    df["매수수량"] = df["매수수량"].astype(int)
-    df["최대보유일"] = df["최대보유일"].astype(int)
-    df["만료예정일"] = df["매수일자"] + pd.to_timedelta(df["최대보유일"] - 1, unit="D")
-    df["잔여일수"] = (df["만료예정일"] - target_day).dt.days
-    df["TP목표가"] = pd.to_numeric(df["TP목표가"], errors="coerce")
-    df["SL목표가"] = pd.to_numeric(df["SL목표가"], errors="coerce")
-
-    columns = [
-        "거래ID",
-        "매수일자",
-        "매수수량",
-        "TP목표가",
-        "SL목표가",
-        "만료예정일",
-        "잔여일수",
-        "청산사유",
-        "상태",
-    ]
-    present_cols = [c for c in columns if c in df.columns]
-    return df[present_cols].sort_values("거래ID")
-
-
-def _build_net_summary(daily_row: pd.Series) -> pd.DataFrame:
-    data = {
-        "순매수수량": _safe_int(daily_row.get("매수수량", 0)),
-        "순매도수량": _safe_int(daily_row.get("매도수량", 0)),
-        "순매수금액": _safe_float(daily_row.get("매수금액")),
-        "순매도금액": _safe_float(daily_row.get("매도금액")),
-        "퉁치기적용": bool(daily_row.get("퉁치기적용", False)),
-        "퉁치기상세": daily_row.get("퉁치기상세"),
-    }
-    return pd.DataFrame([data])
-
-
 def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
     defense = ModeParams(
         buy_cond_pct=ui_values["defense_buy"],
@@ -235,37 +145,6 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
     return strategy, capital
 
 
-def _serialize_settings(ui_values: dict) -> dict:
-    return ui_values.copy()
-
-
-def _load_trade_history() -> pd.DataFrame:
-    if HISTORY_PATH.exists():
-        try:
-            df = pd.read_csv(HISTORY_PATH)
-            if not df.empty:
-                for col in ("매수일자", "매도일자", "만료예정일"):
-                    if col in df.columns:
-                        df[col] = pd.to_datetime(df[col], errors="coerce")
-            return df
-        except (OSError, pd.errors.ParserError):
-            return pd.DataFrame()
-    return pd.DataFrame()
-
-
-def _save_trade_history(new_trades: pd.DataFrame, existing: pd.DataFrame | None = None) -> pd.DataFrame:
-    if existing is not None and not existing.empty:
-        combined = pd.concat([existing, new_trades], ignore_index=True)
-        dedupe_cols = [col for col in ("거래ID", "매수일자", "매수체결가") if col in combined.columns]
-        if dedupe_cols:
-            combined = combined.drop_duplicates(subset=dedupe_cols, keep="last")
-        combined = combined.sort_values(by=dedupe_cols or combined.columns.tolist()).reset_index(drop=True)
-    else:
-        combined = new_trades.copy().reset_index(drop=True)
-
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    combined.to_csv(HISTORY_PATH, index=False, encoding="utf-8-sig")
-    return combined
 
 
 def _compute_metrics(trade_log: pd.DataFrame, initial_cash: float) -> dict[str, float | int | None] | None:
@@ -359,6 +238,24 @@ st.caption("동파 LOC 주문 스케줄러. 오늘 기준 LOC 예약 주문과 �
 
 with st.sidebar:
     st.header("기본 설정")
+
+    # Start date selection
+    default_start = saved_values.get("start_date")
+    if default_start:
+        try:
+            default_start = date.fromisoformat(default_start)
+        except (ValueError, TypeError):
+            default_start = today - timedelta(days=180)
+    else:
+        default_start = today - timedelta(days=180)
+
+    start_date = st.date_input(
+        "백테스트 시작일",
+        value=default_start,
+        max_value=today,
+        help="이 날짜부터 오늘까지 백테스트를 실행합니다. RSI 계산을 위해 충분히 이전 날짜부터 시작하세요."
+    )
+
     col_a, col_b = st.columns(2)
     target = col_a.text_input("투자 종목 코드", value=defaults["target"])
     momentum = col_b.text_input("모멘텀 종목(주봉 RSI 계산)", value=defaults["momentum"])
@@ -409,6 +306,7 @@ with st.sidebar:
 
     if st.button("설정 저장"):
         settings_payload = {
+            "start_date": start_date.isoformat(),
             "target": target,
             "momentum": momentum,
             "bench": bench,
@@ -428,11 +326,12 @@ with st.sidebar:
             "offense_sl": off_sl,
             "offense_hold": off_hold,
         }
-        _save_settings(_serialize_settings(settings_payload))
+        _save_settings(settings_payload)
         st.success("설정을 저장했습니다.")
 
 
 ui_values = {
+    "start_date": start_date,
     "target": target.strip().upper(),
     "momentum": momentum.strip().upper(),
     "bench": bench.strip().upper(),
@@ -454,20 +353,22 @@ ui_values = {
 }
 
 
-start_fetch = today - timedelta(days=LOOKBACK_DAYS)
+# Calculate data fetch range
+# We need extra data before start_date for RSI calculation (at least 100 days for weekly RSI with 14 period)
+data_fetch_start = start_date - timedelta(days=LOOKBACK_DAYS)
 end_fetch = today + timedelta(days=1)
 
-with st.spinner("전일 종가와 RSI를 계산하는 중..."):
+with st.spinner(f"{start_date}부터 {today}까지 백테스트 실행 중..."):
     df_target = yf.download(
         ui_values["target"],
-        start=start_fetch,
+        start=data_fetch_start,
         end=end_fetch,
         progress=False,
         auto_adjust=False,
     )
     df_momo = yf.download(
         ui_values["momentum"],
-        start=start_fetch,
+        start=data_fetch_start,
         end=end_fetch,
         progress=False,
         auto_adjust=False,
@@ -477,8 +378,16 @@ if df_target.empty or df_momo.empty:
     st.error("데이터가 비어 있습니다. 티커를 확인하거나 거래 가능일을 기다려 주세요.")
     st.stop()
 
+# Filter data to start from start_date for backtesting
+df_target_filtered = df_target[df_target.index >= pd.Timestamp(start_date)]
+df_momo_filtered = df_momo[df_momo.index >= pd.Timestamp(start_date)]
+
+if df_target_filtered.empty:
+    st.error(f"{start_date} 이후 데이터가 없습니다. 시작일을 확인해주세요.")
+    st.stop()
+
 strategy, capital = _collect_params(ui_values)
-backtester = DongpaBacktester(df_target, df_momo, strategy, capital)
+backtester = DongpaBacktester(df_target_filtered, df_momo_filtered, strategy, capital)
 result = backtester.run()
 journal = result.get("journal", pd.DataFrame())
 trade_log = result.get("trade_log", pd.DataFrame())
@@ -487,163 +396,347 @@ if journal.empty:
     st.warning("거래 기록이 없습니다.")
     st.stop()
 
+# Get last trading day state
 journal["거래일자"] = pd.to_datetime(journal["거래일자"], errors="coerce")
-plan_row = journal.iloc[-1].copy()
-plan_date = plan_row["거래일자"].date()
-plan_timestamp = pd.Timestamp(plan_date)
+last_row = journal.iloc[-1].copy()
+last_date = last_row["거래일자"].date()
+last_timestamp = pd.Timestamp(last_date)
 
-plan_mode = plan_row.get("모드", "안전")
+# Extract current state
+current_mode = last_row.get("모드", "안전")
+current_cash = _safe_float(last_row.get("현금")) or float(ui_values["init_cash"])
+current_position_qty = _safe_int(last_row.get("보유수량"))
+prev_close = _safe_float(last_row.get("종가"))
+tranche_budget = _safe_float(last_row.get("일일트렌치예산"))
+
+# Get RSI value
 rsi_value = None
-if hasattr(backtester, "daily_rsi") and plan_timestamp in backtester.daily_rsi.index:
-    rsi_raw = backtester.daily_rsi.loc[plan_timestamp]
+if hasattr(backtester, "daily_rsi") and last_timestamp in backtester.daily_rsi.index:
+    rsi_raw = backtester.daily_rsi.loc[last_timestamp]
     if isinstance(rsi_raw, pd.Series):
         rsi_raw = rsi_raw.squeeze()
-    try:
-        if rsi_raw is not None and not pd.isna(rsi_raw):
-            rsi_value = float(rsi_raw)
-    except (TypeError, ValueError):
-        rsi_value = None
+    if rsi_raw is not None and not pd.isna(rsi_raw):
+        rsi_value = float(rsi_raw)
 
-prev_close = _safe_float(plan_row.get("종가"))
+# Get open positions from trade_log
+open_trades = trade_log[trade_log.get("상태") != "완료"].copy() if not trade_log.empty else pd.DataFrame()
 
-cash_available = _safe_float(plan_row.get("현금"))
-position_qty = _safe_int(plan_row.get("보유수량"))
-
-history_df = _load_trade_history()
-open_trades_df = pd.DataFrame()
-if not history_df.empty:
-    open_trades_df = history_df.copy()
-    if "상태" in open_trades_df.columns:
-        open_trades_df = open_trades_df[open_trades_df["상태"] != "완료"].copy()
-
-if not open_trades_df.empty:
-    for col in ("매수일자", "매도일자", "만료예정일"):
-        if col in open_trades_df.columns:
-            open_trades_df[col] = pd.to_datetime(open_trades_df[col], errors="coerce")
-
-if history_df.empty:
-    cash_available = float(ui_values["init_cash"])
-    position_qty = 0
-    slices = ui_values["offense_slices"] if plan_mode == "offense" else ui_values["defense_slices"]
-    tranche_budget = cash_available / max(1, slices)
-    plan_row["일일트렌치예산"] = tranche_budget
-
-    limit_price = _safe_float(plan_row.get("매수주문가"))
-    if limit_price is not None and limit_price > 0:
-        qty = int(tranche_budget // limit_price)
-        if qty > 0:
-            buy_value = limit_price * qty
-            for col in ("원매수수량", "매수수량", "순매수수량"):
-                plan_row[col] = qty
-            for col in ("원매수금액", "매수금액", "순매수금액"):
-                plan_row[col] = buy_value
-        else:
-            for col in ("원매수수량", "매수수량", "순매수수량"):
-                plan_row[col] = 0
-            for col in ("원매수금액", "매수금액", "순매수금액"):
-                plan_row[col] = 0.0
-else:
-    if cash_available is None:
-        cash_available = float(ui_values["init_cash"])
-    position_qty = position_qty if position_qty is not None else 0
-
-st.subheader(f"{plan_date:%Y-%m-%d} LOC 주문 계획")
-mode_label = "공세" if plan_mode == "offense" else "안전"
+st.subheader(f"백테스트 결과 ({start_date} ~ {last_date})")
+mode_label = "공세" if current_mode == "offense" else "안전"
 mode_line = f"현재 모드: **{mode_label}**"
 if rsi_value is not None:
     mode_line += f" (주봉 RSI {rsi_value:.2f})"
 st.markdown(mode_line)
 if prev_close is not None:
-    st.markdown(f"전일 종가: **${prev_close:,.2f}**")
-if cash_available is not None:
-    st.markdown(f"잔여 현금: **${cash_available:,.2f}**, 보유 수량: **{position_qty}주**")
+    st.markdown(f"최근 종가 ({last_date}): **${prev_close:,.2f}**")
+st.markdown(f"잔여 현금: **${current_cash:,.2f}**, 보유 수량: **{current_position_qty}주**")
+if tranche_budget:
+    st.markdown(f"현재 트렌치 예산: **${tranche_budget:,.2f}**")
 
-col_buy, col_sell = st.columns(2)
+st.markdown("---")
 
-with col_buy:
-    st.markdown("**매수 주문**")
-    buy_df = _build_buy_orders(plan_row, cash_available)
-    if buy_df.empty:
-        st.write("매수 주문 없음")
+# Show current holdings
+st.subheader("보유 포지션 현황")
+if not open_trades.empty and prev_close:
+    holdings = []
+    for _, trade in open_trades.iterrows():
+        buy_date = trade.get("매수일자", "")
+        buy_price = _safe_float(trade.get("매수체결가"))
+        buy_qty = _safe_int(trade.get("매수수량", 0))
+        tp_price = _safe_float(trade.get("TP목표가"))
+        sl_price = _safe_float(trade.get("SL목표가"))
+        max_hold = _safe_int(trade.get("최대보유일", 0))
+
+        if buy_qty > 0:
+            # Calculate current P&L
+            current_value = prev_close * buy_qty if prev_close else 0
+            cost_basis = buy_price * buy_qty if buy_price else 0
+            unrealized_pnl = current_value - cost_basis
+            unrealized_pct = ((prev_close / buy_price) - 1) * 100 if buy_price and prev_close else None
+
+            # Check expiration
+            buy_date_ts = pd.to_datetime(buy_date, errors="coerce")
+            days_left = None
+            if pd.notna(buy_date_ts) and max_hold > 0:
+                expire_date = buy_date_ts + pd.Timedelta(days=max_hold - 1)
+                days_left = (expire_date - last_timestamp).days
+
+            # Determine status
+            status = []
+            if tp_price and prev_close and prev_close >= tp_price:
+                status.append("TP도달")
+            if sl_price and prev_close and prev_close <= sl_price:
+                status.append("SL도달")
+            if days_left is not None and days_left <= 0:
+                status.append("만료")
+
+            holdings.append({
+                "매수일자": buy_date,
+                "매수가": f"${buy_price:.2f}" if buy_price else "-",
+                "수량": buy_qty,
+                "현재가": f"${prev_close:.2f}" if prev_close else "-",
+                "평가손익": f"${unrealized_pnl:.2f}" if unrealized_pnl else "$0.00",
+                "수익률": f"{unrealized_pct:.1f}%" if unrealized_pct is not None else "-",
+                "TP": f"${tp_price:.2f}" if tp_price else "-",
+                "SL": f"${sl_price:.2f}" if sl_price else "-",
+                "잔여일": days_left if days_left is not None else "-",
+                "상태": ", ".join(status) if status else "보유중",
+            })
+
+    if holdings:
+        holdings_df = pd.DataFrame(holdings)
+        st.dataframe(holdings_df, use_container_width=True, hide_index=True)
+
+        # Summary
+        total_qty = sum(h["수량"] for h in holdings)
+        st.caption(f"총 보유 수량: {total_qty}주 | 보유 종목: {ui_values['target']}")
     else:
-        st.dataframe(buy_df, use_container_width=True)
+        st.write("보유 중인 포지션이 없습니다.")
+else:
+    st.write("보유 중인 포지션이 없습니다.")
 
-with col_sell:
-    st.markdown("**매도 주문 (보유 트랜치)**")
-    sell_source = open_trades_df if not open_trades_df.empty else pd.DataFrame()
-    sell_df = _build_sell_orders(sell_source, plan_timestamp)
-    if sell_df.empty:
-        if open_trades_df.empty:
-            st.write("보유 중인 트랜치가 없습니다.")
-        else:
-            st.write("매도 주문 없음")
-    else:
-        st.dataframe(sell_df, use_container_width=True)
+st.markdown("---")
 
-st.markdown("**최종 주문 (퉁치기 반영)**")
-net_df = _build_net_summary(plan_row)
-st.dataframe(net_df, use_container_width=True)
+st.subheader(f"다음 거래일 LOC 주문 시트")
 
-if st.button("이 주문대로 실행 완료", type="primary"):
-    plan_date_str = plan_date.strftime("%Y-%m-%d")
-    today_trades = pd.DataFrame()
-    if not trade_log.empty and "매수일자" in trade_log.columns:
-        today_trades = trade_log.loc[trade_log["매수일자"] == plan_date_str].copy()
+# Build unified order sheet
+order_sheet = []
 
-    if today_trades.empty:
-        st.info("오늘 기준으로 저장할 신규 트랜치가 없습니다.")
-    else:
-        history_df = _save_trade_history(today_trades, history_df if not history_df.empty else None)
-        st.success("거래 내역을 저장했습니다.")
+# Add sell orders (TP and SL for each open position)
+if not open_trades.empty and prev_close:
+    for idx, trade in open_trades.iterrows():
+        buy_date = trade.get("매수일자", "")
+        buy_price = _safe_float(trade.get("매수체결가"))
+        buy_qty = _safe_int(trade.get("매수수량", 0))
+        tp_price = _safe_float(trade.get("TP목표가"))
+        sl_price = _safe_float(trade.get("SL목표가"))
+        max_hold = _safe_int(trade.get("최대보유일", 0))
+
+        if buy_qty > 0:
+            # Calculate days left
+            buy_date_ts = pd.to_datetime(buy_date, errors="coerce")
+            days_left = None
+            is_expiring = False
+            if pd.notna(buy_date_ts) and max_hold > 0:
+                expire_date = buy_date_ts + pd.Timedelta(days=max_hold - 1)
+                days_left = (expire_date - last_timestamp).days
+                is_expiring = days_left <= 0
+
+            # TP sell order
+            if tp_price and tp_price > 0:
+                tp_change = ((tp_price / buy_price) - 1) * 100 if buy_price else None
+                order_sheet.append({
+                    "구분": "매도 (TP)",
+                    "주문가": tp_price,
+                    "수량": buy_qty,
+                    "변화율": f"{tp_change:+.1f}%" if tp_change is not None else "-",
+                    "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else ""
+                })
+
+            # SL sell order
+            if sl_price and sl_price > 0:
+                sl_change = ((sl_price / buy_price) - 1) * 100 if buy_price else None
+                order_sheet.append({
+                    "구분": "매도 (SL)",
+                    "주문가": sl_price,
+                    "수량": buy_qty,
+                    "변화율": f"{sl_change:+.1f}%" if sl_change is not None else "-",
+                    "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else ""
+                })
+
+            # Expiration sell order (if near expiration)
+            if is_expiring:
+                order_sheet.append({
+                    "구분": "매도 (만료)",
+                    "주문가": prev_close,
+                    "수량": buy_qty,
+                    "변화율": f"{((prev_close / buy_price) - 1) * 100:+.1f}%" if buy_price and prev_close else "-",
+                    "비고": f"잔여일: {days_left}일"
+                })
+
+# Add buy order (new tranche)
+if current_cash > 0 and tranche_budget and tranche_budget > 0:
+    mode_params = ui_values["defense_buy"] if current_mode == "defense" else ui_values["offense_buy"]
+    buy_limit_price = prev_close * (1 + mode_params / 100) if prev_close else None
+
+    if buy_limit_price and buy_limit_price > 0:
+        effective_budget = min(tranche_budget, current_cash)
+        buy_qty = int(effective_budget // buy_limit_price)
+
+        if buy_qty > 0:
+            # Calculate TP and SL for the new position
+            tp_pct = ui_values["defense_tp"] if current_mode == "defense" else ui_values["offense_tp"]
+            sl_pct = ui_values["defense_sl"] if current_mode == "defense" else ui_values["offense_sl"]
+
+            new_tp = buy_limit_price * (1 + tp_pct / 100)
+            new_sl = buy_limit_price * (1 - sl_pct / 100) if sl_pct > 0 else None
+
+            order_sheet.append({
+                "구분": "매수",
+                "주문가": buy_limit_price,
+                "수량": buy_qty,
+                "변화율": f"{mode_params:+.1f}%",
+                "비고": f"→ TP: ${new_tp:.2f}, SL: ${new_sl:.2f}" if new_sl else f"→ TP: ${new_tp:.2f}"
+            })
+
+# Display order sheet
+if order_sheet:
+    order_df = pd.DataFrame(order_sheet)
+
+    # Format price column
+    order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
+
+    st.dataframe(order_df, use_container_width=True, hide_index=True)
+
+    # Netting summary
+    net_buy_qty = _safe_int(last_row.get("매수수량", 0))
+    net_sell_qty = _safe_int(last_row.get("매도수량", 0))
+    netting_applied = last_row.get("퉁치기적용", False)
+
+    if netting_applied:
+        st.info(f"✅ 퉁치기 적용: 실제 매수 {net_buy_qty}주, 매도 {net_sell_qty}주로 상쇄됨")
+
+    # Instructions
+    st.markdown("---")
+    st.markdown("**📝 예약 주문 입력 방법**")
+    st.markdown("""
+    1. **매도 주문 (TP/SL)**: 각 보유 포지션마다 TP와 SL 두 개의 매도 LOC 주문을 입력
+       - 주문 유형: **Limit on Close (LOC)**
+       - 주문 수량: 위 테이블의 수량
+       - 지정가: 위 테이블의 주문가
+
+    2. **매수 주문**: 새 트랜치 진입
+       - 주문 유형: **Limit on Close (LOC)**
+       - 주문 수량: 위 테이블의 수량
+       - 지정가: 위 테이블의 주문가
+       - 체결되면 자동으로 TP/SL 매도 주문 추가 필요
+
+    3. **퉁치기 적용 시**: 종가에 같은 가격으로 매수/매도가 발생하면 순수량만 거래
+    """)
+else:
+    st.write("예정된 주문이 없습니다.")
+
+st.markdown("---")
+
+# Equity curve and performance metrics
+equity = result.get("equity", pd.Series())
+if not equity.empty:
+    st.subheader("Equity Curve")
+    st.line_chart(equity)
+
+    # Calculate summary metrics
+    summary_metrics = summarize(equity)
+
+    # Calculate Buy & Hold returns
+    target_hold_pct = None
+    if not df_target_filtered.empty and "Close" in df_target_filtered.columns:
+        closes = df_target_filtered["Close"].dropna()
+        if len(closes) > 1:
+            target_hold_pct = float(((closes.iloc[-1] / closes.iloc[0]) - 1) * 100.0)
+
+    momo_hold_pct = None
+    if not df_momo_filtered.empty and "Close" in df_momo_filtered.columns:
+        closes = df_momo_filtered["Close"].dropna()
+        if len(closes) > 1:
+            momo_hold_pct = float(((closes.iloc[-1] / closes.iloc[0]) - 1) * 100.0)
+
+    strategy_pct = None
+    if len(equity) > 1:
+        strategy_pct = float(((equity.iloc[-1] / equity.iloc[0]) - 1) * 100.0)
+
+    st.subheader("요약 지표")
+    summary_top = st.columns(4)
+    summary_top[0].metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
+    summary_top[1].metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
+    summary_top[2].metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
+    summary_top[3].metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+
+    summary_bottom = st.columns(4)
+    summary_bottom[0].metric(
+        f"{ui_values['momentum']} 보유 수익률",
+        f"{momo_hold_pct:.2f}%" if momo_hold_pct is not None else "-",
+    )
+    summary_bottom[1].metric(
+        f"{ui_values['target']} 보유 수익률",
+        f"{target_hold_pct:.2f}%" if target_hold_pct is not None else "-",
+    )
+    summary_bottom[2].metric(
+        "전략 누적 수익률",
+        f"{strategy_pct:.2f}%" if strategy_pct is not None else "-",
+    )
+    summary_bottom[3].metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
+
+# Trade metrics
+metrics = _compute_metrics(trade_log, float(ui_values["init_cash"]))
+if metrics:
+    st.markdown("---")
+    st.subheader("실현 지표")
+    tm_row1 = st.columns(4)
+    tm_row1[0].metric("거래횟수", f"{metrics['trade_count']:,}")
+    tm_row1[1].metric("MOC 횟수", f"{metrics['moc_count']:,}")
+    tm_row1[2].metric("평균 보유일", f"{metrics['avg_hold_days']:.2f}" if metrics['avg_hold_days'] is not None else "-")
+    tm_row1[3].metric("이익금", f"${metrics['net_profit']:,.2f}")
+
+    tm_row2 = st.columns(4)
+    tm_row2[0].metric("평균 이익률", f"{metrics['avg_gain_pct']:.2f}%" if metrics['avg_gain_pct'] is not None else "-")
+    tm_row2[1].metric("평균 손해률", f"{metrics['avg_loss_pct']:.2f}%" if metrics['avg_loss_pct'] is not None else "-")
+    tm_row2[2].metric("평균 실현이익", f"${metrics['avg_gain']:,.2f}" if metrics['avg_gain'] is not None else "-")
+    tm_row2[3].metric("평균 실현손해", f"${metrics['avg_loss']:,.2f}" if metrics['avg_loss'] is not None else "-")
+else:
+    st.info("완료된 거래가 없습니다.")
+
+# Show detailed logs
+st.markdown("---")
+st.subheader("일일 거래 요약")
+if not journal.empty:
+    # Filter out technical columns
+    display_cols = [col for col in journal.columns
+                   if col not in ["row_id", "거래ID"] and not col.startswith("_")]
+    journal_display = journal[display_cols].copy()
+
+    # Format date columns to show only date (no time)
+    for col in journal_display.columns:
+        if "일자" in col or "날짜" in col:
+            journal_display[col] = pd.to_datetime(journal_display[col], errors="coerce").dt.date
+
+    # Format money columns with $ and 2 decimal places
+    money_keywords = ["금액", "현금", "예산", "가", "손익", "체결가", "목표가", "주문가"]
+    for col in journal_display.columns:
+        if any(keyword in col for keyword in money_keywords):
+            journal_display[col] = journal_display[col].apply(
+                lambda x: f"${x:,.2f}" if pd.notna(x) and isinstance(x, (int, float)) else x
+            )
+
+    st.dataframe(journal_display, use_container_width=True, height=360)
+else:
+    st.write("거래 요약이 없습니다.")
+
+st.subheader("트랜치별 매수·매도 기록")
+if not trade_log.empty:
+    # Filter out technical columns
+    display_cols = [col for col in trade_log.columns
+                   if col not in ["row_id", "거래ID"] and not col.startswith("_")]
+    trade_display = trade_log[display_cols].copy()
+
+    # Format date columns to show only date (no time)
+    for col in trade_display.columns:
+        if "일자" in col or "날짜" in col or "예정일" in col:
+            trade_display[col] = pd.to_datetime(trade_display[col], errors="coerce").dt.date
+
+    # Format money columns with $ and 2 decimal places
+    money_keywords = ["금액", "현금", "예산", "가", "손익", "체결가", "목표가", "주문가"]
+    for col in trade_display.columns:
+        if any(keyword in col for keyword in money_keywords):
+            trade_display[col] = trade_display[col].apply(
+                lambda x: f"${x:,.2f}" if pd.notna(x) and isinstance(x, (int, float)) else x
+            )
+
+    st.dataframe(trade_display, use_container_width=True, height=400)
+    st.caption("TP=익절, SL=손절, MOC=보유기간 만료 청산")
+else:
+    st.write("거래 내역이 없습니다.")
 
 st.caption(
-    "매도 주문은 선택한 거래일 시작 시점 기준 보유 중인 트랜치의 TP/SL/MOC 설정입니다. "
-    "만료 예정일에는 MOC로 종가 청산이 진행됩니다."
+    f"이 페이지는 {start_date}부터 {last_date}까지 백테스트를 실행하여 "
+    "현재 포지션과 다음 거래일 LOC 주문 계획을 계산합니다."
 )
-
-if not history_df.empty:
-    if "거래ID" in history_df.columns:
-        history_df = history_df.sort_values("거래ID")
-    st.markdown("---")
-    st.subheader("누적 거래 내역")
-    st.dataframe(history_df, use_container_width=True, height=360)
-
-    metrics = _compute_metrics(history_df, float(ui_values["init_cash"]))
-    if metrics is not None:
-        st.markdown("**실적 지표**")
-        row_top = st.columns(4)
-        row_top[0].metric("거래횟수", f"{metrics['trade_count']:,}")
-        row_top[1].metric("MOC 횟수", f"{metrics['moc_count']:,}")
-        row_top[2].metric("평균 보유일", f"{metrics['avg_hold_days']:.2f}" if metrics['avg_hold_days'] is not None else "-")
-        row_top[3].metric("이익금", f"${metrics['net_profit']:,.2f}")
-
-        row_bottom = st.columns(4)
-        row_bottom[0].metric("평균 이익률", f"{metrics['avg_gain_pct']:.2f}%" if metrics['avg_gain_pct'] is not None else "-")
-        row_bottom[1].metric("평균 손해률", f"{metrics['avg_loss_pct']:.2f}%" if metrics['avg_loss_pct'] is not None else "-")
-        row_bottom[2].metric("평균 실현이익", f"${metrics['avg_gain']:,.2f}" if metrics['avg_gain'] is not None else "-")
-        row_bottom[3].metric("평균 실현손해", f"${metrics['avg_loss']:,.2f}" if metrics['avg_loss'] is not None else "-")
-
-        if metrics.get("period_return_pct") is not None:
-            st.caption(f"초기 가용현금 대비 누적 실현 수익률: {metrics['period_return_pct']:.2f}%")
-else:
-    st.info("거래 내역이 아직 저장되지 않았습니다. 주문 실행 후 '이 주문대로 실행 완료' 버튼을 눌러 기록하세요.")
-def _safe_int(value: object) -> int:
-    try:
-        if value is None:
-            return 0
-        if isinstance(value, float) and math.isnan(value):
-            return 0
-        return int(float(value))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _safe_float(value: object) -> float | None:
-    try:
-        if value is None:
-            return None
-        if isinstance(value, float) and math.isnan(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
