@@ -1,14 +1,14 @@
 """Parameter optimizer for Dongpa strategy.
 
-Combines hand-picked parameter candidates for defense/offense modes and
-capital management, evaluates them on the requested training and test
-windows, and writes a markdown summary.
+Uses random sampling from user-defined parameter ranges to explore
+the parameter space efficiently. Evaluates sampled combinations on
+training and test windows, and writes a markdown summary.
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from datetime import date, datetime
-from itertools import product
 from pathlib import Path
 from typing import Sequence
 
@@ -87,6 +87,65 @@ TEST_RANGE: DateRange = ("2023-01-01", "2024-12-31")
 
 
 @dataclass
+class ParamRange:
+    """Parameter range for random sampling."""
+    min_val: float
+    max_val: float
+    is_int: bool = False
+
+    def sample(self) -> float | int:
+        """Generate a random value within the range."""
+        if self.is_int:
+            return random.randint(int(self.min_val), int(self.max_val))
+        return random.uniform(self.min_val, self.max_val)
+
+
+@dataclass
+class ModeParamRanges:
+    """Parameter ranges for a mode (defense or offense)."""
+    buy_cond_pct: ParamRange
+    tp_pct: ParamRange
+    max_hold_days: ParamRange
+    slices: ParamRange
+    stop_loss_pct: ParamRange | None = None  # None means no stop loss
+    allow_no_stop_loss: bool = True  # Whether to randomly include no-SL cases
+
+    def sample(self) -> dict[str, float | int | None]:
+        """Generate a random parameter set."""
+        params = {
+            "buy_cond_pct": self.buy_cond_pct.sample(),
+            "tp_pct": self.tp_pct.sample(),
+            "max_hold_days": self.max_hold_days.sample(),
+            "slices": self.slices.sample(),
+        }
+        # Randomly decide whether to use stop loss
+        if self.allow_no_stop_loss and random.random() < 0.3:  # 30% chance of no SL
+            params["stop_loss_pct"] = None
+        elif self.stop_loss_pct is not None:
+            params["stop_loss_pct"] = self.stop_loss_pct.sample()
+        else:
+            params["stop_loss_pct"] = None
+        return params
+
+
+@dataclass
+class CapitalParamRanges:
+    """Parameter ranges for capital management."""
+    refresh_cycle_days: ParamRange
+    profit_compound_rate: ParamRange
+    loss_compound_rate: ParamRange
+
+    def sample(self) -> dict[str, float | int]:
+        """Generate a random parameter set."""
+        return {
+            "refresh_cycle_days": self.refresh_cycle_days.sample(),
+            "profit_compound_rate": self.profit_compound_rate.sample(),
+            "loss_compound_rate": self.loss_compound_rate.sample(),
+            "slippage_pct": 0.0,
+        }
+
+
+@dataclass
 class OptimizerConfig:
     target_ticker: str
     momentum_ticker: str
@@ -98,39 +157,37 @@ class OptimizerConfig:
     enable_netting: bool = True
     score_penalty: float = 0.6
     top_n: int = 5
+    n_samples: int = 100  # Number of random samples to generate
     output_path: Path = Path("strategy_performance.md")
+    # Parameter ranges
+    defense_ranges: ModeParamRanges | None = None
+    offense_ranges: ModeParamRanges | None = None
+    capital_ranges: CapitalParamRanges | None = None
 
 
-# Default parameter candidates (hand curated to balance exploration vs cost)
-DEFENSE_CANDIDATES: tuple[dict[str, float | int | None], ...] = (
-    {"buy_cond_pct": 2.0, "tp_pct": 0.40, "max_hold_days": 35, "slices": 8, "stop_loss_pct": None},
-    {"buy_cond_pct": 2.0, "tp_pct": 0.40, "max_hold_days": 35, "slices": 8, "stop_loss_pct": 4.0},
-    {"buy_cond_pct": 2.5, "tp_pct": 0.32, "max_hold_days": 32, "slices": 7, "stop_loss_pct": 6.0},
-    {"buy_cond_pct": 2.5, "tp_pct": 0.32, "max_hold_days": 32, "slices": 7, "stop_loss_pct": 8.0},
-    {"buy_cond_pct": 3.0, "tp_pct": 0.28, "max_hold_days": 28, "slices": 6, "stop_loss_pct": 10.0},
-    {"buy_cond_pct": 3.0, "tp_pct": 0.28, "max_hold_days": 28, "slices": 6, "stop_loss_pct": 12.0},
-    {"buy_cond_pct": 3.5, "tp_pct": 0.24, "max_hold_days": 24, "slices": 5, "stop_loss_pct": 14.0},
-    {"buy_cond_pct": 3.5, "tp_pct": 0.24, "max_hold_days": 24, "slices": 5, "stop_loss_pct": 16.0},
+# Default parameter ranges (wider ranges for better exploration)
+DEFAULT_DEFENSE_RANGES = ModeParamRanges(
+    buy_cond_pct=ParamRange(0.5, 10.0, is_int=False),
+    tp_pct=ParamRange(0.1, 3.0, is_int=False),
+    max_hold_days=ParamRange(5, 90, is_int=True),
+    slices=ParamRange(2, 20, is_int=True),
+    stop_loss_pct=ParamRange(2.0, 50.0, is_int=False),
+    allow_no_stop_loss=True,
 )
 
-OFFENSE_CANDIDATES: tuple[dict[str, float | int | None], ...] = (
-    {"buy_cond_pct": 4.0, "tp_pct": 1.5, "max_hold_days": 15, "slices": 8, "stop_loss_pct": 6.0},
-    {"buy_cond_pct": 4.0, "tp_pct": 1.5, "max_hold_days": 15, "slices": 8, "stop_loss_pct": 8.0},
-    {"buy_cond_pct": 4.5, "tp_pct": 2.0, "max_hold_days": 12, "slices": 7, "stop_loss_pct": 10.0},
-    {"buy_cond_pct": 4.5, "tp_pct": 2.0, "max_hold_days": 12, "slices": 7, "stop_loss_pct": 12.0},
-    {"buy_cond_pct": 5.0, "tp_pct": 2.5, "max_hold_days": 10, "slices": 6, "stop_loss_pct": 14.0},
-    {"buy_cond_pct": 5.0, "tp_pct": 2.5, "max_hold_days": 10, "slices": 6, "stop_loss_pct": 16.0},
-    {"buy_cond_pct": 5.5, "tp_pct": 3.0, "max_hold_days": 8, "slices": 5, "stop_loss_pct": 12.0},
-    {"buy_cond_pct": 5.5, "tp_pct": 3.0, "max_hold_days": 8, "slices": 5, "stop_loss_pct": 15.0},
-    {"buy_cond_pct": 6.0, "tp_pct": 3.5, "max_hold_days": 7, "slices": 5, "stop_loss_pct": 18.0},
-    {"buy_cond_pct": 6.5, "tp_pct": 4.0, "max_hold_days": 6, "slices": 4, "stop_loss_pct": 20.0},
+DEFAULT_OFFENSE_RANGES = ModeParamRanges(
+    buy_cond_pct=ParamRange(1.0, 15.0, is_int=False),
+    tp_pct=ParamRange(0.5, 10.0, is_int=False),
+    max_hold_days=ParamRange(2, 60, is_int=True),
+    slices=ParamRange(2, 20, is_int=True),
+    stop_loss_pct=ParamRange(2.0, 50.0, is_int=False),
+    allow_no_stop_loss=True,
 )
 
-CAPITAL_CANDIDATES: tuple[dict[str, float | int], ...] = (
-    {"refresh_cycle_days": 5, "profit_compound_rate": 0.75, "loss_compound_rate": 0.35, "slippage_pct": 0.0},
-    {"refresh_cycle_days": 7, "profit_compound_rate": 0.80, "loss_compound_rate": 0.30, "slippage_pct": 0.0},
-    {"refresh_cycle_days": 10, "profit_compound_rate": 0.70, "loss_compound_rate": 0.40, "slippage_pct": 0.0},
-    {"refresh_cycle_days": 15, "profit_compound_rate": 0.90, "loss_compound_rate": 0.25, "slippage_pct": 0.0},
+DEFAULT_CAPITAL_RANGES = CapitalParamRanges(
+    refresh_cycle_days=ParamRange(1, 60, is_int=True),
+    profit_compound_rate=ParamRange(0.3, 1.0, is_int=False),
+    loss_compound_rate=ParamRange(0.0, 0.8, is_int=False),
 )
 
 
@@ -209,8 +266,19 @@ def _evaluate(
     test_momo: pd.DataFrame,
     cfg: OptimizerConfig,
 ) -> list[OptimizationResult]:
+    # Use provided ranges or fall back to defaults
+    defense_ranges = cfg.defense_ranges or DEFAULT_DEFENSE_RANGES
+    offense_ranges = cfg.offense_ranges or DEFAULT_OFFENSE_RANGES
+    capital_ranges = cfg.capital_ranges or DEFAULT_CAPITAL_RANGES
+
     results: list[OptimizationResult] = []
-    for d_cfg, o_cfg, c_cfg in product(DEFENSE_CANDIDATES, OFFENSE_CANDIDATES, CAPITAL_CANDIDATES):
+
+    # Generate n_samples random parameter combinations
+    for _ in range(cfg.n_samples):
+        d_cfg = defense_ranges.sample()
+        o_cfg = offense_ranges.sample()
+        c_cfg = capital_ranges.sample()
+
         defense = ModeParams(**d_cfg)
         offense = ModeParams(**o_cfg)
         capital = CapitalParams(initial_cash=cfg.initial_cash, **c_cfg)
@@ -261,12 +329,13 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
     output_path = cfg.output_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     header = (
-        "# Dongpa Parameter Optimization\n\n"
+        "# Dongpa Parameter Optimization (Random Search)\n\n"
         f"- Target: `{cfg.target_ticker}`\n"
         f"- Momentum: `{cfg.momentum_ticker}`\n"
         f"- Benchmark: `{cfg.benchmark_ticker or '없음'}`\n"
         f"- Training windows: {', '.join(f'{rng[0]}~{rng[1]}' for rng in cfg.train_ranges)}\n"
         f"- Test window: {cfg.test_range[0]}~{cfg.test_range[1]}\n"
+        f"- Random samples: {cfg.n_samples}\n"
         f"- Score penalty (MDD weight): {cfg.score_penalty:.2f}\n"
         "\n"
     )
@@ -326,9 +395,11 @@ if __name__ == "__main__":  # pragma: no cover
         target_ticker="SOXL",
         momentum_ticker="QQQ",
         benchmark_ticker="SOXX",
+        n_samples=50,  # Use fewer samples for quick testing
     )
     try:
-        optimize(default_cfg)
-        print(f"Markdown report saved to {default_cfg.output_path}")
+        results, md_path = optimize(default_cfg)
+        print(f"Evaluated {len(results)} parameter combinations")
+        print(f"Markdown report saved to {md_path}")
     except Exception as exc:  # noqa: BLE001 - top-level script guard
         print(f"Optimizer failed: {exc}")
