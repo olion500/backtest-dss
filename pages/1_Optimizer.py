@@ -68,7 +68,6 @@ with st.sidebar:
         "MDD 패널티 가중치", min_value=0.0, max_value=2.0, value=0.6, step=0.05,
         help="점수 = 평균 CAGR - 패널티 × 평균 MDD"
     )
-    top_n = st.slider("상위 조합 수", min_value=1, max_value=100, value=20)
     enable_netting = st.checkbox("퉁치기(순매수/순매도 상쇄)", value=True)
     rsi_period = st.number_input("RSI 기간(주봉)", value=14, step=1, min_value=2)
 
@@ -143,7 +142,7 @@ if run:
         benchmark_ticker=bench_arg,
         initial_cash=float(initial_cash),
         score_penalty=float(score_penalty),
-        top_n=int(top_n),
+        top_n=int(n_samples),  # Show all results
         n_samples=int(n_samples),
         enable_netting=enable_netting,
         rsi_period=int(rsi_period),
@@ -166,7 +165,7 @@ if run:
 
         table_rows = []
         chart_rows = []
-        for idx, res in enumerate(results[: config.top_n], start=1):
+        for idx, res in enumerate(results, start=1):
             defense_sl = f"{res.defense.stop_loss_pct:.1f}%" if res.defense.stop_loss_pct is not None else "없음"
             offense_sl = f"{res.offense.stop_loss_pct:.1f}%" if res.offense.stop_loss_pct is not None else "없음"
             table_rows.append(
@@ -218,7 +217,7 @@ if run:
                     y=alt.Y("CAGR", title="CAGR (%)", scale=alt.Scale(zero=False)),
                     color=alt.Color("Phase", legend=alt.Legend(title="구간")),
                     tooltip=["Phase", "Rank", alt.Tooltip("CAGR", format=".2f"), alt.Tooltip("MDD", format=".2f")],
-                    size=alt.Size("Rank", legend=None, scale=alt.Scale(domain=[1, config.top_n], range=[200, 50])),
+                    size=alt.Size("Rank", legend=None, scale=alt.Scale(domain=[1, len(results)], range=[200, 50])),
                 )
                 .interactive()
             )

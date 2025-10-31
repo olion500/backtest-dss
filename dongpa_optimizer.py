@@ -337,6 +337,7 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
         f"- Test window: {cfg.test_range[0]}~{cfg.test_range[1]}\n"
         f"- Random samples: {cfg.n_samples}\n"
         f"- Score penalty (MDD weight): {cfg.score_penalty:.2f}\n"
+        f"- Total combinations: {len(results)}\n"
         "\n"
     )
     table_header = (
@@ -344,7 +345,7 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
     rows = []
-    for idx, res in enumerate(results[: cfg.top_n], start=1):
+    for idx, res in enumerate(results, start=1):
         train_cagr = _percent(res.train_metrics.get("CAGR", 0.0))
         train_mdd = _percent(res.train_metrics.get("Max Drawdown", 0.0))
         test_cagr = _percent(res.test_metrics.get("CAGR", 0.0))
@@ -369,7 +370,7 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
             "| Phase | CAGR | Max Drawdown | Sharpe | Final Equity |\n",
             "| --- | --- | --- | --- | --- |\n",
         ]
-        for idx, res in enumerate(results[: cfg.top_n], start=1):
+        for idx, res in enumerate(results, start=1):
             detail_lines.append(f"\n### Rank {idx}\n")
             detail_lines.append(_metrics_row("Train", res.train_metrics))
             detail_lines.append(_metrics_row("Test", res.test_metrics))
