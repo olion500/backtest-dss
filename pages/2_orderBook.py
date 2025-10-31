@@ -595,24 +595,6 @@ if order_sheet:
 
     if netting_applied:
         st.info(f"✅ 퉁치기 적용: 실제 매수 {net_buy_qty}주, 매도 {net_sell_qty}주로 상쇄됨")
-
-    # Instructions
-    st.markdown("---")
-    st.markdown("**📝 예약 주문 입력 방법**")
-    st.markdown("""
-    1. **매도 주문 (TP/SL)**: 각 보유 포지션마다 TP와 SL 두 개의 매도 LOC 주문을 입력
-       - 주문 유형: **Limit on Close (LOC)**
-       - 주문 수량: 위 테이블의 수량
-       - 지정가: 위 테이블의 주문가
-
-    2. **매수 주문**: 새 트랜치 진입
-       - 주문 유형: **Limit on Close (LOC)**
-       - 주문 수량: 위 테이블의 수량
-       - 지정가: 위 테이블의 주문가
-       - 체결되면 자동으로 TP/SL 매도 주문 추가 필요
-
-    3. **퉁치기 적용 시**: 종가에 같은 가격으로 매수/매도가 발생하면 순수량만 거래
-    """)
 else:
     st.write("예정된 주문이 없습니다.")
 

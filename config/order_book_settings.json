@@ -1,5 +1,5 @@
 {
-  "start_date": "2025-01-01",
+  "start_date": "2025-10-31",
   "target": "SOXL",
   "momentum": "QQQ",
   "bench": "SOXX",
@@ -7,7 +7,7 @@
   "pcr": 0.95,
   "lcr": 0.48,
   "cycle": 5,
-  "init_cash": 10000.0,
+  "init_cash": 22000.0,
   "defense_slices": 7,
   "defense_buy": 1.7,
   "defense_tp": 1.4,
