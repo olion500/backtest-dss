@@ -132,6 +132,7 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         rsi_period=14,
         reset_on_mode_change=True,
         enable_netting=ui_values["enable_netting"],
+        allow_fractional_shares=ui_values["allow_fractional"],
         defense=defense,
         offense=offense,
     )
@@ -268,6 +269,11 @@ with st.sidebar:
         value=defaults["enable_netting"],
         help="같은 날 종가 기준으로 실행된 매수·매도 물량을 순매수/순매도로 상쇄합니다.",
     )
+    allow_fractional = st.checkbox(
+        "소수점 거래 허용",
+        value=defaults.get("allow_fractional", False),
+        help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
+    )
 
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input(
@@ -312,6 +318,7 @@ with st.sidebar:
             "momentum": momentum,
             "bench": bench,
             "enable_netting": enable_netting,
+            "allow_fractional": allow_fractional,
             "pcr": pcr,
             "lcr": lcr,
             "cycle": cycle,
@@ -337,6 +344,7 @@ ui_values = {
     "momentum": momentum.strip().upper(),
     "bench": bench.strip().upper(),
     "enable_netting": enable_netting,
+    "allow_fractional": allow_fractional,
     "pcr": pcr,
     "lcr": lcr,
     "cycle": cycle,

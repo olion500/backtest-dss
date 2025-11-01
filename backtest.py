@@ -55,6 +55,7 @@ def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
         "enable_netting": saved.get("enable_netting", True),
+        "allow_fractional": saved.get("allow_fractional", False),
         "pcr": float(saved.get("pcr", 0.8)) * 100,  # Convert from decimal to percentage
         "lcr": float(saved.get("lcr", 0.3)) * 100,  # Convert from decimal to percentage
         "cycle": int(saved.get("cycle", 10)),
@@ -202,6 +203,7 @@ else:
         "momentum": "QQQ",
         "bench": "SOXX",
         "enable_netting": True,
+        "allow_fractional": False,
         "pcr": 80,
         "lcr": 30,
         "cycle": 10,
@@ -246,6 +248,11 @@ with st.sidebar:
         "퉁치기(동일 종가 상쇄)",
         value=defaults["enable_netting"],
         help="같은 날 종가 기준으로 실행된 매수·매도 물량을 순매수/순매도로 상쇄합니다.",
+    )
+    allow_fractional = st.checkbox(
+        "소수점 거래 허용",
+        value=False,
+        help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
     )
 
     st.header("투자금 갱신 (복리)")
@@ -315,6 +322,7 @@ if run:
             rsi_period=14,
             reset_on_mode_change=True,
             enable_netting=enable_netting,
+            allow_fractional_shares=allow_fractional,
             defense=defense,
             offense=offense,
         )
