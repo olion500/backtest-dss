@@ -7,6 +7,7 @@ import math
 from datetime import date, timedelta
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -603,8 +604,121 @@ st.markdown("---")
 # Equity curve and performance metrics
 equity = result.get("equity", pd.Series())
 if not equity.empty:
-    st.subheader("Equity Curve")
-    st.line_chart(equity)
+    st.subheader("Equity Curve vs Target Price")
+    # Prepare equity data
+    equity_df = equity.reset_index()
+    equity_df.columns = ['Date', 'Equity']
+
+    # Prepare target price data
+    target_close = df_target_filtered['Close'].copy()
+    if isinstance(target_close, pd.DataFrame):
+        target_close = target_close.squeeze("columns")
+    target_close = target_close.dropna()
+
+    # Align target price with equity dates
+    target_df = target_close.reset_index()
+    target_df.columns = ['Date', 'Price']
+
+    # Merge data on Date
+    combined_df = pd.merge(equity_df, target_df, on='Date', how='inner')
+
+    if not combined_df.empty:
+        # Create hover selection
+        hover = alt.selection_point(
+            fields=['Date'],
+            nearest=True,
+            on='mouseover',
+            empty=False
+        )
+
+        # Create base chart
+        base = alt.Chart(combined_df).encode(
+            x=alt.X('Date:T', title='Date')
+        )
+
+        # Equity line (left y-axis)
+        equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
+            y=alt.Y('Equity:Q',
+                   title='Strategy Equity ($)',
+                   scale=alt.Scale(type='log'),
+                   axis=alt.Axis(titleColor='steelblue', format='$,.0f'))
+        )
+
+        # Price line (right y-axis)
+        price_line = base.mark_line(color='orange', strokeWidth=2).encode(
+            y=alt.Y('Price:Q',
+                   title=f'{ui_values["target"]} Price ($)',
+                   scale=alt.Scale(type='log'),
+                   axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f'))
+        )
+
+        # Add points on hover for equity
+        equity_points = equity_line.mark_point(size=100, filled=True, color='steelblue').encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        )
+
+        # Add points on hover for price
+        price_points = price_line.mark_point(size=100, filled=True, color='orange').encode(
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        )
+
+        # Add vertical rule on hover
+        rule = base.mark_rule(color='gray', strokeWidth=1).encode(
+            opacity=alt.condition(hover, alt.value(0.7), alt.value(0))
+        ).add_params(hover)
+
+        # Add text labels for equity
+        equity_text = equity_line.mark_text(
+            align='left', dx=5, dy=-10, color='steelblue', fontWeight='bold'
+        ).encode(
+            text=alt.condition(hover, alt.Text('Equity:Q', format='$,.0f'), alt.value(' ')),
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        )
+
+        # Add text labels for price
+        price_text = price_line.mark_text(
+            align='left', dx=5, dy=10, color='orange', fontWeight='bold'
+        ).encode(
+            text=alt.condition(hover, alt.Text('Price:Q', format='$,.2f'), alt.value(' ')),
+            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        )
+
+        # Add date text at top
+        date_text = base.mark_text(
+            align='center', dx=0, dy=-220, fontSize=14, fontWeight='bold', color='black'
+        ).encode(
+            text=alt.condition(hover, alt.Text('Date:T', format='%Y-%m-%d'), alt.value(' ')),
+            y=alt.value(0)
+        )
+
+        # Combine all layers
+        chart = alt.layer(
+            equity_line, price_line,
+            equity_points, price_points,
+            rule,
+            equity_text, price_text, date_text
+        ).resolve_scale(
+            y='independent'
+        ).properties(height=400).interactive()
+
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        # Fallback to equity only
+        chart = (
+            alt.Chart(equity_df)
+            .mark_line(color='steelblue', strokeWidth=2)
+            .encode(
+                x=alt.X('Date:T', title='Date'),
+                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type='log')),
+                tooltip=[
+                    alt.Tooltip('Date:T', format='%Y-%m-%d'),
+                    alt.Tooltip('Equity:Q', format='$,.2f')
+                ]
+            )
+            .properties(height=400)
+            .interactive()
+        )
+        st.altair_chart(chart, use_container_width=True)
 
     # Calculate summary metrics
     summary_metrics = summarize(equity)
