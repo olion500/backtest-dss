@@ -58,7 +58,7 @@ def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
         "pcr": float(saved.get("pcr", 0.8)) * 100,  # Convert from decimal to percentage
         "lcr": float(saved.get("lcr", 0.3)) * 100,  # Convert from decimal to percentage
         "cycle": int(saved.get("cycle", 10)),
-        "init_cash": float(saved.get("init_cash", 10000)),
+        "init_cash": 10000,  # Always use default 10000, don't load from config
         "defense_slices": int(saved.get("defense_slices", 7)),
         "defense_buy": float(saved.get("defense_buy", 3.0)),
         "defense_tp": float(saved.get("defense_tp", 0.2)),
@@ -183,11 +183,18 @@ if "config_loaded" not in st.session_state:
 if "loaded_defaults" not in st.session_state:
     st.session_state.loaded_defaults = None
 
+# Auto-load settings on first page load
+if not st.session_state.config_loaded:
+    saved_values = _load_settings()
+    if saved_values:
+        st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
+        st.session_state.config_loaded = True
+
 # Determine defaults to use
 if st.session_state.config_loaded and st.session_state.loaded_defaults:
     defaults = st.session_state.loaded_defaults
 else:
-    # Use hardcoded defaults
+    # Use hardcoded defaults (fallback if no saved settings)
     defaults = {
         "start_date": year_start,
         "end_date": today,
@@ -214,13 +221,13 @@ else:
 with st.sidebar:
     st.header("기본 설정")
 
-    # Load config button
-    if st.button("📥 설정 불러오기", type="secondary", help="orderBook에 저장된 설정을 불러옵니다 (시작일 제외)"):
+    # Load config button (for reloading)
+    if st.button("🔄 설정 다시 불러오기", type="secondary", help="orderBook에 저장된 최신 설정을 다시 불러옵니다 (시작일, 초기현금 제외)"):
         saved_values = _load_settings()
         if saved_values:
             st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
             st.session_state.config_loaded = True
-            st.success("설정을 불러왔습니다! (시작일은 유지됩니다)")
+            st.success("설정을 다시 불러왔습니다! (시작일, 초기현금은 유지됩니다)")
             st.rerun()
         else:
             st.warning("저장된 설정이 없습니다. orderBook 페이지에서 먼저 설정을 저장해주세요.")
