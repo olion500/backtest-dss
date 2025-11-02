@@ -272,46 +272,58 @@ def _evaluate(
     capital_ranges = cfg.capital_ranges or DEFAULT_CAPITAL_RANGES
 
     results: list[OptimizationResult] = []
+    failed_count = 0
 
     # Generate n_samples random parameter combinations
-    for _ in range(cfg.n_samples):
-        d_cfg = defense_ranges.sample()
-        o_cfg = offense_ranges.sample()
-        c_cfg = capital_ranges.sample()
+    for i in range(cfg.n_samples):
+        try:
+            d_cfg = defense_ranges.sample()
+            o_cfg = offense_ranges.sample()
+            c_cfg = capital_ranges.sample()
 
-        defense = ModeParams(**d_cfg)
-        offense = ModeParams(**o_cfg)
-        capital = CapitalParams(initial_cash=cfg.initial_cash, **c_cfg)
-        params = StrategyParams(
-            target_ticker=cfg.target_ticker,
-            momentum_ticker=cfg.momentum_ticker,
-            benchmark_ticker=cfg.benchmark_ticker,
-            rsi_period=cfg.rsi_period,
-            reset_on_mode_change=True,
-            enable_netting=cfg.enable_netting,
-            defense=defense,
-            offense=offense,
-        )
-
-        train_backtester = DongpaBacktester(train_target, train_momo, params, capital)
-        train_res = train_backtester.run()
-        train_metrics = summarize(train_res["equity"])
-
-        test_backtester = DongpaBacktester(test_target, test_momo, params, capital)
-        test_res = test_backtester.run()
-        test_metrics = summarize(test_res["equity"])
-
-        score_value = _score(train_metrics, test_metrics, cfg.score_penalty)
-        results.append(
-            OptimizationResult(
+            defense = ModeParams(**d_cfg)
+            offense = ModeParams(**o_cfg)
+            capital = CapitalParams(initial_cash=cfg.initial_cash, **c_cfg)
+            params = StrategyParams(
+                target_ticker=cfg.target_ticker,
+                momentum_ticker=cfg.momentum_ticker,
+                benchmark_ticker=cfg.benchmark_ticker,
+                rsi_period=cfg.rsi_period,
+                reset_on_mode_change=True,
+                enable_netting=cfg.enable_netting,
                 defense=defense,
                 offense=offense,
-                capital=capital,
-                score=score_value,
-                train_metrics=train_metrics,
-                test_metrics=test_metrics,
             )
-        )
+
+            train_backtester = DongpaBacktester(train_target, train_momo, params, capital)
+            train_res = train_backtester.run()
+            train_metrics = summarize(train_res["equity"])
+
+            test_backtester = DongpaBacktester(test_target, test_momo, params, capital)
+            test_res = test_backtester.run()
+            test_metrics = summarize(test_res["equity"])
+
+            score_value = _score(train_metrics, test_metrics, cfg.score_penalty)
+            results.append(
+                OptimizationResult(
+                    defense=defense,
+                    offense=offense,
+                    capital=capital,
+                    score=score_value,
+                    train_metrics=train_metrics,
+                    test_metrics=test_metrics,
+                )
+            )
+
+            # Progress logging every 100 samples
+            if (i + 1) % 100 == 0:
+                print(f"Progress: {i + 1}/{cfg.n_samples} samples evaluated ({len(results)} successful, {failed_count} failed)")
+        except Exception as e:  # noqa: BLE001
+            failed_count += 1
+            # Continue to next sample on error
+            continue
+
+    print(f"Completed: {len(results)} successful evaluations, {failed_count} failed")
     return sorted(results, key=lambda res: res.score, reverse=True)
 
 
@@ -396,11 +408,16 @@ if __name__ == "__main__":  # pragma: no cover
         target_ticker="SOXL",
         momentum_ticker="QQQ",
         benchmark_ticker="SOXX",
-        n_samples=50,  # Use fewer samples for quick testing
+        n_samples=1500,  # Increased for better optimization
+        score_penalty=0.7,  # Higher penalty for MDD (prioritize drawdown reduction)
     )
     try:
         results, md_path = optimize(default_cfg)
         print(f"Evaluated {len(results)} parameter combinations")
         print(f"Markdown report saved to {md_path}")
+        if results:
+            print(f"\nTop 3 results:")
+            for i, res in enumerate(results[:3], 1):
+                print(f"  {i}. Score={res.score:.2f}, Test MDD={res.test_metrics.get('Max Drawdown', 0):.2%}, Test CAGR={res.test_metrics.get('CAGR', 0):.2%}")
     except Exception as exc:  # noqa: BLE001 - top-level script guard
         print(f"Optimizer failed: {exc}")
