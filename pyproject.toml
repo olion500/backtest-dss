@@ -1,0 +1,14 @@
+[project]
+name = "dongpa-backtest"
+version = "0.1.0"
+description = "Streamlit-based backtesting application for Dongpa Method trading strategy"
+requires-python = ">=3.13"
+dependencies = [
+    "streamlit",
+    "yfinance",
+    "pandas",
+    "numpy",
+]
+
+[dependency-groups]
+dev = []

@@ -10,8 +10,8 @@ DOCKER_RUN := docker run --rm -p $(PORT):8501 $(APP_NAME):latest
 help:
 	@echo "Dongpa backtest helpers"
 	@echo "------------------------"
-	@echo "make install    Install Python dependencies locally"
-	@echo "make run-local  Launch Streamlit app on localhost:$(PORT)"
+	@echo "make install    Install Python dependencies with uv"
+	@echo "make run-local  Launch Streamlit app on localhost:$(PORT) with uv"
 	@echo "make build      Build production Docker image ($(APP_NAME):latest)"
 	@echo "make run        Run the Dockerised app (maps $(PORT):8501)"
 	@echo "make shell      Open a bash shell inside the app container"
@@ -21,10 +21,10 @@ help:
 	@echo "make clean      Remove built Docker images"
 
 install:
-	python -m pip install --requirement requirements.txt
+	uv sync
 
 run-local:
-	streamlit run backtest.py --server.address=0.0.0.0 --server.port=$(PORT)
+	uv run streamlit run backtest.py --server.address=0.0.0.0 --server.port=$(PORT)
 
 build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .
