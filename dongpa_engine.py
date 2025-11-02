@@ -42,6 +42,7 @@ def _scalar(value):
 
 # Monetary rounding helpers (2 decimal places for trade calculations)
 MONEY_QUANT = Decimal("0.01")
+SHARES_QUANT = Decimal("0.00000001")  # 8 decimal places for fractional shares (crypto)
 ONE = Decimal("1")
 HUNDRED = Decimal("100")
 
@@ -85,6 +86,25 @@ def money(value) -> Decimal:
     return to_decimal(value).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
 
 
+def shares(value, allow_fractional: bool = False) -> Decimal:
+    """Round share quantity - integer or fractional (8 decimal places)"""
+    d = to_decimal(value)
+    if allow_fractional:
+        return d.quantize(SHARES_QUANT, rounding=ROUND_HALF_UP)
+    else:
+        return Decimal(int(d))
+
+
+def shares_to_float(value, allow_fractional: bool = False) -> float | None:
+    """Convert shares to float with appropriate precision"""
+    if value is None:
+        return None
+    if allow_fractional:
+        return round(float(value), 8)
+    else:
+        return float(int(value))
+
+
 def money_to_float(value) -> float | None:
     if value is None:
         return None
@@ -116,6 +136,7 @@ class StrategyParams:
     rsi_period: int = 14
     reset_on_mode_change: bool = True
     enable_netting: bool = True
+    allow_fractional_shares: bool = False
     defense: ModeParams = None
     offense: ModeParams = None
 
@@ -229,27 +250,29 @@ class DongpaBacktester:
 
             tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
 
-            # LOC Buy (once per day) with integer share enforcement
+            # LOC Buy (once per day) with share quantity enforcement
             buy_limit = money(prev_close * (ONE + to_decimal(m.buy_cond_pct) / HUNDRED)) if i > 0 else None
             buy_trade_id = None
-            buy_qty_executed = 0
+            buy_qty_executed = Decimal("0")
             buy_amt_value = Decimal("0")
-            planned_buy_qty = 0
+            planned_buy_qty = Decimal("0")
             planned_buy_order_value = Decimal("0")
             if buy_limit is not None and tranche_budget > Decimal("0") and buy_limit > Decimal("0"):
-                planned_buy_qty = int(tranche_budget // buy_limit)
-                if planned_buy_qty > 0:
-                    planned_buy_order_value = money(Decimal(planned_buy_qty) * buy_limit)
+                # Calculate share quantity based on fractional trading setting
+                raw_qty = tranche_budget / buy_limit
+                planned_buy_qty = shares(raw_qty, self.p.allow_fractional_shares)
+                if planned_buy_qty > Decimal("0"):
+                    planned_buy_order_value = money(planned_buy_qty * buy_limit)
 
             if (
                 buy_limit is not None
                 and close <= buy_limit
                 and tranche_budget > Decimal("0")
                 and buy_limit > Decimal("0")
-                and planned_buy_qty > 0
+                and planned_buy_qty > Decimal("0")
             ):
-                shares = planned_buy_qty
-                trade_value = money(Decimal(shares) * close)
+                share_qty = planned_buy_qty
+                trade_value = money(share_qty * close)
                 order_value = planned_buy_order_value
                 if order_value <= tranche_budget and trade_value <= cash:
                         cash = money(cash - trade_value)
@@ -267,7 +290,7 @@ class DongpaBacktester:
                             "매수조건(%)": round(m.buy_cond_pct, 2),
                             "매수주문가": money_to_float(buy_limit) if buy_limit is not None else None,
                             "매수체결가": money_to_float(close),
-                            "매수수량": int(shares),
+                            "매수수량": shares_to_float(share_qty, self.p.allow_fractional_shares),
                             "매수금액": money_to_float(trade_value),
                             "TP목표가": money_to_float(tp),
                             "SL목표가": money_to_float(sl) if sl is not None else None,
@@ -285,7 +308,7 @@ class DongpaBacktester:
                         }
                         trades.append(trade_entry)
                         lots.append({
-                            'qty': shares,
+                            'qty': share_qty,
                             'fill': close,
                             'tp': tp,
                             'sl': sl,
@@ -296,13 +319,13 @@ class DongpaBacktester:
                             'buy_idx': i,
                         })
                         buy_trade_id = trade_entry["거래ID"]
-                        buy_qty_executed = shares
+                        buy_qty_executed = share_qty
                         buy_amt_value = trade_value
 
             # LOC Sell (TP or timeout)
             realized_today = Decimal("0")
             remaining = []
-            sell_qty_total = 0
+            sell_qty_total = Decimal("0")
             sell_amt_total = Decimal("0")
             sell_trade_ids: list[int] = []
             for lot in lots:
@@ -335,7 +358,7 @@ class DongpaBacktester:
                     trade_entry.update({
                         "매도일자": d.strftime("%Y-%m-%d"),
                         "매도평균": money_to_float(close),
-                        "매도수량": int(lot['qty']),
+                        "매도수량": shares_to_float(lot['qty'], self.p.allow_fractional_shares),
                         "매도금액": money_to_float(proceeds),
                         "보유기간(일)": hold_days,
                         "실현손익": money_to_float(pnl),
@@ -343,7 +366,7 @@ class DongpaBacktester:
                         "청산사유": sell_reason,
                         "상태": "완료",
                     })
-                    sell_qty_total += lot['qty']
+                    sell_qty_total = sell_qty_total + lot['qty']
                     sell_amt_total = money(sell_amt_total + proceeds)
                     sell_trade_ids.append(trade_entry["거래ID"])
                 else:
@@ -377,19 +400,20 @@ class DongpaBacktester:
             eq_dates.append(d)
 
             buy_summary = "매수 없음"
-            if planned_buy_qty > 0 and buy_limit is not None:
+            if planned_buy_qty > Decimal("0") and buy_limit is not None:
                 buy_price = money_to_float(buy_limit)
                 buy_budget = money_to_float(planned_buy_order_value)
-                buy_summary = f"매수 {planned_buy_qty}주 @ {buy_price:.2f} (예산 ${buy_budget:,.2f})"
+                qty_display = shares_to_float(planned_buy_qty, self.p.allow_fractional_shares)
+                buy_summary = f"매수 {qty_display}주 @ {buy_price:.2f} (예산 ${buy_budget:,.2f})"
 
             sell_summary = "매도 없음"
             if lots:
-                tp_groups: dict[Decimal, int] = {}
+                tp_groups: dict[Decimal, Decimal] = {}
                 for lot in lots:
                     tp_price = money(lot['tp'])
-                    tp_groups[tp_price] = tp_groups.get(tp_price, 0) + int(lot['qty'])
+                    tp_groups[tp_price] = tp_groups.get(tp_price, Decimal("0")) + lot['qty']
                 sell_entries = [
-                    f"{qty}주 @ {money_to_float(tp):.2f}"
+                    f"{shares_to_float(qty, self.p.allow_fractional_shares)}주 @ {money_to_float(tp):.2f}"
                     for tp, qty in sorted(tp_groups.items(), key=lambda item: float(item[0]))
                 ]
                 sell_summary = "매도 " + ", ".join(sell_entries)
@@ -406,9 +430,9 @@ class DongpaBacktester:
             if initial_cash != Decimal("0"):
                 cumulative_return = round(float((realized_cumulative / initial_cash) * Decimal("100")), 2)
 
-            raw_buy_qty = int(buy_qty_executed)
+            raw_buy_qty = buy_qty_executed
             raw_buy_amt = buy_amt_value
-            raw_sell_qty = int(sell_qty_total)
+            raw_sell_qty = sell_qty_total
             raw_sell_amt = sell_amt_total
 
             net_buy_qty = raw_buy_qty
@@ -418,29 +442,33 @@ class DongpaBacktester:
             netting_applied = False
             netting_detail = None
 
-            if self.p.enable_netting and raw_buy_qty > 0 and raw_sell_qty > 0:
+            if self.p.enable_netting and raw_buy_qty > Decimal("0") and raw_sell_qty > Decimal("0"):
                 offset_qty = min(raw_buy_qty, raw_sell_qty)
-                if offset_qty > 0:
-                    offset_amt = money(Decimal(offset_qty) * close)
+                if offset_qty > Decimal("0"):
+                    offset_amt = money(offset_qty * close)
                     net_buy_qty = raw_buy_qty - offset_qty
                     net_sell_qty = raw_sell_qty - offset_qty
                     net_buy_amt = money(max(Decimal("0"), net_buy_amt - offset_amt))
                     net_sell_amt = money(max(Decimal("0"), net_sell_amt - offset_amt))
                     netting_applied = True
-                    if net_buy_qty > 0:
-                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 순매수 {net_buy_qty}주"
-                    elif net_sell_qty > 0:
-                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 순매도 {net_sell_qty}주"
+                    raw_buy_display = shares_to_float(raw_buy_qty, self.p.allow_fractional_shares)
+                    raw_sell_display = shares_to_float(raw_sell_qty, self.p.allow_fractional_shares)
+                    if net_buy_qty > Decimal("0"):
+                        net_buy_display = shares_to_float(net_buy_qty, self.p.allow_fractional_shares)
+                        netting_detail = f"매수 {raw_buy_display}주, 매도 {raw_sell_display}주 → 순매수 {net_buy_display}주"
+                    elif net_sell_qty > Decimal("0"):
+                        net_sell_display = shares_to_float(net_sell_qty, self.p.allow_fractional_shares)
+                        netting_detail = f"매수 {raw_buy_display}주, 매도 {raw_sell_display}주 → 순매도 {net_sell_display}주"
                     else:
-                        netting_detail = f"매수 {raw_buy_qty}주, 매도 {raw_sell_qty}주 → 상쇄"
+                        netting_detail = f"매수 {raw_buy_display}주, 매도 {raw_sell_display}주 → 상쇄"
 
             net_sell_avg = None
-            if net_sell_qty > 0:
-                net_sell_avg = money_to_float(money(net_sell_amt / Decimal(net_sell_qty)))
+            if net_sell_qty > Decimal("0"):
+                net_sell_avg = money_to_float(money(net_sell_amt / net_sell_qty))
 
             raw_sell_avg = None
-            if raw_sell_qty > 0:
-                raw_sell_avg = money_to_float(money(raw_sell_amt / Decimal(raw_sell_qty)))
+            if raw_sell_qty > Decimal("0"):
+                raw_sell_avg = money_to_float(money(raw_sell_amt / raw_sell_qty))
 
             daily_row = {
                 "거래일자": d.strftime("%Y-%m-%d"),
@@ -450,16 +478,16 @@ class DongpaBacktester:
                 "매수조건(%)": round(m.buy_cond_pct, 2),
                 "매수주문가": money_to_float(buy_limit) if buy_limit is not None else None,
                 "매수체결가": money_to_float(close) if buy_trade_id else None,
-                "매수수량": int(net_buy_qty),
-                "매수금액": money_to_float(net_buy_amt) if net_buy_qty > 0 else 0.0,
+                "매수수량": shares_to_float(net_buy_qty, self.p.allow_fractional_shares),
+                "매수금액": money_to_float(net_buy_amt) if net_buy_qty > Decimal("0") else 0.0,
                 "매수거래ID": buy_trade_id,
                 "매도평균": net_sell_avg,
-                "매도수량": int(net_sell_qty),
-                "매도금액": money_to_float(net_sell_amt) if net_sell_qty > 0 else 0.0,
+                "매도수량": shares_to_float(net_sell_qty, self.p.allow_fractional_shares),
+                "매도금액": money_to_float(net_sell_amt) if net_sell_qty > Decimal("0") else 0.0,
                 "매도거래ID목록": ",".join(str(tid) for tid in sell_trade_ids) if sell_trade_ids else None,
                 "실현손익": money_to_float(realized_today),
                 "현금": money_to_float(cash),
-                "보유수량": int(position_qty),
+                "보유수량": shares_to_float(position_qty, self.p.allow_fractional_shares),
                 "평가금액": money_to_float(position_val),
                 "Equity": money_to_float(equity),
                 "누적손익": money_to_float(realized_cumulative),
@@ -467,10 +495,10 @@ class DongpaBacktester:
                 "낙폭(DD%)": drawdown_pct,
                 "일일트렌치예산": money_to_float(tranche_budget),
                 "TP평균(보유)": money_to_float(tp_avg_open) if tp_avg_open is not None else None,
-                "원매수수량": raw_buy_qty,
-                "원매수금액": money_to_float(raw_buy_amt) if raw_buy_qty > 0 else 0.0,
-                "원매도수량": raw_sell_qty,
-                "원매도금액": money_to_float(raw_sell_amt) if raw_sell_qty > 0 else 0.0,
+                "원매수수량": shares_to_float(raw_buy_qty, self.p.allow_fractional_shares),
+                "원매수금액": money_to_float(raw_buy_amt) if raw_buy_qty > Decimal("0") else 0.0,
+                "원매도수량": shares_to_float(raw_sell_qty, self.p.allow_fractional_shares),
+                "원매도금액": money_to_float(raw_sell_amt) if raw_sell_qty > Decimal("0") else 0.0,
                 "원매도평균": raw_sell_avg,
                 "퉁치기적용": netting_applied,
                 "퉁치기상세": netting_detail,
