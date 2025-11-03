@@ -5,7 +5,7 @@ import pandas as pd
 import yfinance as yf
 import altair as alt
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
@@ -18,6 +18,18 @@ NAV_LINKS = [
 ]
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
+CONFIG_DIR = Path("config")
+
+
+def get_available_config_files() -> list[Path]:
+    """Get all JSON config files in the config directory."""
+    if not CONFIG_DIR.exists():
+        return []
+    # Find all .json files including backups (.json.backup_*)
+    json_files = list(CONFIG_DIR.glob("*.json*"))
+    # Sort by modification time (newest first)
+    json_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return json_files
 
 
 def render_navigation() -> None:
@@ -35,10 +47,12 @@ def render_navigation() -> None:
     st.sidebar.divider()
 
 
-def _load_settings() -> dict:
-    if SETTINGS_PATH.exists():
+def _load_settings(config_path: Path | None = None) -> dict:
+    """Load settings from a config file."""
+    path = config_path if config_path else SETTINGS_PATH
+    if path.exists():
         try:
-            with SETTINGS_PATH.open("r", encoding="utf-8") as fh:
+            with path.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, dict):
                 return data
@@ -223,16 +237,65 @@ else:
 with st.sidebar:
     st.header("기본 설정")
 
-    # Load config button (for reloading)
-    if st.button("🔄 설정 다시 불러오기", type="secondary", help="orderBook에 저장된 최신 설정을 다시 불러옵니다 (시작일, 초기현금 제외)"):
-        saved_values = _load_settings()
-        if saved_values:
-            st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
-            st.session_state.config_loaded = True
-            st.success("설정을 다시 불러왔습니다! (시작일, 초기현금은 유지됩니다)")
+    # Config file selector
+    st.subheader("📁 설정 파일 선택")
+    available_configs = get_available_config_files()
+
+    if available_configs:
+        # Create display names for dropdown (show filename only)
+        config_options = {str(p.name): p for p in available_configs}
+
+        # Add a default option
+        config_names = ["기본 설정 (default)"] + list(config_options.keys())
+
+        selected_config_name = st.selectbox(
+            "설정 파일",
+            options=config_names,
+            help="config/ 폴더의 JSON 파일을 선택하세요"
+        )
+
+        # Load button
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            load_button = st.button(
+                "🔄 선택한 설정 불러오기",
+                type="primary",
+                use_container_width=True,
+                help="선택한 파일의 설정을 불러옵니다 (시작일, 초기현금 제외)"
+            )
+        with col2:
+            if st.button("ℹ️", help="파일 정보 보기"):
+                if selected_config_name != "기본 설정 (default)":
+                    selected_path = config_options[selected_config_name]
+                    file_size = selected_path.stat().st_size
+                    from datetime import datetime
+                    mod_time = datetime.fromtimestamp(selected_path.stat().st_mtime)
+                    st.info(f"**파일**: {selected_path.name}\n\n**크기**: {file_size} bytes\n\n**수정일**: {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        if load_button:
+            if selected_config_name == "기본 설정 (default)":
+                # Reset to hardcoded defaults
+                st.session_state.loaded_defaults = None
+                st.session_state.config_loaded = False
+                st.success("기본 설정으로 초기화되었습니다!")
+                st.rerun()
+            else:
+                selected_path = config_options[selected_config_name]
+                saved_values = _load_settings(selected_path)
+                if saved_values:
+                    st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
+                    st.session_state.config_loaded = True
+                    st.success(f"✅ '{selected_path.name}' 설정을 불러왔습니다!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ '{selected_path.name}' 파일을 읽을 수 없습니다.")
+    else:
+        st.info("config/ 폴더에 설정 파일이 없습니다.")
+        if st.button("🔄 기본 설정으로 초기화", type="secondary"):
+            st.session_state.loaded_defaults = None
+            st.session_state.config_loaded = False
+            st.success("기본 설정으로 초기화되었습니다!")
             st.rerun()
-        else:
-            st.warning("저장된 설정이 없습니다. orderBook 페이지에서 먼저 설정을 저장해주세요.")
 
     st.divider()
 
