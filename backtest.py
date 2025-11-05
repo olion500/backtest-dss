@@ -374,6 +374,63 @@ with st.sidebar:
     sl2 = st.number_input("손절(%) - 공세", value=defaults["offense_sl"], step=0.1, format="%.2f")
     hold2 = st.number_input("최대 보유일(거래일) - 공세", value=defaults["offense_hold"], step=1)
 
+    st.divider()
+    st.header("💾 설정 저장")
+    save_config_name = st.text_input(
+        "설정 파일 이름",
+        placeholder="예: my_strategy",
+        help="설정을 저장할 파일 이름을 입력하세요 (config/ 폴더에 JSON 파일로 저장됩니다)"
+    )
+
+    if st.button("💾 설정 저장", type="secondary", use_container_width=True):
+        if not save_config_name or save_config_name.strip() == "":
+            st.error("❌ 파일 이름을 입력해주세요!")
+        elif save_config_name.lower() in ["default", "order_book_settings"]:
+            st.error("❌ 'default'와 'order_book_settings'는 예약된 이름입니다. 다른 이름을 사용해주세요!")
+        else:
+            # Build settings payload
+            save_payload = {
+                "target": target,
+                "momentum": momentum,
+                "bench": bench,
+                "enable_netting": enable_netting,
+                "allow_fractional": allow_fractional,
+                "pcr": float(pcr),
+                "lcr": float(lcr),
+                "cycle": int(cyc),
+                "defense_slices": int(s1),
+                "defense_buy": float(cond1),
+                "defense_tp": float(tp1),
+                "defense_sl": float(sl1),
+                "defense_hold": int(hold1),
+                "offense_slices": int(s2),
+                "offense_buy": float(cond2),
+                "offense_tp": float(tp2),
+                "offense_sl": float(sl2),
+                "offense_hold": int(hold2),
+                "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+            }
+
+            # Add MA parameters if Golden Cross mode
+            if mode_switch_strategy == "Golden Cross":
+                save_payload["ma_short"] = int(ma_short)
+                save_payload["ma_long"] = int(ma_long)
+
+            # Save to file
+            save_filename = save_config_name.strip()
+            if not save_filename.endswith(".json"):
+                save_filename += ".json"
+
+            save_path = CONFIG_DIR / save_filename
+            CONFIG_DIR.mkdir(exist_ok=True)
+
+            try:
+                with save_path.open("w", encoding="utf-8") as fh:
+                    json.dump(save_payload, fh, ensure_ascii=False, indent=2)
+                st.success(f"✅ 설정이 '{save_filename}'에 저장되었습니다!")
+            except Exception as e:
+                st.error(f"❌ 저장 실패: {e}")
+
 run = st.button("백테스트 실행")
 
 if run:
