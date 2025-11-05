@@ -189,7 +189,7 @@ if run:
 
     with st.spinner("최적화 실행 중..."):
         try:
-            results, md_path = optimize(config)
+            results = optimize(config)
         except Exception as exc:  # noqa: BLE001 - UI 오류 안내용
             st.error(f"최적화에 실패했습니다: {exc}")
             st.stop()
@@ -249,6 +249,16 @@ if run:
         summary_df = pd.DataFrame(table_rows)
         st.dataframe(summary_df, use_container_width=True)
 
+        # CSV download button
+        csv_data = summary_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "📥 CSV 다운로드",
+            data=csv_data,
+            file_name=f"optimization_results_{target}_{config.mode_switch_strategy}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
         if chart_rows:
             chart_df = pd.DataFrame(chart_rows)
             scatter = (
@@ -264,15 +274,5 @@ if run:
                 .interactive()
             )
             st.altair_chart(scatter, use_container_width=True)
-
-        if isinstance(md_path, Path) and md_path.exists():
-            md_text = md_path.read_text(encoding="utf-8")
-            st.download_button(
-                "마크다운 다운로드", data=md_text, file_name=md_path.name, mime="text/markdown"
-            )
-            with st.expander("생성된 마크다운 미리보기"):
-                st.markdown(md_text)
-        else:
-            st.info("작성된 마크다운 파일을 찾을 수 없습니다.")
 else:
     st.info("왼쪽 사이드바에서 파라미터를 입력하고 '최적화 실행' 버튼을 눌러주세요.")

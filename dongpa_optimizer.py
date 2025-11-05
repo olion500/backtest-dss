@@ -561,11 +561,10 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
 
 # --------------------------- Public API ---------------------------
 
-def optimize(cfg: OptimizerConfig) -> tuple[list[OptimizationResult], Path]:
+def optimize(cfg: OptimizerConfig) -> list[OptimizationResult]:
     train_target, train_momo, test_target, test_momo = _load_price_frames(cfg)
     results = _evaluate(train_target, train_momo, test_target, test_momo, cfg)
-    md_path = write_markdown(results, cfg)
-    return results, md_path
+    return results
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -577,9 +576,8 @@ if __name__ == "__main__":  # pragma: no cover
         score_penalty=0.7,  # Higher penalty for MDD (prioritize drawdown reduction)
     )
     try:
-        results, md_path = optimize(default_cfg)
+        results = optimize(default_cfg)
         print(f"Evaluated {len(results)} parameter combinations")
-        print(f"Markdown report saved to {md_path}")
         if results:
             print(f"\nTop 3 results:")
             for i, res in enumerate(results[:3], 1):
