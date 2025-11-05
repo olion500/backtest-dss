@@ -125,17 +125,32 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         stop_loss_pct=float(ui_values["offense_sl"]) if ui_values["offense_sl"] > 0 else None,
     )
 
-    strategy = StrategyParams(
-        target_ticker=ui_values["target"],
-        momentum_ticker=ui_values["momentum"],
-        benchmark_ticker=ui_values["bench"] if ui_values["bench"].strip() else None,
-        rsi_period=14,
-        reset_on_mode_change=True,
-        enable_netting=ui_values["enable_netting"],
-        allow_fractional_shares=ui_values["allow_fractional"],
-        defense=defense,
-        offense=offense,
-    )
+    # Build strategy params based on mode switching strategy
+    strategy_dict = {
+        "target_ticker": ui_values["target"],
+        "momentum_ticker": ui_values["momentum"],
+        "benchmark_ticker": ui_values["bench"] if ui_values["bench"].strip() else None,
+        "reset_on_mode_change": True,
+        "enable_netting": ui_values["enable_netting"],
+        "allow_fractional_shares": ui_values["allow_fractional"],
+        "defense": defense,
+        "offense": offense,
+    }
+
+    # Add mode switch strategy parameters
+    if ui_values.get("mode_switch_strategy") == "Golden Cross":
+        strategy_dict.update({
+            "mode_switch_strategy": "ma_cross",
+            "ma_short_period": int(ui_values["ma_short"]),
+            "ma_long_period": int(ui_values["ma_long"]),
+        })
+    else:
+        strategy_dict.update({
+            "mode_switch_strategy": "rsi",
+            "rsi_period": 14,
+        })
+
+    strategy = StrategyParams(**strategy_dict)
 
     capital = CapitalParams(
         initial_cash=float(ui_values["init_cash"]),
@@ -263,6 +278,42 @@ with st.sidebar:
     momentum = col_b.text_input("모멘텀 종목(주봉 RSI 계산)", value=defaults["momentum"])
     bench = st.text_input("벤치마크(선택)", value=defaults["bench"])
 
+    st.divider()
+    st.subheader("📊 모드 전환 전략")
+    mode_switch_strategy = st.radio(
+        "모드 전환 방식",
+        options=["RSI", "Golden Cross"],
+        index=saved_values.get("mode_switch_strategy_index", 0),
+        help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
+    )
+
+    # Show MA period inputs only if Golden Cross is selected
+    ma_short = None
+    ma_long = None
+    if mode_switch_strategy == "Golden Cross":
+        col_ma1, col_ma2 = st.columns(2)
+        ma_short = col_ma1.number_input(
+            "Short MA (주)",
+            min_value=1,
+            max_value=50,
+            value=saved_values.get("ma_short", 3),
+            step=1,
+            help="짧은 이동평균 기간 (주 단위)"
+        )
+        ma_long = col_ma2.number_input(
+            "Long MA (주)",
+            min_value=2,
+            max_value=50,
+            value=saved_values.get("ma_long", 7),
+            step=1,
+            help="긴 이동평균 기간 (주 단위)"
+        )
+
+        if ma_short >= ma_long:
+            st.warning("⚠️ Short MA는 Long MA보다 작아야 합니다!")
+
+    st.divider()
+
     st.header("거래 옵션")
     enable_netting = st.checkbox(
         "퉁치기(동일 종가 상쇄)",
@@ -333,7 +384,11 @@ with st.sidebar:
             "offense_tp": off_tp,
             "offense_sl": off_sl,
             "offense_hold": off_hold,
+            "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
         }
+        if mode_switch_strategy == "Golden Cross":
+            settings_payload["ma_short"] = ma_short
+            settings_payload["ma_long"] = ma_long
         _save_settings(settings_payload)
         st.success("설정을 저장했습니다.")
 
@@ -359,7 +414,16 @@ ui_values = {
     "offense_tp": off_tp,
     "offense_sl": off_sl,
     "offense_hold": off_hold,
+    "mode_switch_strategy": mode_switch_strategy,
 }
+
+# Add MA parameters if Golden Cross mode
+if mode_switch_strategy == "Golden Cross":
+    if ma_short >= ma_long:
+        st.error("❌ Short MA는 Long MA보다 작아야 합니다!")
+        st.stop()
+    ui_values["ma_short"] = ma_short
+    ui_values["ma_long"] = ma_long
 
 
 # Calculate data fetch range
@@ -433,8 +497,13 @@ open_trades = trade_log[trade_log.get("상태") != "완료"].copy() if not trade
 st.subheader(f"백테스트 결과 ({start_date} ~ {last_date})")
 mode_label = "공세" if current_mode == "offense" else "안전"
 mode_line = f"현재 모드: **{mode_label}**"
-if rsi_value is not None:
+
+# Show mode indicator based on strategy
+if ui_values.get("mode_switch_strategy") == "Golden Cross":
+    mode_line += f" (Golden Cross 전략: {ui_values['ma_short']}주 × {ui_values['ma_long']}주 MA)"
+elif rsi_value is not None:
     mode_line += f" (주봉 RSI {rsi_value:.2f})"
+
 st.markdown(mode_line)
 if prev_close is not None:
     st.markdown(f"최근 종가 ({last_date}): **${prev_close:,.2f}**")

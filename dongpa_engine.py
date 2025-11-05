@@ -33,6 +33,25 @@ def cross_down(prev: float, curr: float, level: float) -> bool:
     return prev > level and curr <= level
 
 
+def moving_average(series: pd.Series, period: int) -> pd.Series:
+    """Calculate simple moving average."""
+    return series.rolling(window=period, min_periods=1).mean()
+
+
+def golden_cross(short_ma: pd.Series, long_ma: pd.Series) -> pd.Series:
+    """Detect golden cross (short MA crosses above long MA)."""
+    prev_short = short_ma.shift(1)
+    prev_long = long_ma.shift(1)
+    return (prev_short <= prev_long) & (short_ma > long_ma)
+
+
+def death_cross(short_ma: pd.Series, long_ma: pd.Series) -> pd.Series:
+    """Detect death cross (short MA crosses below long MA)."""
+    prev_short = short_ma.shift(1)
+    prev_long = long_ma.shift(1)
+    return (prev_short >= prev_long) & (short_ma < long_ma)
+
+
 def _scalar(value):
     if isinstance(value, pd.Series):
         if value.empty:
@@ -139,6 +158,17 @@ class StrategyParams:
     allow_fractional_shares: bool = False
     defense: ModeParams = None
     offense: ModeParams = None
+    # Mode switching strategy: "rsi" or "ma_cross"
+    mode_switch_strategy: str = "rsi"
+    # RSI threshold parameters (for "rsi" strategy)
+    rsi_high_threshold: float = 65.0  # Upper RSI threshold for defense mode
+    rsi_mid_low: float = 40.0         # Lower bound of middle range
+    rsi_mid_high: float = 60.0        # Upper bound of middle range
+    rsi_low_threshold: float = 35.0   # Lower RSI threshold for offense mode
+    rsi_neutral: float = 50.0         # Neutral line for crossover detection
+    # Moving average parameters (for "ma_cross" strategy)
+    ma_short_period: int = 5          # Short MA period (weeks for weekly data)
+    ma_long_period: int = 20          # Long MA period (weeks for weekly data)
 
 # ---------------------- Engine ----------------------
 
@@ -165,15 +195,40 @@ class DongpaBacktester:
         self.momo = self.momo[(self.momo.index>=common_start) & (self.momo.index<=common_end)]
 
         w_close = to_weekly_close(self.momo)
-        w_rsi = wilder_rsi(w_close, self.p.rsi_period)
-        self.weekly_rsi = w_rsi
-        self.weekly_rsi_delta = w_rsi.diff()
 
-        self.daily_rsi = self.weekly_rsi.reindex(self.df.index, method='ffill')
-        self.daily_rsi_delta = self.weekly_rsi_delta.reindex(self.df.index, method='ffill')
-        self.daily_prev_week = self.weekly_rsi.shift(1).reindex(self.df.index, method='ffill')
+        # Prepare mode switching indicators based on strategy
+        if self.p.mode_switch_strategy == "rsi":
+            # RSI-based mode switching
+            w_rsi = wilder_rsi(w_close, self.p.rsi_period)
+            self.weekly_rsi = w_rsi
+            self.weekly_rsi_delta = w_rsi.diff()
+            self.daily_rsi = self.weekly_rsi.reindex(self.df.index, method='ffill')
+            self.daily_rsi_delta = self.weekly_rsi_delta.reindex(self.df.index, method='ffill')
+            self.daily_prev_week = self.weekly_rsi.shift(1).reindex(self.df.index, method='ffill')
+        elif self.p.mode_switch_strategy == "ma_cross":
+            # MA cross-based mode switching
+            self.weekly_ma_short = moving_average(w_close, self.p.ma_short_period)
+            self.weekly_ma_long = moving_average(w_close, self.p.ma_long_period)
+            self.daily_ma_short = self.weekly_ma_short.reindex(self.df.index, method='ffill')
+            self.daily_ma_long = self.weekly_ma_long.reindex(self.df.index, method='ffill')
+            # Calculate crossover signals
+            self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
+            self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
+            self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill').fillna(False)
+            self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill').fillna(False)
+        else:
+            raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
     def _decide_mode(self, idx, prev_mode) -> str:
+        if self.p.mode_switch_strategy == "rsi":
+            return self._decide_mode_rsi(idx, prev_mode)
+        elif self.p.mode_switch_strategy == "ma_cross":
+            return self._decide_mode_ma_cross(idx, prev_mode)
+        else:
+            raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
+
+    def _decide_mode_rsi(self, idx, prev_mode) -> str:
+        """RSI-based mode switching logic."""
         rsi_raw = _scalar(self.daily_rsi.loc[idx])
         if pd.isna(rsi_raw):
             return prev_mode or "defense"
@@ -188,14 +243,49 @@ class DongpaBacktester:
         is_down = delta < 0
         is_up   = delta > 0
 
-        cond_def = (is_down and (rsi >= 65 or (40 < rsi < 50) or cross_down(prev_w, rsi, 50)))
-        cond_off = (is_up   and (cross_up(prev_w, rsi, 50) or (50 < rsi < 60) or (rsi < 35)))
+        # Use configurable RSI thresholds
+        rsi_high = self.p.rsi_high_threshold
+        rsi_mid_low = self.p.rsi_mid_low
+        rsi_mid_high = self.p.rsi_mid_high
+        rsi_low = self.p.rsi_low_threshold
+        rsi_neutral = self.p.rsi_neutral
+
+        cond_def = (is_down and (rsi >= rsi_high or (rsi_mid_low < rsi < rsi_neutral) or cross_down(prev_w, rsi, rsi_neutral)))
+        cond_off = (is_up   and (cross_up(prev_w, rsi, rsi_neutral) or (rsi_neutral < rsi < rsi_mid_high) or (rsi < rsi_low)))
 
         if cond_off and not cond_def:
             return "offense"
         if cond_def and not cond_off:
             return "defense"
         return prev_mode or "defense"
+
+    def _decide_mode_ma_cross(self, idx, prev_mode) -> str:
+        """MA cross-based mode switching logic."""
+        # Check for golden cross (bullish signal -> offense)
+        is_golden = _scalar(self.daily_golden.loc[idx])
+        # Check for death cross (bearish signal -> defense)
+        is_death = _scalar(self.daily_death.loc[idx])
+
+        # Get current MA positions
+        ma_short = _scalar(self.daily_ma_short.loc[idx])
+        ma_long = _scalar(self.daily_ma_long.loc[idx])
+
+        if pd.isna(ma_short) or pd.isna(ma_long):
+            return prev_mode or "defense"
+
+        # Golden cross detected -> switch to offense
+        if is_golden:
+            return "offense"
+        # Death cross detected -> switch to defense
+        if is_death:
+            return "defense"
+
+        # No cross detected, maintain current position-based mode
+        # If short MA > long MA, stay in offense; otherwise stay in defense
+        if ma_short > ma_long:
+            return "offense"
+        else:
+            return "defense"
 
     def run(self):
         dates = self.df.index
