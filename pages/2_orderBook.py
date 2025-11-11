@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import altair as alt
 import pandas as pd
@@ -84,6 +85,26 @@ def _safe_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _is_market_closed_today() -> bool:
+    """Check if US market has closed today.
+
+    US market hours (EST): 9:30 AM - 4:00 PM
+    Returns True if current time is after market close (4:00 PM EST)
+    """
+    try:
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        now_est = now_utc.astimezone(ZoneInfo("America/New_York"))
+
+        # Market closes at 4:00 PM EST
+        market_close = now_est.replace(hour=16, minute=0, second=0, microsecond=0)
+
+        # If current time is past market close, today's data should be available
+        return now_est >= market_close
+    except Exception:
+        # If timezone conversion fails, assume market hasn't closed (conservative approach)
+        return False
 
 
 def _prepare_defaults(saved: dict) -> dict:
@@ -429,9 +450,22 @@ if mode_switch_strategy == "Golden Cross":
 # Calculate data fetch range
 # We need extra data before start_date for RSI calculation (at least 100 days for weekly RSI with 14 period)
 data_fetch_start = start_date - timedelta(days=LOOKBACK_DAYS)
-end_fetch = today + timedelta(days=1)
 
-with st.spinner(f"{start_date}부터 {today}까지 백테스트 실행 중..."):
+# Check if market has closed today using timezone
+market_closed_today = _is_market_closed_today()
+
+if market_closed_today:
+    # Market has closed, so today's data should be available
+    backtest_end_date = today
+    end_fetch = today + timedelta(days=1)
+    market_started = False
+else:
+    # Market hasn't closed yet, use yesterday's data
+    backtest_end_date = today - timedelta(days=1)
+    end_fetch = today
+    market_started = True
+
+with st.spinner(f"{start_date}부터 {backtest_end_date}까지 백테스트 실행 중..."):
     df_target = yf.download(
         ui_values["target"],
         start=data_fetch_start,
@@ -451,12 +485,18 @@ if df_target.empty or df_momo.empty:
     st.error("데이터가 비어 있습니다. 티커를 확인하거나 거래 가능일을 기다려 주세요.")
     st.stop()
 
-# Filter data to start from start_date for backtesting
-df_target_filtered = df_target[df_target.index >= pd.Timestamp(start_date)]
-df_momo_filtered = df_momo[df_momo.index >= pd.Timestamp(start_date)]
+# Filter data to start from start_date and end at backtest_end_date
+df_target_filtered = df_target[
+    (df_target.index >= pd.Timestamp(start_date)) &
+    (df_target.index <= pd.Timestamp(backtest_end_date))
+]
+df_momo_filtered = df_momo[
+    (df_momo.index >= pd.Timestamp(start_date)) &
+    (df_momo.index <= pd.Timestamp(backtest_end_date))
+]
 
 if df_target_filtered.empty:
-    st.error(f"{start_date} 이후 데이터가 없습니다. 시작일을 확인해주세요.")
+    st.error(f"{start_date}부터 {backtest_end_date}까지 데이터가 없습니다. 시작일을 확인해주세요.")
     st.stop()
 
 strategy, capital = _collect_params(ui_values)
@@ -475,7 +515,7 @@ last_row = journal.iloc[-1].copy()
 last_date = last_row["거래일자"].date()
 last_timestamp = pd.Timestamp(last_date)
 
-# Extract current state
+# Extract current state from last row
 current_mode = last_row.get("모드", "안전")
 current_cash = _safe_float(last_row.get("현금")) or float(ui_values["init_cash"])
 current_position_qty = _safe_int(last_row.get("보유수량"))
@@ -494,7 +534,11 @@ if hasattr(backtester, "daily_rsi") and last_timestamp in backtester.daily_rsi.i
 # Get open positions from trade_log
 open_trades = trade_log[trade_log.get("상태") != "완료"].copy() if not trade_log.empty else pd.DataFrame()
 
+# Show header
 st.subheader(f"백테스트 결과 ({start_date} ~ {last_date})")
+if market_started:
+    st.info(f"⏰ 오늘({today}) 장이 진행 중입니다. {last_date}까지의 보유 포지션을 표시하고, 오늘 마감 시 실행될 LOC 주문을 아래에서 확인하세요.")
+
 mode_label = "공세" if current_mode == "offense" else "안전"
 mode_line = f"현재 모드: **{mode_label}**"
 
@@ -575,9 +619,14 @@ else:
 
 st.markdown("---")
 
-st.subheader(f"다음 거래일 LOC 주문 시트")
+# LOC orders are for next trading day's market close
+if market_started:
+    st.subheader(f"오늘({today}) 마감 시 실행될 LOC 주문 시트")
+    st.caption("아래 주문들은 오늘 장 마감(4:00 PM EST)에 실행됩니다.")
+else:
+    st.subheader(f"다음 거래일 LOC 주문 시트")
 
-# Build unified order sheet
+# Build unified order sheet (always use last_row data for LOC orders)
 order_sheet = []
 
 # Add sell orders (TP and SL for each open position)
