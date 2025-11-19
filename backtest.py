@@ -235,9 +235,9 @@ else:
     }
 
 with st.sidebar:
+    log_scale_enabled = st.toggle("Equity 로그 스케일", value=True, key="equity_log_scale_toggle")
     st.header("기본 설정")
 
-    # Mode switch strategy selector
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
@@ -246,7 +246,6 @@ with st.sidebar:
         help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
     )
 
-    # Show MA period inputs only if Golden Cross is selected
     ma_short = None
     ma_long = None
     if mode_switch_strategy == "Golden Cross":
@@ -273,15 +272,11 @@ with st.sidebar:
 
     st.divider()
 
-    # Config file selector
     st.subheader("📁 설정 파일 선택")
     available_configs = get_available_config_files()
 
     if available_configs:
-        # Create display names for dropdown (show filename only)
         config_options = {str(p.name): p for p in available_configs}
-
-        # Add a default option
         config_names = ["기본 설정 (default)"] + list(config_options.keys())
 
         selected_config_name = st.selectbox(
@@ -290,7 +285,6 @@ with st.sidebar:
             help="config/ 폴더의 JSON 파일을 선택하세요"
         )
 
-        # Load button
         col1, col2 = st.columns([3, 1])
         with col1:
             load_button = st.button(
@@ -310,7 +304,6 @@ with st.sidebar:
 
         if load_button:
             if selected_config_name == "기본 설정 (default)":
-                # Reset to hardcoded defaults
                 st.session_state.loaded_defaults = None
                 st.session_state.config_loaded = False
                 st.success("기본 설정으로 초기화되었습니다!")
@@ -357,22 +350,23 @@ with st.sidebar:
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input("이익복리율 PCR (%)", value=int(defaults["pcr"]), step=1) / 100.0
     lcr = st.number_input("손실복리율 LCR (%)", value=int(defaults["lcr"]), step=1) / 100.0
-    cyc = st.number_input("투자금 갱신 주기(거래일)", value=defaults["cycle"], step=1)
-    init_cash = st.number_input("초기 가용현금", value=int(defaults["init_cash"]), step=1000)
+    cyc = st.number_input("투자금 갱신 주기(거래일)", value=int(defaults["cycle"]), step=1)
+    init_cash = st.number_input("초기 가용현금", value=float(defaults["init_cash"]), step=1000.0)
 
     st.header("안전 모드")
-    s1 = st.number_input("분할수(N) - 안전", value=defaults["defense_slices"], step=1)
-    cond1 = st.number_input("매수조건(%) - 안전", value=defaults["defense_buy"], step=0.1, format="%.2f")
-    tp1 = st.number_input("익절(%) - 안전", value=defaults["defense_tp"], step=0.1, format="%.2f")
-    sl1 = st.number_input("손절(%) - 안전", value=defaults["defense_sl"], step=0.1, format="%.2f")
-    hold1 = st.number_input("최대 보유일(거래일) - 안전", value=defaults["defense_hold"], step=1)
+    col1, col2 = st.columns(2)
+    s1 = col1.number_input("분할수(N) - 안전", value=int(defaults["defense_slices"]), step=1)
+    cond1 = col2.number_input("매수조건(%) - 안전", value=float(defaults["defense_buy"]), step=0.1, format="%.2f")
+    tp1 = col1.number_input("익절(%) - 안전", value=float(defaults["defense_tp"]), step=0.1, format="%.2f")
+    sl1 = col2.number_input("손절(%) - 안전", value=float(defaults["defense_sl"]), step=0.1, format="%.2f")
+    hold1 = col1.number_input("최대 보유일(거래일) - 안전", value=int(defaults["defense_hold"]), step=1)
 
     st.header("공세 모드")
-    s2 = st.number_input("분할수(N) - 공세", value=defaults["offense_slices"], step=1)
-    cond2 = st.number_input("매수조건(%) - 공세", value=defaults["offense_buy"], step=0.1, format="%.2f")
-    tp2 = st.number_input("익절(%) - 공세", value=defaults["offense_tp"], step=0.1, format="%.2f")
-    sl2 = st.number_input("손절(%) - 공세", value=defaults["offense_sl"], step=0.1, format="%.2f")
-    hold2 = st.number_input("최대 보유일(거래일) - 공세", value=defaults["offense_hold"], step=1)
+    s2 = col1.number_input("분할수(N) - 공세", value=int(defaults["offense_slices"]), step=1)
+    cond2 = col2.number_input("매수조건(%) - 공세", value=float(defaults["offense_buy"]), step=0.1, format="%.2f")
+    tp2 = col1.number_input("익절(%) - 공세", value=float(defaults["offense_tp"]), step=0.1, format="%.2f")
+    sl2 = col2.number_input("손절(%) - 공세", value=float(defaults["offense_sl"]), step=0.1, format="%.2f")
+    hold2 = col1.number_input("최대 보유일(거래일) - 공세", value=int(defaults["offense_hold"]), step=1)
 
     st.divider()
     st.header("💾 설정 저장")
@@ -388,7 +382,6 @@ with st.sidebar:
         elif save_config_name.lower() in ["default", "order_book_settings"]:
             st.error("❌ 'default'와 'order_book_settings'는 예약된 이름입니다. 다른 이름을 사용해주세요!")
         else:
-            # Build settings payload
             save_payload = {
                 "target": target,
                 "momentum": momentum,
@@ -411,12 +404,10 @@ with st.sidebar:
                 "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
             }
 
-            # Add MA parameters if Golden Cross mode
             if mode_switch_strategy == "Golden Cross":
                 save_payload["ma_short"] = int(ma_short)
                 save_payload["ma_long"] = int(ma_long)
 
-            # Save to file
             save_filename = save_config_name.strip()
             if not save_filename.endswith(".json"):
                 save_filename += ".json"
@@ -430,7 +421,6 @@ with st.sidebar:
                 st.success(f"✅ 설정이 '{save_filename}'에 저장되었습니다!")
             except Exception as e:
                 st.error(f"❌ 저장 실패: {e}")
-
 run = st.button("백테스트 실행")
 
 if run:
@@ -496,273 +486,175 @@ if run:
                 target_ticker=target,
                 momentum_ticker=momentum,
                 benchmark_ticker=bench if bench.strip() else None,
-                mode_switch_strategy="rsi",
-                rsi_period=14,
-                reset_on_mode_change=True,
-                enable_netting=enable_netting,
-                allow_fractional_shares=allow_fractional,
-                defense=defense,
-                offense=offense,
-            )
-
-        bt = DongpaBacktester(df_t, df_m, params, cap)
-        res = bt.run()
-        eq = res['equity']
-        journal = res['journal']
-        trade_log = res.get('trade_log')
-        trade_metrics = compute_trade_metrics(trade_log, float(init_cash))
-
-        st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
-
-        summary_metrics = summarize(eq)
-        momentum_hold_pct = compute_buy_and_hold_return(df_m)
-        target_hold_pct = compute_buy_and_hold_return(df_t)
-        strategy_perf_pct = compute_equity_return(eq)
-
-        st.subheader("Equity Curve vs Target Price")
-        # Prepare equity data
-        eq_df = eq.reset_index()
-        eq_df.columns = ['Date', 'Equity']
-
-        # Prepare target price data
-        target_close = df_t['Close'].copy()
-        if isinstance(target_close, pd.DataFrame):
-            target_close = target_close.squeeze("columns")
-        target_close = target_close.dropna()
-
-        # Align target price with equity dates
-        target_df = target_close.reset_index()
-        target_df.columns = ['Date', 'Price']
-
-        # Merge data on Date
-        combined_df = pd.merge(eq_df, target_df, on='Date', how='inner')
-
-        # Add MA lines if Golden Cross mode
-        if mode_switch_strategy == "Golden Cross":
-            # Get weekly momentum data for MA calculation
-            momo_close = df_m['Close'].copy()
-            if isinstance(momo_close, pd.DataFrame):
-                momo_close = momo_close.squeeze("columns")
-            momo_close = momo_close.dropna()
-
-            # Resample to weekly (Friday close)
-            weekly_close = momo_close.resample('W-FRI').last()
-
-            # Calculate MAs
-            short_ma = weekly_close.rolling(window=int(ma_short), min_periods=1).mean()
-            long_ma = weekly_close.rolling(window=int(ma_long), min_periods=1).mean()
-
-            # Detect crossovers on weekly data
-            prev_short = short_ma.shift(1)
-            prev_long = long_ma.shift(1)
-
-            # Golden Cross: short crosses above long (Defense -> Offense)
-            golden_cross = (prev_short <= prev_long) & (short_ma > long_ma)
-            # Death Cross: short crosses below long (Offense -> Defense)
-            death_cross = (prev_short >= prev_long) & (short_ma < long_ma)
-
-            # Expand to daily for charting (forward fill)
-            short_ma_daily = short_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
-            long_ma_daily = long_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
-            golden_cross_daily = golden_cross.reindex(momo_close.index, method='ffill').fillna(False)
-            death_cross_daily = death_cross.reindex(momo_close.index, method='ffill').fillna(False)
-
-            # Prepare MA dataframes
-            short_ma_df = short_ma_daily.reset_index()
-            short_ma_df.columns = ['Date', 'Short_MA']
-            long_ma_df = long_ma_daily.reset_index()
-            long_ma_df.columns = ['Date', 'Long_MA']
-
-            # Prepare crossover dataframes
-            golden_df = golden_cross_daily.reset_index()
-            golden_df.columns = ['Date', 'Golden_Cross']
-            death_df = death_cross_daily.reset_index()
-            death_df.columns = ['Date', 'Death_Cross']
-
-            # Merge MA data
-            combined_df = pd.merge(combined_df, short_ma_df, on='Date', how='left')
-            combined_df = pd.merge(combined_df, long_ma_df, on='Date', how='left')
-            combined_df = pd.merge(combined_df, golden_df, on='Date', how='left')
-            combined_df = pd.merge(combined_df, death_df, on='Date', how='left')
-
-            # Filter to only crossover points and add label field
-            golden_points_df = combined_df[combined_df['Golden_Cross'] == True].copy()
-            golden_points_df['Cross_Type'] = 'Golden Cross (공세모드)'
-
-            death_points_df = combined_df[combined_df['Death_Cross'] == True].copy()
-            death_points_df['Cross_Type'] = 'Death Cross (안전모드)'
-
-        if not combined_df.empty:
-            # Create hover selection
-            hover = alt.selection_point(
-                fields=['Date'],
-                nearest=True,
-                on='mouseover',
-                empty=False
-            )
-
-            # Create base chart
-            base = alt.Chart(combined_df).encode(
-                x=alt.X('Date:T', title='Date')
-            )
-
-            # Equity line (left y-axis)
-            equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
-                y=alt.Y('Equity:Q',
-                       title='Strategy Equity ($)',
-                       scale=alt.Scale(type='log'),
-                       axis=alt.Axis(titleColor='steelblue', format='$,.0f'))
-            )
-
-            # Price line (right y-axis)
-            price_line = base.mark_line(color='orange', strokeWidth=2).encode(
-                y=alt.Y('Price:Q',
-                       title=f'{target} Price ($)',
-                       scale=alt.Scale(type='log'),
-                       axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f'))
-            )
-
-            # Add points on hover for equity
-            equity_points = equity_line.mark_point(size=100, filled=True, color='steelblue').encode(
-                opacity=alt.condition(hover, alt.value(1), alt.value(0))
-            )
-
-            # Add points on hover for price
-            price_points = price_line.mark_point(size=100, filled=True, color='orange').encode(
-                opacity=alt.condition(hover, alt.value(1), alt.value(0))
-            )
-
-            # Add vertical rule on hover
-            rule = base.mark_rule(color='gray', strokeWidth=1).encode(
-                opacity=alt.condition(hover, alt.value(0.7), alt.value(0))
-            ).add_params(hover)
-
-            # Add text labels for equity
-            equity_text = equity_line.mark_text(
-                align='left', dx=5, dy=-10, color='steelblue', fontWeight='bold'
-            ).encode(
-                text=alt.condition(hover, alt.Text('Equity:Q', format='$,.0f'), alt.value(' ')),
-                opacity=alt.condition(hover, alt.value(1), alt.value(0))
-            )
-
-            # Add text labels for price
-            price_text = price_line.mark_text(
-                align='left', dx=5, dy=10, color='orange', fontWeight='bold'
-            ).encode(
-                text=alt.condition(hover, alt.Text('Price:Q', format='$,.2f'), alt.value(' ')),
-                opacity=alt.condition(hover, alt.value(1), alt.value(0))
-            )
-
-            # Add date text at top
-            date_text = base.mark_text(
-                align='center', dx=0, dy=-220, fontSize=14, fontWeight='bold', color='black'
-            ).encode(
-                text=alt.condition(hover, alt.Text('Date:T', format='%Y-%m-%d'), alt.value(' ')),
-                y=alt.value(0)
-            )
-
-            # Initialize layers list
-            layers = [equity_line, price_line, equity_points, price_points, rule, equity_text, price_text, date_text]
-
-            # Add MA lines if Golden Cross mode
-            if mode_switch_strategy == "Golden Cross" and 'Short_MA' in combined_df.columns and 'Long_MA' in combined_df.columns:
-                # Short MA line (use right y-axis like price)
-                short_ma_line = base.mark_line(color='green', strokeWidth=1.5, strokeDash=[5, 5]).encode(
-                    y=alt.Y('Short_MA:Q',
-                           title=f'{momentum} MA',
-                           scale=alt.Scale(type='log'),
-                           axis=alt.Axis(titleColor='green', orient='right', format='$,.2f'))
-                )
-
-                # Long MA line (use right y-axis like price)
-                long_ma_line = base.mark_line(color='red', strokeWidth=1.5, strokeDash=[5, 5]).encode(
-                    y=alt.Y('Long_MA:Q',
-                           title=f'{momentum} MA',
-                           scale=alt.Scale(type='log'),
-                           axis=alt.Axis(titleColor='red', orient='right', format='$,.2f'))
-                )
-
-                # Start with MA lines
-                layers = [equity_line, price_line, short_ma_line, long_ma_line]
-
-                # Add hover elements
-                layers.extend([equity_points, price_points, rule, equity_text, price_text, date_text])
-
-            # Combine all layers
-            chart = alt.layer(*layers).resolve_scale(
-                y='independent'
-            ).properties(height=400).interactive()
-
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            # Fallback to equity only
-            chart = (
-                alt.Chart(eq_df)
-                .mark_line(color='steelblue', strokeWidth=2)
-                .encode(
-                    x=alt.X('Date:T', title='Date'),
-                    y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type='log')),
-                    tooltip=[
-                        alt.Tooltip('Date:T', format='%Y-%m-%d'),
-                        alt.Tooltip('Equity:Q', format='$,.2f')
-                    ]
-                )
-                .properties(height=400)
-                .interactive()
-            )
-            st.altair_chart(chart, use_container_width=True)
-
-        st.subheader("요약 지표")
-        summary_top = st.columns(4)
-        summary_top[0].metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
-        summary_top[1].metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
-        summary_top[2].metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
-        summary_top[3].metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
-
-        summary_bottom = st.columns(4)
-        summary_bottom[0].metric(
-            f"{momentum} 보유 수익률",
-            f"{momentum_hold_pct:.2f}%" if momentum_hold_pct is not None else "-",
+            mode_switch_strategy="rsi",
+            rsi_period=14,
+            reset_on_mode_change=True,
+            enable_netting=enable_netting,
+            allow_fractional_shares=allow_fractional,
+            defense=defense,
+            offense=offense,
         )
-        summary_bottom[1].metric(
-            f"{target} 보유 수익률",
-            f"{target_hold_pct:.2f}%" if target_hold_pct is not None else "-",
+
+    bt = DongpaBacktester(df_t, df_m, params, cap)
+    res = bt.run()
+    eq = res['equity']
+    journal = res['journal']
+    trade_log = res.get('trade_log')
+    trade_metrics = compute_trade_metrics(trade_log, float(init_cash))
+
+    st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
+
+    summary_metrics = summarize(eq)
+    momentum_hold_pct = compute_buy_and_hold_return(df_m)
+    target_hold_pct = compute_buy_and_hold_return(df_t)
+    strategy_perf_pct = compute_equity_return(eq)
+
+    st.subheader("Equity Curve vs Target Price")
+    scale_type = 'log' if log_scale_enabled else 'linear'
+    eq_df = eq.reset_index()
+    eq_df.columns = ['Date', 'Equity']
+
+    target_close = df_t['Close'].copy()
+    if isinstance(target_close, pd.DataFrame):
+        target_close = target_close.squeeze("columns")
+    target_df = target_close.dropna().reset_index()
+    target_df.columns = ['Date', 'Price']
+
+    combined_df = pd.merge(eq_df, target_df, on='Date', how='inner')
+
+    if mode_switch_strategy == "Golden Cross":
+        momo_close = df_m['Close'].copy()
+        if isinstance(momo_close, pd.DataFrame):
+            momo_close = momo_close.squeeze("columns")
+        weekly_close = momo_close.dropna().resample('W-FRI').last()
+        short_ma = weekly_close.rolling(window=int(ma_short), min_periods=1).mean()
+        long_ma = weekly_close.rolling(window=int(ma_long), min_periods=1).mean()
+        short_ma_daily = short_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
+        long_ma_daily = long_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
+        ma_df = pd.DataFrame({
+            'Date': short_ma_daily.index,
+            'Short_MA': short_ma_daily.values,
+            'Long_MA': long_ma_daily.values,
+        })
+        combined_df = pd.merge(combined_df, ma_df, on='Date', how='left')
+
+    if not combined_df.empty:
+        combined_df['Date_Next'] = combined_df['Date'].shift(-1)
+        combined_df['Date_Next'] = combined_df['Date_Next'].fillna(combined_df['Date'] + pd.Timedelta(days=1))
+
+        base = alt.Chart(combined_df).encode(x=alt.X('Date:T', title='Date'))
+        tooltip_fields = [
+            alt.Tooltip('Date:T', format='%Y-%m-%d'),
+            alt.Tooltip('Equity:Q', format='$,.0f', title='Equity'),
+            alt.Tooltip('Price:Q', format='$,.2f', title=f'{target} Close'),
+        ]
+
+        equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
+            y=alt.Y('Equity:Q', title='Strategy Equity ($)', scale=alt.Scale(type=scale_type),
+                    axis=alt.Axis(titleColor='steelblue', format='$,.0f')),
+            tooltip=tooltip_fields,
         )
-        summary_bottom[2].metric(
-            "전략 누적 수익률",
-            f"{strategy_perf_pct:.2f}%" if strategy_perf_pct is not None else "-",
+
+        price_line = base.mark_line(color='orange', strokeWidth=2).encode(
+            y=alt.Y('Price:Q', title=f'{target} Price ($)', scale=alt.Scale(type=scale_type),
+                    axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f')),
+            tooltip=tooltip_fields,
         )
-        summary_bottom[3].metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
 
-        if trade_metrics is not None:
-            st.markdown("---")
-            st.subheader("실현 지표")
-            tm_row1 = st.columns(4)
-            tm_row1[0].metric("거래횟수", f"{trade_metrics['trade_count']:,}")
-            tm_row1[1].metric("MOC 횟수", f"{trade_metrics['moc_count']:,}")
-            tm_row1[2].metric("평균 보유일", f"{trade_metrics['avg_hold_days']:.2f}" if trade_metrics['avg_hold_days'] is not None else "-")
-            tm_row1[3].metric("이익금", f"${trade_metrics['net_profit']:,.2f}")
+        layers = [equity_line, price_line]
 
-            tm_row2 = st.columns(4)
-            tm_row2[0].metric("평균 이익률", f"{trade_metrics['avg_gain_pct']:.2f}%" if trade_metrics['avg_gain_pct'] is not None else "-")
-            tm_row2[1].metric("평균 손해률", f"{trade_metrics['avg_loss_pct']:.2f}%" if trade_metrics['avg_loss_pct'] is not None else "-")
-            tm_row2[2].metric("평균 실현이익", f"${trade_metrics['avg_gain']:,.2f}" if trade_metrics['avg_gain'] is not None else "-")
-            tm_row2[3].metric("평균 실현손해", f"${trade_metrics['avg_loss']:,.2f}" if trade_metrics['avg_loss'] is not None else "-")
-            st.markdown("---")
+        if mode_switch_strategy == "Golden Cross" and 'Short_MA' in combined_df.columns:
+            ma_tooltip = tooltip_fields + [
+                alt.Tooltip('Short_MA:Q', format='$,.2f', title=f'{momentum} Short MA'),
+                alt.Tooltip('Long_MA:Q', format='$,.2f', title=f'{momentum} Long MA'),
+            ]
+            short_ma_line = base.mark_line(color='green', strokeWidth=1.2, strokeDash=[5, 4]).encode(
+                y=alt.Y('Short_MA:Q', title=f'{momentum} MA', scale=alt.Scale(type=scale_type),
+                        axis=alt.Axis(titleColor='green', orient='right', format='$,.2f')),
+                tooltip=ma_tooltip,
+            )
+            long_ma_line = base.mark_line(color='red', strokeWidth=1.2, strokeDash=[4, 4]).encode(
+                y=alt.Y('Long_MA:Q', title=f'{momentum} MA', scale=alt.Scale(type=scale_type),
+                        axis=alt.Axis(titleColor='red', orient='right', format='$,.2f')),
+                tooltip=ma_tooltip,
+            )
+            layers.extend([short_ma_line, long_ma_line])
 
-        st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
-        st.dataframe(journal, use_container_width=True, height=360)
+        hover_overlay = alt.Chart(combined_df).mark_rect(opacity=0).encode(
+            x='Date:T',
+            x2='Date_Next:T',
+            tooltip=tooltip_fields,
+        )
 
-        st.download_button("일일 요약 CSV 다운로드", data=journal.to_csv(index=False).encode('utf-8-sig'),
-                           file_name=f"dongpa_daily_{target}.csv", mime="text/csv")
+        layers.append(hover_overlay)
 
-        if trade_log is not None and not trade_log.empty:
-            st.subheader("트랜치별 매수·매도 기록")
-            st.caption("TP=익절, SL=손절, MOC=보유기간 만료 청산")
-            st.dataframe(trade_log, use_container_width=True, height=360)
-            st.download_button("트랜치 로그 CSV 다운로드", data=trade_log.to_csv(index=False).encode('utf-8-sig'),
-                               file_name=f"dongpa_trades_{target}.csv", mime="text/csv")
-        st.download_button("Equity CSV 다운로드", data=eq.to_csv().encode('utf-8'),
-                           file_name=f"equity_{target}.csv", mime="text/csv")
+        chart = alt.layer(*layers).resolve_scale(y='independent').properties(height=400).interactive()
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        fallback_chart = (
+            alt.Chart(eq_df)
+            .mark_line(color='steelblue', strokeWidth=2)
+            .encode(
+                x=alt.X('Date:T', title='Date'),
+                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type=scale_type)),
+                tooltip=[alt.Tooltip('Date:T', format='%Y-%m-%d'), alt.Tooltip('Equity:Q', format='$,.0f')],
+            )
+            .properties(height=400)
+            .interactive()
+        )
+        st.altair_chart(fallback_chart, use_container_width=True)
 
-        st.caption("일일 요약과 트랜치 로그 모두 한국어 컬럼을 사용합니다. 트랜치 로그의 상태=보유중은 미청산 트랜치입니다. (Equity 등 성과 지표는 영문 표기)")
+    st.subheader("요약 지표")
+    summary_top = st.columns(4)
+    summary_top[0].metric("Final Equity", f"${summary_metrics['Final Equity']:,.0f}")
+    summary_top[1].metric("Sharpe (rf=0)", f"{summary_metrics['Sharpe (rf=0)']:.2f}")
+    summary_top[2].metric("Volatility (ann)", f"{summary_metrics['Volatility (ann)']:.2%}")
+    summary_top[3].metric("Max Drawdown", f"{summary_metrics['Max Drawdown']:.2%}")
+
+    summary_bottom = st.columns(4)
+    summary_bottom[0].metric(
+        f"{momentum} 보유 수익률",
+        f"{momentum_hold_pct:.2f}%" if momentum_hold_pct is not None else "-",
+    )
+    summary_bottom[1].metric(
+        f"{target} 보유 수익률",
+        f"{target_hold_pct:.2f}%" if target_hold_pct is not None else "-",
+    )
+    summary_bottom[2].metric(
+        "전략 누적 수익률",
+        f"{strategy_perf_pct:.2f}%" if strategy_perf_pct is not None else "-",
+    )
+    summary_bottom[3].metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
+
+    if trade_metrics is not None:
+        st.markdown("---")
+        st.subheader("실현 지표")
+        tm_row1 = st.columns(4)
+        tm_row1[0].metric("거래횟수", f"{trade_metrics['trade_count']:,}")
+        tm_row1[1].metric("MOC 횟수", f"{trade_metrics['moc_count']:,}")
+        tm_row1[2].metric("평균 보유일", f"{trade_metrics['avg_hold_days']:.2f}" if trade_metrics['avg_hold_days'] is not None else "-")
+        tm_row1[3].metric("이익금", f"${trade_metrics['net_profit']:,.2f}")
+
+        tm_row2 = st.columns(4)
+        tm_row2[0].metric("평균 이익률", f"{trade_metrics['avg_gain_pct']:.2f}%" if trade_metrics['avg_gain_pct'] is not None else "-")
+        tm_row2[1].metric("평균 손해률", f"{trade_metrics['avg_loss_pct']:.2f}%" if trade_metrics['avg_loss_pct'] is not None else "-")
+        tm_row2[2].metric("평균 실현이익", f"${trade_metrics['avg_gain']:,.2f}" if trade_metrics['avg_gain'] is not None else "-")
+        tm_row2[3].metric("평균 실현손해", f"${trade_metrics['avg_loss']:,.2f}" if trade_metrics['avg_loss'] is not None else "-")
+        st.markdown("---")
+
+    st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
+    st.dataframe(journal, use_container_width=True, height=360)
+
+    st.download_button("일일 요약 CSV 다운로드", data=journal.to_csv(index=False).encode('utf-8-sig'),
+                       file_name=f"dongpa_daily_{target}.csv", mime="text/csv")
+
+    if trade_log is not None and not trade_log.empty:
+        st.subheader("트랜치별 매수·매도 기록")
+        st.caption("TP=익절, SL=손절, MOC=보유기간 만료 청산")
+        st.dataframe(trade_log, use_container_width=True, height=360)
+        st.download_button("트랜치 로그 CSV 다운로드", data=trade_log.to_csv(index=False).encode('utf-8-sig'),
+                           file_name=f"dongpa_trades_{target}.csv", mime="text/csv")
+    st.download_button("Equity CSV 다운로드", data=eq.to_csv().encode('utf-8'),
+                       file_name=f"equity_{target}.csv", mime="text/csv")
+
+    st.caption("일일 요약과 트랜치 로그 모두 한국어 컬럼을 사용합니다. 트랜치 로그의 상태=보유중은 미청산 트랜치입니다. (Equity 등 성과 지표는 영문 표기)")

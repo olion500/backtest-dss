@@ -132,6 +132,7 @@ def _prepare_defaults(saved: dict) -> dict:
         "target": saved.get("target", "SOXL"),
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
+        "log_scale": saved.get("log_scale", True),
         "enable_netting": saved.get("enable_netting", True),
         "pcr": float(saved.get("pcr", 0.80)),
         "lcr": float(saved.get("lcr", 0.30)),
@@ -295,6 +296,11 @@ st.title("orderBook")
 st.caption("동파 LOC 주문 스케줄러. 오늘 기준 LOC 예약 주문과 퉁치기 결과, 누적 실적을 확인합니다.")
 
 with st.sidebar:
+    log_scale_enabled = st.toggle(
+        "Equity 로그 스케일",
+        value=defaults.get("log_scale", True),
+        key="orderbook_equity_scale_toggle",
+    )
     st.header("기본 설정")
 
     # Start date selection
@@ -409,6 +415,7 @@ with st.sidebar:
             "target": target,
             "momentum": momentum,
             "bench": bench,
+            "log_scale": log_scale_enabled,
             "enable_netting": enable_netting,
             "allow_fractional": allow_fractional,
             "pcr": pcr,
@@ -760,120 +767,66 @@ st.markdown("---")
 equity = result.get("equity", pd.Series())
 if not equity.empty:
     st.subheader("Equity Curve vs Target Price")
-    # Prepare equity data
+    scale_type = 'log' if log_scale_enabled else 'linear'
+
     equity_df = equity.reset_index()
     equity_df.columns = ['Date', 'Equity']
 
-    # Prepare target price data
     target_close = df_target_filtered['Close'].copy()
     if isinstance(target_close, pd.DataFrame):
         target_close = target_close.squeeze("columns")
-    target_close = target_close.dropna()
-
-    # Align target price with equity dates
-    target_df = target_close.reset_index()
+    target_df = target_close.dropna().reset_index()
     target_df.columns = ['Date', 'Price']
 
-    # Merge data on Date
     combined_df = pd.merge(equity_df, target_df, on='Date', how='inner')
 
     if not combined_df.empty:
-        # Create hover selection
-        hover = alt.selection_point(
-            fields=['Date'],
-            nearest=True,
-            on='mouseover',
-            empty=False
-        )
+        combined_df['Date_Next'] = combined_df['Date'].shift(-1)
+        combined_df['Date_Next'] = combined_df['Date_Next'].fillna(combined_df['Date'] + pd.Timedelta(days=1))
 
-        # Create base chart
-        base = alt.Chart(combined_df).encode(
-            x=alt.X('Date:T', title='Date')
-        )
+        base = alt.Chart(combined_df).encode(x=alt.X('Date:T', title='Date'))
+        tooltip_fields = [
+            alt.Tooltip('Date:T', format='%Y-%m-%d'),
+            alt.Tooltip('Equity:Q', format='$,.0f', title='Equity'),
+            alt.Tooltip('Price:Q', format='$,.2f', title=f"{ui_values['target']} Close"),
+        ]
 
-        # Equity line (left y-axis)
         equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
-            y=alt.Y('Equity:Q',
-                   title='Strategy Equity ($)',
-                   scale=alt.Scale(type='log'),
-                   axis=alt.Axis(titleColor='steelblue', format='$,.0f'))
+            y=alt.Y('Equity:Q', title='Strategy Equity ($)', scale=alt.Scale(type=scale_type),
+                    axis=alt.Axis(titleColor='steelblue', format='$,.0f')),
+            tooltip=tooltip_fields,
         )
 
-        # Price line (right y-axis)
         price_line = base.mark_line(color='orange', strokeWidth=2).encode(
-            y=alt.Y('Price:Q',
-                   title=f'{ui_values["target"]} Price ($)',
-                   scale=alt.Scale(type='log'),
-                   axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f'))
+            y=alt.Y('Price:Q', title=f"{ui_values['target']} Price ($)", scale=alt.Scale(type=scale_type),
+                    axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f')),
+            tooltip=tooltip_fields,
         )
 
-        # Add points on hover for equity
-        equity_points = equity_line.mark_point(size=100, filled=True, color='steelblue').encode(
-            opacity=alt.condition(hover, alt.value(1), alt.value(0))
+        hover_overlay = alt.Chart(combined_df).mark_rect(opacity=0).encode(
+            x='Date:T',
+            x2='Date_Next:T',
+            tooltip=tooltip_fields,
         )
 
-        # Add points on hover for price
-        price_points = price_line.mark_point(size=100, filled=True, color='orange').encode(
-            opacity=alt.condition(hover, alt.value(1), alt.value(0))
-        )
-
-        # Add vertical rule on hover
-        rule = base.mark_rule(color='gray', strokeWidth=1).encode(
-            opacity=alt.condition(hover, alt.value(0.7), alt.value(0))
-        ).add_params(hover)
-
-        # Add text labels for equity
-        equity_text = equity_line.mark_text(
-            align='left', dx=5, dy=-10, color='steelblue', fontWeight='bold'
-        ).encode(
-            text=alt.condition(hover, alt.Text('Equity:Q', format='$,.0f'), alt.value(' ')),
-            opacity=alt.condition(hover, alt.value(1), alt.value(0))
-        )
-
-        # Add text labels for price
-        price_text = price_line.mark_text(
-            align='left', dx=5, dy=10, color='orange', fontWeight='bold'
-        ).encode(
-            text=alt.condition(hover, alt.Text('Price:Q', format='$,.2f'), alt.value(' ')),
-            opacity=alt.condition(hover, alt.value(1), alt.value(0))
-        )
-
-        # Add date text at top
-        date_text = base.mark_text(
-            align='center', dx=0, dy=-220, fontSize=14, fontWeight='bold', color='black'
-        ).encode(
-            text=alt.condition(hover, alt.Text('Date:T', format='%Y-%m-%d'), alt.value(' ')),
-            y=alt.value(0)
-        )
-
-        # Combine all layers
-        chart = alt.layer(
-            equity_line, price_line,
-            equity_points, price_points,
-            rule,
-            equity_text, price_text, date_text
-        ).resolve_scale(
-            y='independent'
-        ).properties(height=400).interactive()
-
+        chart = alt.layer(equity_line, price_line, hover_overlay).resolve_scale(y='independent').properties(height=400).interactive()
         st.altair_chart(chart, use_container_width=True)
     else:
-        # Fallback to equity only
-        chart = (
+        fallback_chart = (
             alt.Chart(equity_df)
             .mark_line(color='steelblue', strokeWidth=2)
             .encode(
                 x=alt.X('Date:T', title='Date'),
-                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type='log')),
+                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type=scale_type)),
                 tooltip=[
                     alt.Tooltip('Date:T', format='%Y-%m-%d'),
-                    alt.Tooltip('Equity:Q', format='$,.2f')
+                    alt.Tooltip('Equity:Q', format='$,.0f')
                 ]
             )
             .properties(height=400)
             .interactive()
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(fallback_chart, use_container_width=True)
 
     # Calculate summary metrics
     summary_metrics = summarize(equity)
