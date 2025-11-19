@@ -10,6 +10,7 @@ import streamlit as st
 
 from dongpa_optimizer import (
     CapitalParamRanges,
+    MAPeriodRanges,
     ModeParamRanges,
     OptimizerConfig,
     ParamRange,
@@ -59,6 +60,27 @@ with st.sidebar:
     momentum = st.text_input("모멘텀 종목", value="QQQ")
     bench = st.text_input("벤치마크(선택)", value="SOXX")
     initial_cash = st.number_input("초기 현금", value=10000, step=1000)
+
+    st.divider()
+    st.subheader("모드 전환 전략")
+    mode_switch_strategy = st.radio(
+        "모드 전환 방식",
+        options=["RSI", "Golden Cross"],
+        index=0,
+        help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
+    )
+
+    # MA period optimization (only for Golden Cross)
+    optimize_ma_periods = False
+    ma_short_min = ma_short_max = ma_long_min = ma_long_max = None
+    if mode_switch_strategy == "Golden Cross":
+        optimize_ma_periods = st.checkbox("MA 기간 최적화", value=False, help="Short/Long MA 기간을 최적화합니다")
+        if optimize_ma_periods:
+            with st.expander("MA 기간 범위", expanded=True):
+                ma_short_min, ma_short_max = st.slider("Short MA (주)", 1, 20, (3, 10), 1)
+                ma_long_min, ma_long_max = st.slider("Long MA (주)", 5, 50, (15, 30), 1)
+                if ma_short_max >= ma_long_min:
+                    st.warning("⚠️ Short MA 최댓값은 Long MA 최솟값보다 작아야 합니다!")
 
     st.divider()
     st.subheader("샘플링 설정")
@@ -136,6 +158,17 @@ if run:
         loss_compound_rate=ParamRange(cap_lcr_min, cap_lcr_max, is_int=False),
     )
 
+    # Build MA period ranges if Golden Cross mode
+    ma_period_ranges = None
+    if mode_switch_strategy == "Golden Cross" and optimize_ma_periods:
+        if ma_short_max >= ma_long_min:
+            st.error("❌ Short MA 최댓값은 Long MA 최솟값보다 작아야 합니다!")
+            st.stop()
+        ma_period_ranges = MAPeriodRanges(
+            ma_short_period=ParamRange(ma_short_min, ma_short_max, is_int=True),
+            ma_long_period=ParamRange(ma_long_min, ma_long_max, is_int=True),
+        )
+
     config = OptimizerConfig(
         target_ticker=target.strip(),
         momentum_ticker=momentum.strip(),
@@ -149,11 +182,14 @@ if run:
         defense_ranges=defense_ranges,
         offense_ranges=offense_ranges,
         capital_ranges=capital_ranges,
+        mode_switch_strategy="ma_cross" if mode_switch_strategy == "Golden Cross" else "rsi",
+        optimize_ma_periods=optimize_ma_periods,
+        ma_period_ranges=ma_period_ranges,
     )
 
     with st.spinner("최적화 실행 중..."):
         try:
-            results, md_path = optimize(config)
+            results = optimize(config)
         except Exception as exc:  # noqa: BLE001 - UI 오류 안내용
             st.error(f"최적화에 실패했습니다: {exc}")
             st.stop()
@@ -168,25 +204,31 @@ if run:
         for idx, res in enumerate(results, start=1):
             defense_sl = f"{res.defense.stop_loss_pct:.1f}%" if res.defense.stop_loss_pct is not None else "없음"
             offense_sl = f"{res.offense.stop_loss_pct:.1f}%" if res.offense.stop_loss_pct is not None else "없음"
-            table_rows.append(
-                {
-                    "순위": idx,
-                    "Defense 조건": (
-                        f"조건 {res.defense.buy_cond_pct:.1f}% / TP {res.defense.tp_pct:.1f}% / "
-                        f"보유 {res.defense.max_hold_days}일 / 분할 {res.defense.slices} / SL {defense_sl}"
-                    ),
-                    "Offense 조건": (
-                        f"조건 {res.offense.buy_cond_pct:.1f}% / TP {res.offense.tp_pct:.1f}% / "
-                        f"보유 {res.offense.max_hold_days}일 / 분할 {res.offense.slices} / SL {offense_sl}"
-                    ),
-                    "자금 관리": f"주기 {res.capital.refresh_cycle_days}일 / PCR {res.capital.profit_compound_rate:.2f} / LCR {res.capital.loss_compound_rate:.2f}",
-                    "점수": round(res.score, 4),
-                    "Train CAGR(%)": round(res.train_metrics.get("CAGR", 0.0) * 100, 2),
-                    "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),
-                    "Test CAGR(%)": round(res.test_metrics.get("CAGR", 0.0) * 100, 2),
-                    "Test MDD(%)": round(res.test_metrics.get("Max Drawdown", 0.0) * 100, 2),
-                }
-            )
+
+            row = {
+                "순위": idx,
+                "모드 전환": res.mode_switch_strategy.upper(),
+                "Defense 조건": (
+                    f"조건 {res.defense.buy_cond_pct:.1f}% / TP {res.defense.tp_pct:.1f}% / "
+                    f"보유 {res.defense.max_hold_days}일 / 분할 {res.defense.slices} / SL {defense_sl}"
+                ),
+                "Offense 조건": (
+                    f"조건 {res.offense.buy_cond_pct:.1f}% / TP {res.offense.tp_pct:.1f}% / "
+                    f"보유 {res.offense.max_hold_days}일 / 분할 {res.offense.slices} / SL {offense_sl}"
+                ),
+                "자금 관리": f"주기 {res.capital.refresh_cycle_days}일 / PCR {res.capital.profit_compound_rate:.2f} / LCR {res.capital.loss_compound_rate:.2f}",
+                "점수": round(res.score, 4),
+                "Train CAGR(%)": round(res.train_metrics.get("CAGR", 0.0) * 100, 2),
+                "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),
+                "Test CAGR(%)": round(res.test_metrics.get("CAGR", 0.0) * 100, 2),
+                "Test MDD(%)": round(res.test_metrics.get("Max Drawdown", 0.0) * 100, 2),
+            }
+
+            # Add MA periods if Golden Cross mode
+            if res.ma_periods:
+                row["MA Periods"] = f"Short {res.ma_periods['ma_short_period']}주, Long {res.ma_periods['ma_long_period']}주"
+
+            table_rows.append(row)
             chart_rows.append(
                 {
                     "Phase": "Train",
@@ -207,6 +249,16 @@ if run:
         summary_df = pd.DataFrame(table_rows)
         st.dataframe(summary_df, use_container_width=True)
 
+        # CSV download button
+        csv_data = summary_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "📥 CSV 다운로드",
+            data=csv_data,
+            file_name=f"optimization_results_{target}_{config.mode_switch_strategy}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
         if chart_rows:
             chart_df = pd.DataFrame(chart_rows)
             scatter = (
@@ -222,15 +274,5 @@ if run:
                 .interactive()
             )
             st.altair_chart(scatter, use_container_width=True)
-
-        if isinstance(md_path, Path) and md_path.exists():
-            md_text = md_path.read_text(encoding="utf-8")
-            st.download_button(
-                "마크다운 다운로드", data=md_text, file_name=md_path.name, mime="text/markdown"
-            )
-            with st.expander("생성된 마크다운 미리보기"):
-                st.markdown(md_text)
-        else:
-            st.info("작성된 마크다운 파일을 찾을 수 없습니다.")
 else:
     st.info("왼쪽 사이드바에서 파라미터를 입력하고 '최적화 실행' 버튼을 눌러주세요.")

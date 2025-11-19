@@ -146,6 +146,60 @@ class CapitalParamRanges:
 
 
 @dataclass
+class RSIThresholdRanges:
+    """Parameter ranges for RSI threshold tuning."""
+    rsi_high_threshold: ParamRange  # Upper RSI threshold for defense mode
+    rsi_mid_low: ParamRange         # Lower bound of middle range
+    rsi_mid_high: ParamRange        # Upper bound of middle range
+    rsi_low_threshold: ParamRange   # Lower RSI threshold for offense mode
+    rsi_neutral: ParamRange         # Neutral line for crossover detection
+
+    def sample(self) -> dict[str, float]:
+        """Generate a random RSI threshold set with constraint validation."""
+        # Sample values
+        rsi_low = self.rsi_low_threshold.sample()
+        rsi_mid_low = self.rsi_mid_low.sample()
+        rsi_neutral = self.rsi_neutral.sample()
+        rsi_mid_high = self.rsi_mid_high.sample()
+        rsi_high = self.rsi_high_threshold.sample()
+
+        # Ensure logical ordering: low < mid_low < neutral < mid_high < high
+        values = sorted([rsi_low, rsi_mid_low, rsi_neutral, rsi_mid_high, rsi_high])
+
+        return {
+            "rsi_low_threshold": values[0],
+            "rsi_mid_low": values[1],
+            "rsi_neutral": values[2],
+            "rsi_mid_high": values[3],
+            "rsi_high_threshold": values[4],
+        }
+
+
+@dataclass
+class MAPeriodRanges:
+    """Parameter ranges for MA period tuning (for ma_cross strategy)."""
+    ma_short_period: ParamRange  # Short MA period (weeks)
+    ma_long_period: ParamRange   # Long MA period (weeks)
+
+    def sample(self) -> dict[str, int]:
+        """Generate a random MA period set with constraint validation."""
+        short = self.ma_short_period.sample()
+        long = self.ma_long_period.sample()
+
+        # Ensure short < long
+        if short >= long:
+            short, long = min(short, long), max(short, long)
+            # Add minimum gap of 2 periods
+            if long - short < 2:
+                long = short + 2
+
+        return {
+            "ma_short_period": int(short),
+            "ma_long_period": int(long),
+        }
+
+
+@dataclass
 class OptimizerConfig:
     target_ticker: str
     momentum_ticker: str
@@ -159,10 +213,16 @@ class OptimizerConfig:
     top_n: int = 5
     n_samples: int = 100  # Number of random samples to generate
     output_path: Path = Path("strategy_performance.md")
+    # Mode switching strategy
+    mode_switch_strategy: str = "rsi"  # "rsi" or "ma_cross"
     # Parameter ranges
     defense_ranges: ModeParamRanges | None = None
     offense_ranges: ModeParamRanges | None = None
     capital_ranges: CapitalParamRanges | None = None
+    rsi_threshold_ranges: RSIThresholdRanges | None = None  # RSI threshold optimization
+    optimize_rsi_thresholds: bool = False  # Enable RSI threshold optimization
+    ma_period_ranges: MAPeriodRanges | None = None  # MA period optimization
+    optimize_ma_periods: bool = False  # Enable MA period optimization
 
 
 # Default parameter ranges (wider ranges for better exploration)
@@ -190,6 +250,19 @@ DEFAULT_CAPITAL_RANGES = CapitalParamRanges(
     loss_compound_rate=ParamRange(0.0, 0.8, is_int=False),
 )
 
+DEFAULT_RSI_THRESHOLD_RANGES = RSIThresholdRanges(
+    rsi_low_threshold=ParamRange(20.0, 40.0, is_int=False),
+    rsi_mid_low=ParamRange(35.0, 45.0, is_int=False),
+    rsi_neutral=ParamRange(45.0, 55.0, is_int=False),
+    rsi_mid_high=ParamRange(55.0, 65.0, is_int=False),
+    rsi_high_threshold=ParamRange(60.0, 80.0, is_int=False),
+)
+
+DEFAULT_MA_PERIOD_RANGES = MAPeriodRanges(
+    ma_short_period=ParamRange(3, 10, is_int=True),   # 3-10 weeks (15-50 trading days)
+    ma_long_period=ParamRange(15, 30, is_int=True),   # 15-30 weeks (75-150 trading days)
+)
+
 
 @dataclass
 class OptimizationResult:
@@ -199,6 +272,9 @@ class OptimizationResult:
     score: float
     train_metrics: dict
     test_metrics: dict
+    rsi_thresholds: dict | None = None  # RSI threshold configuration if optimized
+    ma_periods: dict | None = None      # MA period configuration if optimized
+    mode_switch_strategy: str = "rsi"   # Mode switching strategy used
 
 
 # --------------------------- Data loading ---------------------------
@@ -245,6 +321,24 @@ def _format_capital_params(cp: CapitalParams) -> str:
     )
 
 
+def _format_rsi_thresholds(rsi_cfg: dict | None) -> str:
+    if rsi_cfg is None:
+        return "기본값 (35/40/50/60/65)"
+    return (
+        f"Low {rsi_cfg['rsi_low_threshold']:.1f}, "
+        f"MidLow {rsi_cfg['rsi_mid_low']:.1f}, "
+        f"Neutral {rsi_cfg['rsi_neutral']:.1f}, "
+        f"MidHigh {rsi_cfg['rsi_mid_high']:.1f}, "
+        f"High {rsi_cfg['rsi_high_threshold']:.1f}"
+    )
+
+
+def _format_ma_periods(ma_cfg: dict | None) -> str:
+    if ma_cfg is None:
+        return "기본값 (5/20주)"
+    return f"Short {ma_cfg['ma_short_period']}주, Long {ma_cfg['ma_long_period']}주"
+
+
 def _percent(value: float) -> float:
     return round(value * 100.0, 2)
 
@@ -270,6 +364,8 @@ def _evaluate(
     defense_ranges = cfg.defense_ranges or DEFAULT_DEFENSE_RANGES
     offense_ranges = cfg.offense_ranges or DEFAULT_OFFENSE_RANGES
     capital_ranges = cfg.capital_ranges or DEFAULT_CAPITAL_RANGES
+    rsi_threshold_ranges = cfg.rsi_threshold_ranges or DEFAULT_RSI_THRESHOLD_RANGES
+    ma_period_ranges = cfg.ma_period_ranges or DEFAULT_MA_PERIOD_RANGES
 
     results: list[OptimizationResult] = []
     failed_count = 0
@@ -284,16 +380,33 @@ def _evaluate(
             defense = ModeParams(**d_cfg)
             offense = ModeParams(**o_cfg)
             capital = CapitalParams(initial_cash=cfg.initial_cash, **c_cfg)
-            params = StrategyParams(
-                target_ticker=cfg.target_ticker,
-                momentum_ticker=cfg.momentum_ticker,
-                benchmark_ticker=cfg.benchmark_ticker,
-                rsi_period=cfg.rsi_period,
-                reset_on_mode_change=True,
-                enable_netting=cfg.enable_netting,
-                defense=defense,
-                offense=offense,
-            )
+
+            # Build StrategyParams based on mode switching strategy
+            rsi_thresholds = None
+            ma_periods = None
+            params_dict = {
+                "target_ticker": cfg.target_ticker,
+                "momentum_ticker": cfg.momentum_ticker,
+                "benchmark_ticker": cfg.benchmark_ticker,
+                "rsi_period": cfg.rsi_period,
+                "reset_on_mode_change": True,
+                "enable_netting": cfg.enable_netting,
+                "defense": defense,
+                "offense": offense,
+                "mode_switch_strategy": cfg.mode_switch_strategy,
+            }
+
+            # Add RSI thresholds if optimizing
+            if cfg.optimize_rsi_thresholds and cfg.mode_switch_strategy == "rsi":
+                rsi_thresholds = rsi_threshold_ranges.sample()
+                params_dict.update(rsi_thresholds)
+
+            # Add MA periods if optimizing
+            if cfg.optimize_ma_periods and cfg.mode_switch_strategy == "ma_cross":
+                ma_periods = ma_period_ranges.sample()
+                params_dict.update(ma_periods)
+
+            params = StrategyParams(**params_dict)
 
             train_backtester = DongpaBacktester(train_target, train_momo, params, capital)
             train_res = train_backtester.run()
@@ -312,6 +425,9 @@ def _evaluate(
                     score=score_value,
                     train_metrics=train_metrics,
                     test_metrics=test_metrics,
+                    rsi_thresholds=rsi_thresholds,
+                    ma_periods=ma_periods,
+                    mode_switch_strategy=cfg.mode_switch_strategy,
                 )
             )
 
@@ -349,32 +465,81 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
         f"- Test window: {cfg.test_range[0]}~{cfg.test_range[1]}\n"
         f"- Random samples: {cfg.n_samples}\n"
         f"- Score penalty (MDD weight): {cfg.score_penalty:.2f}\n"
+        f"- Mode switch strategy: {cfg.mode_switch_strategy}\n"
+        f"- RSI threshold optimization: {'Enabled' if cfg.optimize_rsi_thresholds else 'Disabled'}\n"
+        f"- MA period optimization: {'Enabled' if cfg.optimize_ma_periods else 'Disabled'}\n"
         f"- Total combinations: {len(results)}\n"
         "\n"
     )
-    table_header = (
-        "| Rank | Defense | Offense | Capital | Score | Train CAGR | Train MDD | Test CAGR | Test MDD |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
-    )
+
+    # Conditional table header based on optimization settings
+    if cfg.optimize_rsi_thresholds:
+        table_header = (
+            "| Rank | Defense | Offense | Capital | RSI Thresholds | Score | Train CAGR | Train MDD | Test CAGR | Test MDD |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        )
+    elif cfg.optimize_ma_periods:
+        table_header = (
+            "| Rank | Defense | Offense | Capital | MA Periods | Score | Train CAGR | Train MDD | Test CAGR | Test MDD |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        )
+    else:
+        table_header = (
+            "| Rank | Defense | Offense | Capital | Score | Train CAGR | Train MDD | Test CAGR | Test MDD |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        )
+
     rows = []
     for idx, res in enumerate(results, start=1):
         train_cagr = _percent(res.train_metrics.get("CAGR", 0.0))
         train_mdd = _percent(res.train_metrics.get("Max Drawdown", 0.0))
         test_cagr = _percent(res.test_metrics.get("CAGR", 0.0))
         test_mdd = _percent(res.test_metrics.get("Max Drawdown", 0.0))
-        rows.append(
-            "| {rank} | {defense} | {offense} | {capital} | {score:.4f} | {train_cagr:.2f}% | {train_mdd:.2f}% | {test_cagr:.2f}% | {test_mdd:.2f}% |".format(
-                rank=idx,
-                defense=_format_mode_params(res.defense),
-                offense=_format_mode_params(res.offense),
-                capital=_format_capital_params(res.capital),
-                score=res.score,
-                train_cagr=train_cagr,
-                train_mdd=train_mdd,
-                test_cagr=test_cagr,
-                test_mdd=test_mdd,
+
+        if cfg.optimize_rsi_thresholds:
+            rows.append(
+                "| {rank} | {defense} | {offense} | {capital} | {rsi} | {score:.4f} | {train_cagr:.2f}% | {train_mdd:.2f}% | {test_cagr:.2f}% | {test_mdd:.2f}% |".format(
+                    rank=idx,
+                    defense=_format_mode_params(res.defense),
+                    offense=_format_mode_params(res.offense),
+                    capital=_format_capital_params(res.capital),
+                    rsi=_format_rsi_thresholds(res.rsi_thresholds),
+                    score=res.score,
+                    train_cagr=train_cagr,
+                    train_mdd=train_mdd,
+                    test_cagr=test_cagr,
+                    test_mdd=test_mdd,
+                )
             )
-        )
+        elif cfg.optimize_ma_periods:
+            rows.append(
+                "| {rank} | {defense} | {offense} | {capital} | {ma} | {score:.4f} | {train_cagr:.2f}% | {train_mdd:.2f}% | {test_cagr:.2f}% | {test_mdd:.2f}% |".format(
+                    rank=idx,
+                    defense=_format_mode_params(res.defense),
+                    offense=_format_mode_params(res.offense),
+                    capital=_format_capital_params(res.capital),
+                    ma=_format_ma_periods(res.ma_periods),
+                    score=res.score,
+                    train_cagr=train_cagr,
+                    train_mdd=train_mdd,
+                    test_cagr=test_cagr,
+                    test_mdd=test_mdd,
+                )
+            )
+        else:
+            rows.append(
+                "| {rank} | {defense} | {offense} | {capital} | {score:.4f} | {train_cagr:.2f}% | {train_mdd:.2f}% | {test_cagr:.2f}% | {test_mdd:.2f}% |".format(
+                    rank=idx,
+                    defense=_format_mode_params(res.defense),
+                    offense=_format_mode_params(res.offense),
+                    capital=_format_capital_params(res.capital),
+                    score=res.score,
+                    train_cagr=train_cagr,
+                    train_mdd=train_mdd,
+                    test_cagr=test_cagr,
+                    test_mdd=test_mdd,
+                )
+            )
 
     if rows:
         detail_lines = [
@@ -396,11 +561,10 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
 
 # --------------------------- Public API ---------------------------
 
-def optimize(cfg: OptimizerConfig) -> tuple[list[OptimizationResult], Path]:
+def optimize(cfg: OptimizerConfig) -> list[OptimizationResult]:
     train_target, train_momo, test_target, test_momo = _load_price_frames(cfg)
     results = _evaluate(train_target, train_momo, test_target, test_momo, cfg)
-    md_path = write_markdown(results, cfg)
-    return results, md_path
+    return results
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -412,9 +576,8 @@ if __name__ == "__main__":  # pragma: no cover
         score_penalty=0.7,  # Higher penalty for MDD (prioritize drawdown reduction)
     )
     try:
-        results, md_path = optimize(default_cfg)
+        results = optimize(default_cfg)
         print(f"Evaluated {len(results)} parameter combinations")
-        print(f"Markdown report saved to {md_path}")
         if results:
             print(f"\nTop 3 results:")
             for i, res in enumerate(results[:3], 1):

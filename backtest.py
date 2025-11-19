@@ -237,6 +237,42 @@ else:
 with st.sidebar:
     st.header("기본 설정")
 
+    # Mode switch strategy selector
+    st.subheader("📊 모드 전환 전략")
+    mode_switch_strategy = st.radio(
+        "모드 전환 방식",
+        options=["RSI", "Golden Cross"],
+        index=0,
+        help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
+    )
+
+    # Show MA period inputs only if Golden Cross is selected
+    ma_short = None
+    ma_long = None
+    if mode_switch_strategy == "Golden Cross":
+        col_ma1, col_ma2 = st.columns(2)
+        ma_short = col_ma1.number_input(
+            "Short MA (주)",
+            min_value=1,
+            max_value=50,
+            value=3,
+            step=1,
+            help="짧은 이동평균 기간 (주 단위)"
+        )
+        ma_long = col_ma2.number_input(
+            "Long MA (주)",
+            min_value=2,
+            max_value=50,
+            value=7,
+            step=1,
+            help="긴 이동평균 기간 (주 단위)"
+        )
+
+        if ma_short >= ma_long:
+            st.warning("⚠️ Short MA는 Long MA보다 작아야 합니다!")
+
+    st.divider()
+
     # Config file selector
     st.subheader("📁 설정 파일 선택")
     available_configs = get_available_config_files()
@@ -338,6 +374,63 @@ with st.sidebar:
     sl2 = st.number_input("손절(%) - 공세", value=defaults["offense_sl"], step=0.1, format="%.2f")
     hold2 = st.number_input("최대 보유일(거래일) - 공세", value=defaults["offense_hold"], step=1)
 
+    st.divider()
+    st.header("💾 설정 저장")
+    save_config_name = st.text_input(
+        "설정 파일 이름",
+        placeholder="예: my_strategy",
+        help="설정을 저장할 파일 이름을 입력하세요 (config/ 폴더에 JSON 파일로 저장됩니다)"
+    )
+
+    if st.button("💾 설정 저장", type="secondary", use_container_width=True):
+        if not save_config_name or save_config_name.strip() == "":
+            st.error("❌ 파일 이름을 입력해주세요!")
+        elif save_config_name.lower() in ["default", "order_book_settings"]:
+            st.error("❌ 'default'와 'order_book_settings'는 예약된 이름입니다. 다른 이름을 사용해주세요!")
+        else:
+            # Build settings payload
+            save_payload = {
+                "target": target,
+                "momentum": momentum,
+                "bench": bench,
+                "enable_netting": enable_netting,
+                "allow_fractional": allow_fractional,
+                "pcr": float(pcr),
+                "lcr": float(lcr),
+                "cycle": int(cyc),
+                "defense_slices": int(s1),
+                "defense_buy": float(cond1),
+                "defense_tp": float(tp1),
+                "defense_sl": float(sl1),
+                "defense_hold": int(hold1),
+                "offense_slices": int(s2),
+                "offense_buy": float(cond2),
+                "offense_tp": float(tp2),
+                "offense_sl": float(sl2),
+                "offense_hold": int(hold2),
+                "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+            }
+
+            # Add MA parameters if Golden Cross mode
+            if mode_switch_strategy == "Golden Cross":
+                save_payload["ma_short"] = int(ma_short)
+                save_payload["ma_long"] = int(ma_long)
+
+            # Save to file
+            save_filename = save_config_name.strip()
+            if not save_filename.endswith(".json"):
+                save_filename += ".json"
+
+            save_path = CONFIG_DIR / save_filename
+            CONFIG_DIR.mkdir(exist_ok=True)
+
+            try:
+                with save_path.open("w", encoding="utf-8") as fh:
+                    json.dump(save_payload, fh, ensure_ascii=False, indent=2)
+                st.success(f"✅ 설정이 '{save_filename}'에 저장되었습니다!")
+            except Exception as e:
+                st.error(f"❌ 저장 실패: {e}")
+
 run = st.button("백테스트 실행")
 
 if run:
@@ -378,17 +471,39 @@ if run:
             slippage_pct=0.0,
         )
 
-        params = StrategyParams(
-            target_ticker=target,
-            momentum_ticker=momentum,
-            benchmark_ticker=bench if bench.strip() else None,
-            rsi_period=14,
-            reset_on_mode_change=True,
-            enable_netting=enable_netting,
-            allow_fractional_shares=allow_fractional,
-            defense=defense,
-            offense=offense,
-        )
+        # Set mode switch strategy parameters
+        if mode_switch_strategy == "Golden Cross":
+            if ma_short >= ma_long:
+                st.error("❌ Short MA는 Long MA보다 작아야 합니다!")
+                st.stop()
+
+            params = StrategyParams(
+                target_ticker=target,
+                momentum_ticker=momentum,
+                benchmark_ticker=bench if bench.strip() else None,
+                mode_switch_strategy="ma_cross",
+                ma_short_period=int(ma_short),
+                ma_long_period=int(ma_long),
+                reset_on_mode_change=True,
+                enable_netting=enable_netting,
+                allow_fractional_shares=allow_fractional,
+                defense=defense,
+                offense=offense,
+            )
+        else:
+            # RSI mode (default)
+            params = StrategyParams(
+                target_ticker=target,
+                momentum_ticker=momentum,
+                benchmark_ticker=bench if bench.strip() else None,
+                mode_switch_strategy="rsi",
+                rsi_period=14,
+                reset_on_mode_change=True,
+                enable_netting=enable_netting,
+                allow_fractional_shares=allow_fractional,
+                defense=defense,
+                offense=offense,
+            )
 
         bt = DongpaBacktester(df_t, df_m, params, cap)
         res = bt.run()
@@ -421,6 +536,61 @@ if run:
 
         # Merge data on Date
         combined_df = pd.merge(eq_df, target_df, on='Date', how='inner')
+
+        # Add MA lines if Golden Cross mode
+        if mode_switch_strategy == "Golden Cross":
+            # Get weekly momentum data for MA calculation
+            momo_close = df_m['Close'].copy()
+            if isinstance(momo_close, pd.DataFrame):
+                momo_close = momo_close.squeeze("columns")
+            momo_close = momo_close.dropna()
+
+            # Resample to weekly (Friday close)
+            weekly_close = momo_close.resample('W-FRI').last()
+
+            # Calculate MAs
+            short_ma = weekly_close.rolling(window=int(ma_short), min_periods=1).mean()
+            long_ma = weekly_close.rolling(window=int(ma_long), min_periods=1).mean()
+
+            # Detect crossovers on weekly data
+            prev_short = short_ma.shift(1)
+            prev_long = long_ma.shift(1)
+
+            # Golden Cross: short crosses above long (Defense -> Offense)
+            golden_cross = (prev_short <= prev_long) & (short_ma > long_ma)
+            # Death Cross: short crosses below long (Offense -> Defense)
+            death_cross = (prev_short >= prev_long) & (short_ma < long_ma)
+
+            # Expand to daily for charting (forward fill)
+            short_ma_daily = short_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
+            long_ma_daily = long_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
+            golden_cross_daily = golden_cross.reindex(momo_close.index, method='ffill').fillna(False)
+            death_cross_daily = death_cross.reindex(momo_close.index, method='ffill').fillna(False)
+
+            # Prepare MA dataframes
+            short_ma_df = short_ma_daily.reset_index()
+            short_ma_df.columns = ['Date', 'Short_MA']
+            long_ma_df = long_ma_daily.reset_index()
+            long_ma_df.columns = ['Date', 'Long_MA']
+
+            # Prepare crossover dataframes
+            golden_df = golden_cross_daily.reset_index()
+            golden_df.columns = ['Date', 'Golden_Cross']
+            death_df = death_cross_daily.reset_index()
+            death_df.columns = ['Date', 'Death_Cross']
+
+            # Merge MA data
+            combined_df = pd.merge(combined_df, short_ma_df, on='Date', how='left')
+            combined_df = pd.merge(combined_df, long_ma_df, on='Date', how='left')
+            combined_df = pd.merge(combined_df, golden_df, on='Date', how='left')
+            combined_df = pd.merge(combined_df, death_df, on='Date', how='left')
+
+            # Filter to only crossover points and add label field
+            golden_points_df = combined_df[combined_df['Golden_Cross'] == True].copy()
+            golden_points_df['Cross_Type'] = 'Golden Cross (공세모드)'
+
+            death_points_df = combined_df[combined_df['Death_Cross'] == True].copy()
+            death_points_df['Cross_Type'] = 'Death Cross (안전모드)'
 
         if not combined_df.empty:
             # Create hover selection
@@ -491,13 +661,35 @@ if run:
                 y=alt.value(0)
             )
 
+            # Initialize layers list
+            layers = [equity_line, price_line, equity_points, price_points, rule, equity_text, price_text, date_text]
+
+            # Add MA lines if Golden Cross mode
+            if mode_switch_strategy == "Golden Cross" and 'Short_MA' in combined_df.columns and 'Long_MA' in combined_df.columns:
+                # Short MA line (use right y-axis like price)
+                short_ma_line = base.mark_line(color='green', strokeWidth=1.5, strokeDash=[5, 5]).encode(
+                    y=alt.Y('Short_MA:Q',
+                           title=f'{momentum} MA',
+                           scale=alt.Scale(type='log'),
+                           axis=alt.Axis(titleColor='green', orient='right', format='$,.2f'))
+                )
+
+                # Long MA line (use right y-axis like price)
+                long_ma_line = base.mark_line(color='red', strokeWidth=1.5, strokeDash=[5, 5]).encode(
+                    y=alt.Y('Long_MA:Q',
+                           title=f'{momentum} MA',
+                           scale=alt.Scale(type='log'),
+                           axis=alt.Axis(titleColor='red', orient='right', format='$,.2f'))
+                )
+
+                # Start with MA lines
+                layers = [equity_line, price_line, short_ma_line, long_ma_line]
+
+                # Add hover elements
+                layers.extend([equity_points, price_points, rule, equity_text, price_text, date_text])
+
             # Combine all layers
-            chart = alt.layer(
-                equity_line, price_line,
-                equity_points, price_points,
-                rule,
-                equity_text, price_text, date_text
-            ).resolve_scale(
+            chart = alt.layer(*layers).resolve_scale(
                 y='independent'
             ).properties(height=400).interactive()
 

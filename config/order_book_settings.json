@@ -4,6 +4,7 @@
   "momentum": "QQQ",
   "bench": "SOXX",
   "enable_netting": true,
+  "allow_fractional": false,
   "pcr": 0.88,
   "lcr": 0.11,
   "cycle": 1,
@@ -17,5 +18,8 @@
   "offense_buy": 4.5,
   "offense_tp": 6.8,
   "offense_sl": 23.2,
-  "offense_hold": 51
+  "offense_hold": 51,
+  "mode_switch_strategy_index": 1,
+  "ma_short": 2,
+  "ma_long": 7
 }
