@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 import yfinance as yf
@@ -19,6 +18,11 @@ from dongpa_engine import (
     ModeParams,
     StrategyParams,
     summarize,
+)
+from chart_utils import (
+    EquityPriceChartConfig,
+    prepare_equity_price_frames,
+    build_equity_price_chart,
 )
 
 
@@ -767,66 +771,14 @@ st.markdown("---")
 equity = result.get("equity", pd.Series())
 if not equity.empty:
     st.subheader("Equity Curve vs Target Price")
-    scale_type = 'log' if log_scale_enabled else 'linear'
-
-    equity_df = equity.reset_index()
-    equity_df.columns = ['Date', 'Equity']
-
-    target_close = df_target_filtered['Close'].copy()
-    if isinstance(target_close, pd.DataFrame):
-        target_close = target_close.squeeze("columns")
-    target_df = target_close.dropna().reset_index()
-    target_df.columns = ['Date', 'Price']
-
-    combined_df = pd.merge(equity_df, target_df, on='Date', how='inner')
-
-    if not combined_df.empty:
-        combined_df['Date_Next'] = combined_df['Date'].shift(-1)
-        combined_df['Date_Next'] = combined_df['Date_Next'].fillna(combined_df['Date'] + pd.Timedelta(days=1))
-
-        base = alt.Chart(combined_df).encode(x=alt.X('Date:T', title='Date'))
-        tooltip_fields = [
-            alt.Tooltip('Date:T', format='%Y-%m-%d'),
-            alt.Tooltip('Equity:Q', format='$,.0f', title='Equity'),
-            alt.Tooltip('Price:Q', format='$,.2f', title=f"{ui_values['target']} Close"),
-        ]
-
-        equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
-            y=alt.Y('Equity:Q', title='Strategy Equity ($)', scale=alt.Scale(type=scale_type),
-                    axis=alt.Axis(titleColor='steelblue', format='$,.0f')),
-            tooltip=tooltip_fields,
-        )
-
-        price_line = base.mark_line(color='orange', strokeWidth=2).encode(
-            y=alt.Y('Price:Q', title=f"{ui_values['target']} Price ($)", scale=alt.Scale(type=scale_type),
-                    axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f')),
-            tooltip=tooltip_fields,
-        )
-
-        hover_overlay = alt.Chart(combined_df).mark_rect(opacity=0).encode(
-            x='Date:T',
-            x2='Date_Next:T',
-            tooltip=tooltip_fields,
-        )
-
-        chart = alt.layer(equity_line, price_line, hover_overlay).resolve_scale(y='independent').properties(height=400).interactive()
+    eq_df, combined_df = prepare_equity_price_frames(equity, df_target_filtered['Close'])
+    chart_config = EquityPriceChartConfig(
+        target_label=ui_values['target'],
+        log_scale=log_scale_enabled,
+    )
+    chart = build_equity_price_chart(eq_df, combined_df, chart_config)
+    if chart is not None:
         st.altair_chart(chart, use_container_width=True)
-    else:
-        fallback_chart = (
-            alt.Chart(equity_df)
-            .mark_line(color='steelblue', strokeWidth=2)
-            .encode(
-                x=alt.X('Date:T', title='Date'),
-                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type=scale_type)),
-                tooltip=[
-                    alt.Tooltip('Date:T', format='%Y-%m-%d'),
-                    alt.Tooltip('Equity:Q', format='$,.0f')
-                ]
-            )
-            .properties(height=400)
-            .interactive()
-        )
-        st.altair_chart(fallback_chart, use_container_width=True)
 
     # Calculate summary metrics
     summary_metrics = summarize(equity)

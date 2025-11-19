@@ -3,12 +3,17 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import altair as alt
 import json
 from datetime import date, datetime
 from pathlib import Path
 
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
+from chart_utils import (
+    EquityPriceChartConfig,
+    ExtraLineConfig,
+    prepare_equity_price_frames,
+    build_equity_price_chart,
+)
 
 
 NAV_LINKS = [
@@ -68,6 +73,10 @@ def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
         "target": saved.get("target", "SOXL"),
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
+        "log_scale": saved.get("log_scale", True),
+        "mode_switch_strategy_index": int(saved.get("mode_switch_strategy_index", 0)),
+        "ma_short": int(saved.get("ma_short", 3)),
+        "ma_long": int(saved.get("ma_long", 7)),
         "enable_netting": saved.get("enable_netting", True),
         "allow_fractional": saved.get("allow_fractional", False),
         "pcr": float(saved.get("pcr", 0.8)) * 100,  # Convert from decimal to percentage
@@ -216,6 +225,10 @@ else:
         "target": "SOXL",
         "momentum": "QQQ",
         "bench": "SOXX",
+        "log_scale": True,
+        "mode_switch_strategy_index": 0,
+        "ma_short": 3,
+        "ma_long": 7,
         "enable_netting": True,
         "allow_fractional": False,
         "pcr": 80,
@@ -235,14 +248,18 @@ else:
     }
 
 with st.sidebar:
-    log_scale_enabled = st.toggle("Equity 로그 스케일", value=True, key="equity_log_scale_toggle")
+    log_scale_enabled = st.toggle(
+        "Equity 로그 스케일",
+        value=defaults.get("log_scale", True),
+        key="equity_log_scale_toggle",
+    )
     st.header("기본 설정")
 
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
         options=["RSI", "Golden Cross"],
-        index=0,
+        index=int(defaults.get("mode_switch_strategy_index", 0)),
         help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
     )
 
@@ -254,7 +271,7 @@ with st.sidebar:
             "Short MA (주)",
             min_value=1,
             max_value=50,
-            value=3,
+            value=int(defaults.get("ma_short", 3)),
             step=1,
             help="짧은 이동평균 기간 (주 단위)"
         )
@@ -262,7 +279,7 @@ with st.sidebar:
             "Long MA (주)",
             min_value=2,
             max_value=50,
-            value=7,
+            value=int(defaults.get("ma_long", 7)),
             step=1,
             help="긴 이동평균 기간 (주 단위)"
         )
@@ -386,6 +403,7 @@ with st.sidebar:
                 "target": target,
                 "momentum": momentum,
                 "bench": bench,
+                "log_scale": log_scale_enabled,
                 "enable_netting": enable_netting,
                 "allow_fractional": allow_fractional,
                 "pcr": float(pcr),
@@ -510,18 +528,9 @@ if run:
     strategy_perf_pct = compute_equity_return(eq)
 
     st.subheader("Equity Curve vs Target Price")
-    scale_type = 'log' if log_scale_enabled else 'linear'
-    eq_df = eq.reset_index()
-    eq_df.columns = ['Date', 'Equity']
+    eq_df, combined_df = prepare_equity_price_frames(eq, df_t['Close'])
 
-    target_close = df_t['Close'].copy()
-    if isinstance(target_close, pd.DataFrame):
-        target_close = target_close.squeeze("columns")
-    target_df = target_close.dropna().reset_index()
-    target_df.columns = ['Date', 'Price']
-
-    combined_df = pd.merge(eq_df, target_df, on='Date', how='inner')
-
+    extra_lines = []
     if mode_switch_strategy == "Golden Cross":
         momo_close = df_m['Close'].copy()
         if isinstance(momo_close, pd.DataFrame):
@@ -531,78 +540,27 @@ if run:
         long_ma = weekly_close.rolling(window=int(ma_long), min_periods=1).mean()
         short_ma_daily = short_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
         long_ma_daily = long_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
-        ma_df = pd.DataFrame({
-            'Date': short_ma_daily.index,
-            'Short_MA': short_ma_daily.values,
-            'Long_MA': long_ma_daily.values,
-        })
-        combined_df = pd.merge(combined_df, ma_df, on='Date', how='left')
-
-    if not combined_df.empty:
-        combined_df['Date_Next'] = combined_df['Date'].shift(-1)
-        combined_df['Date_Next'] = combined_df['Date_Next'].fillna(combined_df['Date'] + pd.Timedelta(days=1))
-
-        base = alt.Chart(combined_df).encode(x=alt.X('Date:T', title='Date'))
-        tooltip_fields = [
-            alt.Tooltip('Date:T', format='%Y-%m-%d'),
-            alt.Tooltip('Equity:Q', format='$,.0f', title='Equity'),
-            alt.Tooltip('Price:Q', format='$,.2f', title=f'{target} Close'),
+        extra_lines = [
+            ExtraLineConfig(
+                series=short_ma_daily,
+                column_name='Short_MA',
+                title=f'{momentum} Short MA',
+                color='green',
+                stroke_dash=[5, 4],
+            ),
+            ExtraLineConfig(
+                series=long_ma_daily,
+                column_name='Long_MA',
+                title=f'{momentum} Long MA',
+                color='red',
+                stroke_dash=[4, 4],
+            ),
         ]
 
-        equity_line = base.mark_line(color='steelblue', strokeWidth=2).encode(
-            y=alt.Y('Equity:Q', title='Strategy Equity ($)', scale=alt.Scale(type=scale_type),
-                    axis=alt.Axis(titleColor='steelblue', format='$,.0f')),
-            tooltip=tooltip_fields,
-        )
-
-        price_line = base.mark_line(color='orange', strokeWidth=2).encode(
-            y=alt.Y('Price:Q', title=f'{target} Price ($)', scale=alt.Scale(type=scale_type),
-                    axis=alt.Axis(titleColor='orange', orient='right', format='$,.2f')),
-            tooltip=tooltip_fields,
-        )
-
-        layers = [equity_line, price_line]
-
-        if mode_switch_strategy == "Golden Cross" and 'Short_MA' in combined_df.columns:
-            ma_tooltip = tooltip_fields + [
-                alt.Tooltip('Short_MA:Q', format='$,.2f', title=f'{momentum} Short MA'),
-                alt.Tooltip('Long_MA:Q', format='$,.2f', title=f'{momentum} Long MA'),
-            ]
-            short_ma_line = base.mark_line(color='green', strokeWidth=1.2, strokeDash=[5, 4]).encode(
-                y=alt.Y('Short_MA:Q', title=f'{momentum} MA', scale=alt.Scale(type=scale_type),
-                        axis=alt.Axis(titleColor='green', orient='right', format='$,.2f')),
-                tooltip=ma_tooltip,
-            )
-            long_ma_line = base.mark_line(color='red', strokeWidth=1.2, strokeDash=[4, 4]).encode(
-                y=alt.Y('Long_MA:Q', title=f'{momentum} MA', scale=alt.Scale(type=scale_type),
-                        axis=alt.Axis(titleColor='red', orient='right', format='$,.2f')),
-                tooltip=ma_tooltip,
-            )
-            layers.extend([short_ma_line, long_ma_line])
-
-        hover_overlay = alt.Chart(combined_df).mark_rect(opacity=0).encode(
-            x='Date:T',
-            x2='Date_Next:T',
-            tooltip=tooltip_fields,
-        )
-
-        layers.append(hover_overlay)
-
-        chart = alt.layer(*layers).resolve_scale(y='independent').properties(height=400).interactive()
+    chart_config = EquityPriceChartConfig(target_label=target, log_scale=log_scale_enabled)
+    chart = build_equity_price_chart(eq_df, combined_df, chart_config, extra_lines=extra_lines)
+    if chart is not None:
         st.altair_chart(chart, use_container_width=True)
-    else:
-        fallback_chart = (
-            alt.Chart(eq_df)
-            .mark_line(color='steelblue', strokeWidth=2)
-            .encode(
-                x=alt.X('Date:T', title='Date'),
-                y=alt.Y('Equity:Q', title='Equity ($)', scale=alt.Scale(type=scale_type)),
-                tooltip=[alt.Tooltip('Date:T', format='%Y-%m-%d'), alt.Tooltip('Equity:Q', format='$,.0f')],
-            )
-            .properties(height=400)
-            .interactive()
-        )
-        st.altair_chart(fallback_chart, use_container_width=True)
 
     st.subheader("요약 지표")
     summary_top = st.columns(4)
