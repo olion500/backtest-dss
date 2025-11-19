@@ -87,6 +87,26 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
+MODE_ALIASES = {
+    "안전": "defense",
+    "defense": "defense",
+    "공세": "offense",
+    "offense": "offense",
+}
+
+
+def _normalize_mode(value: object) -> str:
+    """Map journal mode labels (Korean or English) to canonical keys."""
+    if isinstance(value, str):
+        trimmed = value.strip()
+        lowered = trimmed.lower()
+        if lowered in MODE_ALIASES:
+            return MODE_ALIASES[lowered]
+        if trimmed in MODE_ALIASES:
+            return MODE_ALIASES[trimmed]
+    return "defense"
+
+
 def _is_market_closed_today() -> bool:
     """Check if US market has closed today.
 
@@ -516,7 +536,8 @@ last_date = last_row["거래일자"].date()
 last_timestamp = pd.Timestamp(last_date)
 
 # Extract current state from last row
-current_mode = last_row.get("모드", "안전")
+mode_raw_value = last_row.get("모드", "안전")
+current_mode = _normalize_mode(mode_raw_value)
 current_cash = _safe_float(last_row.get("현금")) or float(ui_values["init_cash"])
 current_position_qty = _safe_int(last_row.get("보유수량"))
 prev_close = _safe_float(last_row.get("종가"))
@@ -628,6 +649,7 @@ else:
 
 # Build unified order sheet (always use last_row data for LOC orders)
 order_sheet = []
+sl_order_sheet = []  # displayed in a collapsible panel
 
 # Add sell orders (TP and SL for each open position)
 if not open_trades.empty and prev_close:
@@ -660,10 +682,10 @@ if not open_trades.empty and prev_close:
                     "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else ""
                 })
 
-            # SL sell order
+            # SL sell order (render separately to reduce clutter)
             if sl_price and sl_price > 0:
                 sl_change = ((sl_price / buy_price) - 1) * 100 if buy_price else None
-                order_sheet.append({
+                sl_order_sheet.append({
                     "구분": "매도 (SL)",
                     "주문가": sl_price,
                     "수량": buy_qty,
@@ -724,6 +746,13 @@ if order_sheet:
         st.info(f"✅ 퉁치기 적용: 실제 매수 {net_buy_qty}주, 매도 {net_sell_qty}주로 상쇄됨")
 else:
     st.write("예정된 주문이 없습니다.")
+
+# Show SL orders in a collapsible table to keep the main sheet compact
+if sl_order_sheet:
+    with st.expander("매도 SL 주문 보기", expanded=False):
+        sl_df = pd.DataFrame(sl_order_sheet)
+        sl_df["주문가"] = sl_df["주문가"].apply(lambda x: f"${x:.2f}")
+        st.dataframe(sl_df, use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
