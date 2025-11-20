@@ -10,7 +10,6 @@ from pathlib import Path
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
 from chart_utils import (
     EquityPriceChartConfig,
-    ExtraLineConfig,
     prepare_equity_price_frames,
     build_equity_price_chart,
 )
@@ -529,35 +528,8 @@ if run:
     st.subheader("Equity Curve vs Target Price")
     eq_df, combined_df = prepare_equity_price_frames(eq, df_t['Close'])
 
-    extra_lines = []
-    if mode_switch_strategy == "Golden Cross":
-        momo_close = df_m['Close'].copy()
-        if isinstance(momo_close, pd.DataFrame):
-            momo_close = momo_close.squeeze("columns")
-        weekly_close = momo_close.dropna().resample('W-FRI').last()
-        short_ma = weekly_close.rolling(window=int(ma_short), min_periods=1).mean()
-        long_ma = weekly_close.rolling(window=int(ma_long), min_periods=1).mean()
-        short_ma_daily = short_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
-        long_ma_daily = long_ma.reindex(momo_close.index, method='ffill').fillna(method='bfill')
-        extra_lines = [
-            ExtraLineConfig(
-                series=short_ma_daily,
-                column_name='Short_MA',
-                title=f'{momentum} Short MA',
-                color='green',
-                stroke_dash=[5, 4],
-            ),
-            ExtraLineConfig(
-                series=long_ma_daily,
-                column_name='Long_MA',
-                title=f'{momentum} Long MA',
-                color='red',
-                stroke_dash=[4, 4],
-            ),
-        ]
-
     chart_config = EquityPriceChartConfig(target_label=target, log_scale=log_scale_enabled)
-    chart = build_equity_price_chart(eq_df, combined_df, chart_config, extra_lines=extra_lines)
+    chart = build_equity_price_chart(eq_df, combined_df, chart_config)
     if chart is not None:
         st.altair_chart(chart, use_container_width=True)
 
