@@ -360,7 +360,7 @@ with st.sidebar:
     )
     allow_fractional = st.checkbox(
         "소수점 거래 허용",
-        value=False,
+        value=defaults.get("allow_fractional", False),
         help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
     )
 
@@ -371,19 +371,18 @@ with st.sidebar:
     init_cash = st.number_input("초기 가용현금", value=float(defaults["init_cash"]), step=1000.0)
 
     st.header("안전 모드")
-    col1, col2 = st.columns(2)
-    s1 = col1.number_input("분할수(N) - 안전", value=int(defaults["defense_slices"]), step=1)
-    cond1 = col2.number_input("매수조건(%) - 안전", value=float(defaults["defense_buy"]), step=0.1, format="%.2f")
-    tp1 = col1.number_input("익절(%) - 안전", value=float(defaults["defense_tp"]), step=0.1, format="%.2f")
-    sl1 = col2.number_input("손절(%) - 안전", value=float(defaults["defense_sl"]), step=0.1, format="%.2f")
-    hold1 = col1.number_input("최대 보유일(거래일) - 안전", value=int(defaults["defense_hold"]), step=1)
+    s1 = st.number_input("분할수(N) - 안전", value=int(defaults["defense_slices"]), step=1)
+    cond1 = st.number_input("매수조건(%) - 안전", value=float(defaults["defense_buy"]), step=0.1, format="%.2f")
+    tp1 = st.number_input("익절(%) - 안전", value=float(defaults["defense_tp"]), step=0.1, format="%.2f")
+    sl1 = st.number_input("손절(%) - 안전", value=float(defaults["defense_sl"]), step=0.1, format="%.2f")
+    hold1 = st.number_input("최대 보유일(거래일) - 안전", value=int(defaults["defense_hold"]), step=1)
 
     st.header("공세 모드")
-    s2 = col1.number_input("분할수(N) - 공세", value=int(defaults["offense_slices"]), step=1)
-    cond2 = col2.number_input("매수조건(%) - 공세", value=float(defaults["offense_buy"]), step=0.1, format="%.2f")
-    tp2 = col1.number_input("익절(%) - 공세", value=float(defaults["offense_tp"]), step=0.1, format="%.2f")
-    sl2 = col2.number_input("손절(%) - 공세", value=float(defaults["offense_sl"]), step=0.1, format="%.2f")
-    hold2 = col1.number_input("최대 보유일(거래일) - 공세", value=int(defaults["offense_hold"]), step=1)
+    s2 = st.number_input("분할수(N) - 공세", value=int(defaults["offense_slices"]), step=1)
+    cond2 = st.number_input("매수조건(%) - 공세", value=float(defaults["offense_buy"]), step=0.1, format="%.2f")
+    tp2 = st.number_input("익절(%) - 공세", value=float(defaults["offense_tp"]), step=0.1, format="%.2f")
+    sl2 = st.number_input("손절(%) - 공세", value=float(defaults["offense_sl"]), step=0.1, format="%.2f")
+    hold2 = st.number_input("최대 보유일(거래일) - 공세", value=int(defaults["offense_hold"]), step=1)
 
     st.divider()
     st.header("💾 설정 저장")
