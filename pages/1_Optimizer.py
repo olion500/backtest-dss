@@ -247,7 +247,7 @@ if run:
             )
 
         summary_df = pd.DataFrame(table_rows)
-        st.dataframe(summary_df, use_container_width=True)
+        st.dataframe(summary_df, width="stretch")
 
         # CSV download button
         csv_data = summary_df.to_csv(index=False).encode('utf-8-sig')
@@ -256,7 +256,7 @@ if run:
             data=csv_data,
             file_name=f"optimization_results_{target}_{config.mode_switch_strategy}.csv",
             mime="text/csv",
-            use_container_width=True
+            width="stretch"
         )
 
         if chart_rows:
@@ -273,6 +273,6 @@ if run:
                 )
                 .interactive()
             )
-            st.altair_chart(scatter, use_container_width=True)
+            st.altair_chart(scatter, width="stretch")
 else:
     st.info("왼쪽 사이드바에서 파라미터를 입력하고 '최적화 실행' 버튼을 눌러주세요.")

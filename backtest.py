@@ -306,7 +306,7 @@ with st.sidebar:
             load_button = st.button(
                 "🔄 선택한 설정 불러오기",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 help="선택한 파일의 설정을 불러옵니다 (시작일, 초기현금 제외)"
             )
         with col2:
@@ -391,7 +391,7 @@ with st.sidebar:
         help="설정을 저장할 파일 이름을 입력하세요 (config/ 폴더에 JSON 파일로 저장됩니다)"
     )
 
-    if st.button("💾 설정 저장", type="secondary", use_container_width=True):
+    if st.button("💾 설정 저장", type="secondary", width="stretch"):
         if not save_config_name or save_config_name.strip() == "":
             st.error("❌ 파일 이름을 입력해주세요!")
         elif save_config_name.lower() in ["default", "order_book_settings"]:
@@ -531,7 +531,7 @@ if run:
     chart_config = EquityPriceChartConfig(target_label=target, log_scale=log_scale_enabled)
     chart = build_equity_price_chart(eq_df, combined_df, chart_config)
     if chart is not None:
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     st.subheader("요약 지표")
     summary_top = st.columns(4)
@@ -572,7 +572,7 @@ if run:
         st.markdown("---")
 
     st.subheader("일일 거래 요약 (장이 열린 모든 날 포함)")
-    st.dataframe(journal, use_container_width=True, height=360)
+    st.dataframe(journal, width="stretch", height=360)
 
     st.download_button("일일 요약 CSV 다운로드", data=journal.to_csv(index=False).encode('utf-8-sig'),
                        file_name=f"dongpa_daily_{target}.csv", mime="text/csv")
@@ -580,7 +580,7 @@ if run:
     if trade_log is not None and not trade_log.empty:
         st.subheader("트랜치별 매수·매도 기록")
         st.caption("TP=익절, SL=손절, MOC=보유기간 만료 청산")
-        st.dataframe(trade_log, use_container_width=True, height=360)
+        st.dataframe(trade_log, width="stretch", height=360)
         st.download_button("트랜치 로그 CSV 다운로드", data=trade_log.to_csv(index=False).encode('utf-8-sig'),
                            file_name=f"dongpa_trades_{target}.csv", mime="text/csv")
     st.download_button("Equity CSV 다운로드", data=eq.to_csv().encode('utf-8'),

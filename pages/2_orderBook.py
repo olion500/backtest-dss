@@ -639,7 +639,7 @@ if not open_trades.empty and prev_close:
 
     if holdings:
         holdings_df = pd.DataFrame(holdings)
-        st.dataframe(holdings_df, use_container_width=True, hide_index=True)
+        st.dataframe(holdings_df, width="stretch", hide_index=True)
 
         # Summary
         total_qty = sum(h["수량"] for h in holdings)
@@ -746,7 +746,7 @@ if order_sheet:
     # Format price column
     order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
 
-    st.dataframe(order_df, use_container_width=True, hide_index=True)
+    st.dataframe(order_df, width="stretch", hide_index=True)
 
     # Netting summary
     net_buy_qty = _safe_int(last_row.get("매수수량", 0))
@@ -763,7 +763,7 @@ if sl_order_sheet:
     with st.expander("매도 SL 주문 보기", expanded=False):
         sl_df = pd.DataFrame(sl_order_sheet)
         sl_df["주문가"] = sl_df["주문가"].apply(lambda x: f"${x:.2f}")
-        st.dataframe(sl_df, use_container_width=True, hide_index=True)
+        st.dataframe(sl_df, width="stretch", hide_index=True)
 
 st.markdown("---")
 
@@ -778,7 +778,7 @@ if not equity.empty:
     )
     chart = build_equity_price_chart(eq_df, combined_df, chart_config)
     if chart is not None:
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     # Calculate summary metrics
     summary_metrics = summarize(equity)
@@ -787,14 +787,22 @@ if not equity.empty:
     target_hold_pct = None
     if not df_target_filtered.empty and "Close" in df_target_filtered.columns:
         closes = df_target_filtered["Close"].dropna()
+        if isinstance(closes, pd.DataFrame):
+            closes = closes.squeeze("columns")
         if len(closes) > 1:
-            target_hold_pct = float(((closes.iloc[-1] / closes.iloc[0]) - 1) * 100.0)
+            start_price = closes.iloc[0]
+            end_price = closes.iloc[-1]
+            target_hold_pct = ((float(end_price) / float(start_price)) - 1) * 100.0
 
     momo_hold_pct = None
     if not df_momo_filtered.empty and "Close" in df_momo_filtered.columns:
         closes = df_momo_filtered["Close"].dropna()
+        if isinstance(closes, pd.DataFrame):
+            closes = closes.squeeze("columns")
         if len(closes) > 1:
-            momo_hold_pct = float(((closes.iloc[-1] / closes.iloc[0]) - 1) * 100.0)
+            start_price = closes.iloc[0]
+            end_price = closes.iloc[-1]
+            momo_hold_pct = ((float(end_price) / float(start_price)) - 1) * 100.0
 
     strategy_pct = None
     if len(equity) > 1:
@@ -863,7 +871,7 @@ if not journal.empty:
                 lambda x: f"${x:,.2f}" if pd.notna(x) and isinstance(x, (int, float)) else x
             )
 
-    st.dataframe(journal_display, use_container_width=True, height=360)
+    st.dataframe(journal_display, width="stretch", height=360)
 else:
     st.write("거래 요약이 없습니다.")
 
@@ -887,7 +895,7 @@ if not trade_log.empty:
                 lambda x: f"${x:,.2f}" if pd.notna(x) and isinstance(x, (int, float)) else x
             )
 
-    st.dataframe(trade_display, use_container_width=True, height=400)
+    st.dataframe(trade_display, width="stretch", height=400)
     st.caption("TP=익절, SL=손절, MOC=보유기간 만료 청산")
 else:
     st.write("거래 내역이 없습니다.")
