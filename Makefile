@@ -15,9 +15,9 @@ help:
 	@echo "make build      Build production Docker image ($(APP_NAME):latest)"
 	@echo "make run        Run the Dockerised app (maps $(PORT):8501)"
 	@echo "make shell      Open a bash shell inside the app container"
-	@echo "make build-dev  Build the live-reload dev image ($(DEV_IMAGE):latest)"
-	@echo "make dev        Run dev container with source mounted"
-	@echo "make optimize   Run dongpa_optimizer.py and refresh strategy report"
+	@echo "make build-dev  Force rebuild the live-reload dev image ($(DEV_IMAGE):latest)"
+	@echo "make dev        Run dev container (auto-builds image if missing)"
+	@echo "make optimize   Run dongpa_optimizer.py (auto-builds image if missing)"
 	@echo "make clean      Remove built Docker images"
 
 install:
@@ -30,6 +30,7 @@ build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .
 
 build-dev:
+	@echo "Building dev Docker image..."
 	docker build --file Dockerfile.dev --tag $(DEV_IMAGE):latest .
 
 run: build
@@ -38,13 +39,22 @@ run: build
 shell: build
 	docker run --rm -it -p $(PORT):8501 --entrypoint bash $(APP_NAME):latest
 
-dev: build-dev
-	docker run --rm -it -p $(PORT):8501 -v "$(CURDIR)":/app $(DEV_IMAGE):latest
+dev:
+	@if ! docker image inspect $(DEV_IMAGE):latest > /dev/null 2>&1; then \
+		echo "Dev image not found, building..."; \
+		$(MAKE) build-dev; \
+	fi
+	@echo "Starting dev container on port $(PORT)..."
+	@docker run --rm -it -p $(PORT):8501 -v "$(CURDIR)":/app $(DEV_IMAGE):latest
 
 clean:
 	- docker rmi $(APP_NAME):latest $(DEV_IMAGE):latest
 
-optimize: build-dev
+optimize:
+	@if ! docker image inspect $(DEV_IMAGE):latest > /dev/null 2>&1; then \
+		echo "Dev image not found, building..."; \
+		$(MAKE) build-dev; \
+	fi
 	docker run --rm \
 		-v "$(CURDIR)":/app \
 		--workdir /app \
