@@ -45,7 +45,7 @@ render_navigation()
 
 st.title("동파 파라미터 최적화 (Random Search)")
 st.caption(
-    "2022년과 2025년 데이터를 학습 구간으로, 2023~2024년을 테스트 구간으로 사용합니다. "
+    "사용자가 설정한 기간으로 학습 및 테스트 구간을 분리하여 최적화합니다. "
     "각 조합은 학습·테스트에서의 CAGR과 MDD를 계산하고, 평균 CAGR에서 평균 MDD×가중치(기본 0.6)를 뺀 점수로 순위를 매깁니다."
 )
 
@@ -60,6 +60,35 @@ with st.sidebar:
     momentum = st.text_input("모멘텀 종목", value="QQQ")
     bench = st.text_input("벤치마크(선택)", value="SOXX")
     initial_cash = st.number_input("초기 현금", value=10000, step=1000)
+
+    st.divider()
+    st.subheader("학습/테스트 기간 설정")
+
+    # Date range setup
+    min_date = pd.Timestamp("2015-01-01")
+    max_date = pd.Timestamp("2026-12-31")
+
+    # Training period selection with slider
+    st.markdown("**학습 기간 (Training)**")
+    train_dates = st.slider(
+        "학습 날짜 범위",
+        min_value=min_date.to_pydatetime(),
+        max_value=max_date.to_pydatetime(),
+        value=(pd.Timestamp("2020-01-01").to_pydatetime(), pd.Timestamp("2022-12-31").to_pydatetime()),
+        format="YYYY-MM-DD"
+    )
+    train_ranges = [(str(train_dates[0].date()), str(train_dates[1].date()))]
+
+    # Test period selection with slider
+    st.markdown("**테스트 기간 (Test)**")
+    test_dates = st.slider(
+        "테스트 날짜 범위",
+        min_value=min_date.to_pydatetime(),
+        max_value=max_date.to_pydatetime(),
+        value=(pd.Timestamp("2023-01-01").to_pydatetime(), pd.Timestamp("2024-12-31").to_pydatetime()),
+        format="YYYY-MM-DD"
+    )
+    test_range = (str(test_dates[0].date()), str(test_dates[1].date()))
 
     st.divider()
     st.subheader("모드 전환 전략")
@@ -169,11 +198,23 @@ if run:
             ma_long_period=ParamRange(ma_long_min, ma_long_max, is_int=True),
         )
 
+    # Progress tracking UI elements
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    # Progress callback function
+    def update_progress(current, total, success, failed):
+        progress = current / total
+        progress_bar.progress(progress)
+        status_text.text(f"진행 중: {current}/{total} (성공: {success}, 실패: {failed})")
+
     config = OptimizerConfig(
         target_ticker=target.strip(),
         momentum_ticker=momentum.strip(),
         benchmark_ticker=bench_arg,
         initial_cash=float(initial_cash),
+        train_ranges=train_ranges,  # Custom training date ranges
+        test_range=test_range,      # Custom test date range
         score_penalty=float(score_penalty),
         top_n=int(n_samples),  # Show all results
         n_samples=int(n_samples),
@@ -185,20 +226,20 @@ if run:
         mode_switch_strategy="ma_cross" if mode_switch_strategy == "Golden Cross" else "rsi",
         optimize_ma_periods=optimize_ma_periods,
         ma_period_ranges=ma_period_ranges,
+        progress_callback=update_progress,  # Add progress callback
     )
 
-    with st.spinner("최적화 실행 중..."):
-        try:
-            results = optimize(config)
-        except Exception as exc:  # noqa: BLE001 - UI 오류 안내용
-            st.error(f"최적화에 실패했습니다: {exc}")
-            st.stop()
+    try:
+        results = optimize(config)
+        progress_bar.progress(1.0)
+        status_text.text(f"완료: {len(results)}개 조합 평가 완료")
+    except Exception as exc:  # noqa: BLE001 - UI 오류 안내용
+        st.error(f"최적화에 실패했습니다: {exc}")
+        st.stop()
 
     if not results:
         st.warning("평가 가능한 조합이 없습니다. 데이터 범위 또는 티커를 확인하세요.")
     else:
-        st.success("최적화가 완료되었습니다.")
-
         table_rows = []
         chart_rows = []
         for idx, res in enumerate(results, start=1):

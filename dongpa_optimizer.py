@@ -223,6 +223,8 @@ class OptimizerConfig:
     optimize_rsi_thresholds: bool = False  # Enable RSI threshold optimization
     ma_period_ranges: MAPeriodRanges | None = None  # MA period optimization
     optimize_ma_periods: bool = False  # Enable MA period optimization
+    # Progress callback
+    progress_callback: callable | None = None  # Callback function for progress updates
 
 
 # Default parameter ranges (wider ranges for better exploration)
@@ -431,11 +433,18 @@ def _evaluate(
                 )
             )
 
+            # Progress callback
+            if cfg.progress_callback:
+                cfg.progress_callback(i + 1, cfg.n_samples, len(results), failed_count)
+
             # Progress logging every 100 samples
             if (i + 1) % 100 == 0:
                 print(f"Progress: {i + 1}/{cfg.n_samples} samples evaluated ({len(results)} successful, {failed_count} failed)")
         except Exception as e:  # noqa: BLE001
             failed_count += 1
+            # Progress callback for failed attempts
+            if cfg.progress_callback:
+                cfg.progress_callback(i + 1, cfg.n_samples, len(results), failed_count)
             # Continue to next sample on error
             continue
 

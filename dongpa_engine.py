@@ -214,8 +214,8 @@ class DongpaBacktester:
             # Calculate crossover signals
             self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
             self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
-            self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill').fillna(False)
-            self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill').fillna(False)
+            self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill').fillna(False).infer_objects(copy=False)
+            self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill').fillna(False).infer_objects(copy=False)
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
