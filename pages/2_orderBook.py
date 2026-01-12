@@ -137,7 +137,6 @@ def _prepare_defaults(saved: dict) -> dict:
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
         "log_scale": saved.get("log_scale", True),
-        "enable_netting": saved.get("enable_netting", True),
         "pcr": float(saved.get("pcr", 0.80)),
         "lcr": float(saved.get("lcr", 0.30)),
         "cycle": int(saved.get("cycle", 10)),
@@ -177,7 +176,8 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         "momentum_ticker": ui_values["momentum"],
         "benchmark_ticker": ui_values["bench"] if ui_values["bench"].strip() else None,
         "reset_on_mode_change": True,
-        "enable_netting": ui_values["enable_netting"],
+        # Keep engine netting enabled for consistency, even though UI hides the toggle.
+        "enable_netting": True,
         "allow_fractional_shares": ui_values["allow_fractional"],
         "defense": defense,
         "offense": offense,
@@ -297,7 +297,7 @@ saved_values = _load_settings()
 defaults = _prepare_defaults(saved_values)
 
 st.title("orderBook")
-st.caption("동파 LOC 주문 스케줄러. 오늘 기준 LOC 예약 주문과 퉁치기 결과, 누적 실적을 확인합니다.")
+st.caption("동파 LOC 주문 스케줄러. 오늘 기준 LOC 예약 주문과 누적 실적을 확인합니다.")
 
 with st.sidebar:
     log_scale_enabled = st.toggle(
@@ -366,11 +366,6 @@ with st.sidebar:
     st.divider()
 
     st.header("거래 옵션")
-    enable_netting = st.checkbox(
-        "퉁치기(동일 종가 상쇄)",
-        value=defaults["enable_netting"],
-        help="같은 날 종가 기준으로 실행된 매수·매도 물량을 순매수/순매도로 상쇄합니다.",
-    )
     allow_fractional = st.checkbox(
         "소수점 거래 허용",
         value=defaults.get("allow_fractional", False),
@@ -420,7 +415,6 @@ with st.sidebar:
             "momentum": momentum,
             "bench": bench,
             "log_scale": log_scale_enabled,
-            "enable_netting": enable_netting,
             "allow_fractional": allow_fractional,
             "pcr": pcr,
             "lcr": lcr,
@@ -450,7 +444,6 @@ ui_values = {
     "target": target.strip().upper(),
     "momentum": momentum.strip().upper(),
     "bench": bench.strip().upper(),
-    "enable_netting": enable_netting,
     "allow_fractional": allow_fractional,
     "pcr": pcr,
     "lcr": lcr,
@@ -747,14 +740,6 @@ if order_sheet:
     order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
 
     st.dataframe(order_df, width="stretch", hide_index=True)
-
-    # Netting summary
-    net_buy_qty = _safe_int(last_row.get("매수수량", 0))
-    net_sell_qty = _safe_int(last_row.get("매도수량", 0))
-    netting_applied = last_row.get("퉁치기적용", False)
-
-    if netting_applied:
-        st.info(f"✅ 퉁치기 적용: 실제 매수 {net_buy_qty}주, 매도 {net_sell_qty}주로 상쇄됨")
 else:
     st.write("예정된 주문이 없습니다.")
 
