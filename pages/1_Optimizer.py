@@ -263,6 +263,9 @@ if run:
                 "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),
                 "Test CAGR(%)": round(res.test_metrics.get("CAGR", 0.0) * 100, 2),
                 "Test MDD(%)": round(res.test_metrics.get("Max Drawdown", 0.0) * 100, 2),
+                "Combined CAGR(%)": round(res.combined_metrics.get("CAGR", 0.0) * 100, 2),
+                "Combined MDD(%)": round(res.combined_metrics.get("Max Drawdown", 0.0) * 100, 2),
+                "Combined Calmar": round(res.combined_metrics.get("Calmar Ratio", 0.0), 2),
             }
 
             # Add MA periods if Golden Cross mode
@@ -288,7 +291,7 @@ if run:
             )
 
         summary_df = pd.DataFrame(table_rows)
-        st.dataframe(summary_df, width="stretch")
+        st.dataframe(summary_df, hide_index=True, use_container_width=True)
 
         # CSV download button
         csv_data = summary_df.to_csv(index=False).encode('utf-8-sig')

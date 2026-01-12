@@ -214,8 +214,8 @@ class DongpaBacktester:
             # Calculate crossover signals
             self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
             self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
-            self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill').fillna(False).infer_objects(copy=False)
-            self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill').fillna(False).infer_objects(copy=False)
+            self.daily_golden = self.weekly_golden.reindex(self.df.index).ffill().fillna(False).astype(bool)
+            self.daily_death = self.weekly_death.reindex(self.df.index).ffill().fillna(False).astype(bool)
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
@@ -637,10 +637,14 @@ def summarize(equity: pd.Series) -> dict:
     ret = equity.pct_change().dropna()
     vol = float(ret.std() * (252 ** 0.5)) if not ret.empty else 0.0
     sharpe = float((ret.mean() / ret.std()) * (252 ** 0.5)) if ret.std() > 0 else 0.0
+    cagr = float(CAGR(equity))
+    mdd = float(max_drawdown(equity)) if not equity.empty else 0.0
+    calmar = cagr / abs(mdd) if mdd != 0.0 else 0.0
     return {
         "Final Equity": float(equity.iloc[-1]) if not equity.empty else 0.0,
-        "CAGR": float(CAGR(equity)),
+        "CAGR": cagr,
         "Volatility (ann)": vol,
-        "Max Drawdown": float(max_drawdown(equity)) if not equity.empty else 0.0,
+        "Max Drawdown": mdd,
         "Sharpe (rf=0)": sharpe,
+        "Calmar Ratio": calmar,
     }

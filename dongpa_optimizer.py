@@ -274,6 +274,7 @@ class OptimizationResult:
     score: float
     train_metrics: dict
     test_metrics: dict
+    combined_metrics: dict  # Metrics from combined train+test backtest
     rsi_thresholds: dict | None = None  # RSI threshold configuration if optimized
     ma_periods: dict | None = None      # MA period configuration if optimized
     mode_switch_strategy: str = "rsi"   # Mode switching strategy used
@@ -288,7 +289,7 @@ def _download_price_history(ticker: str, start: DateLike, end: DateLike) -> pd.D
     return _normalize(data)
 
 
-def _load_price_frames(cfg: OptimizerConfig) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _load_price_frames(cfg: OptimizerConfig) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     all_starts = [cfg.test_range[0], *[rng[0] for rng in cfg.train_ranges]]
     all_ends = [cfg.test_range[1], *[rng[1] for rng in cfg.train_ranges]]
     global_start = min(_to_timestamp(val) for val in all_starts)
@@ -303,7 +304,12 @@ def _load_price_frames(cfg: OptimizerConfig) -> tuple[pd.DataFrame, pd.DataFrame
     train_momo = _slice_by_ranges(momo_all, cfg.train_ranges)
     test_momo = _slice_by_range(momo_all, cfg.test_range)
 
-    return train_target, train_momo, test_target, test_momo
+    # Create combined train+test data
+    combined_ranges = list(cfg.train_ranges) + [cfg.test_range]
+    combined_target = _slice_by_ranges(target_all, combined_ranges)
+    combined_momo = _slice_by_ranges(momo_all, combined_ranges)
+
+    return train_target, train_momo, test_target, test_momo, combined_target, combined_momo
 
 
 # --------------------------- Scoring helpers ---------------------------
@@ -360,6 +366,8 @@ def _evaluate(
     train_momo: pd.DataFrame,
     test_target: pd.DataFrame,
     test_momo: pd.DataFrame,
+    combined_target: pd.DataFrame,
+    combined_momo: pd.DataFrame,
     cfg: OptimizerConfig,
 ) -> list[OptimizationResult]:
     # Use provided ranges or fall back to defaults
@@ -418,6 +426,10 @@ def _evaluate(
             test_res = test_backtester.run()
             test_metrics = summarize(test_res["equity"])
 
+            combined_backtester = DongpaBacktester(combined_target, combined_momo, params, capital)
+            combined_res = combined_backtester.run()
+            combined_metrics = summarize(combined_res["equity"])
+
             score_value = _score(train_metrics, test_metrics, cfg.score_penalty)
             results.append(
                 OptimizationResult(
@@ -427,6 +439,7 @@ def _evaluate(
                     score=score_value,
                     train_metrics=train_metrics,
                     test_metrics=test_metrics,
+                    combined_metrics=combined_metrics,
                     rsi_thresholds=rsi_thresholds,
                     ma_periods=ma_periods,
                     mode_switch_strategy=cfg.mode_switch_strategy,
@@ -458,8 +471,9 @@ def _metrics_row(prefix: str, metrics: dict) -> str:
     cagr = _percent(metrics.get("CAGR", 0.0))
     mdd = _percent(metrics.get("Max Drawdown", 0.0))
     sharpe = round(metrics.get("Sharpe (rf=0)", 0.0), 2)
+    calmar = round(metrics.get("Calmar Ratio", 0.0), 2)
     final_eq = round(metrics.get("Final Equity", 0.0), 2)
-    return f"| {prefix} | {cagr:.2f}% | {mdd:.2f}% | {sharpe:.2f} | {final_eq:,.2f} |\n"
+    return f"| {prefix} | {cagr:.2f}% | {mdd:.2f}% | {sharpe:.2f} | {calmar:.2f} | {final_eq:,.2f} |\n"
 
 
 def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) -> Path:
@@ -553,13 +567,14 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
     if rows:
         detail_lines = [
             "\n## Detailed Metrics\n",
-            "| Phase | CAGR | Max Drawdown | Sharpe | Final Equity |\n",
-            "| --- | --- | --- | --- | --- |\n",
+            "| Phase | CAGR | Max Drawdown | Sharpe | Calmar | Final Equity |\n",
+            "| --- | --- | --- | --- | --- | --- |\n",
         ]
         for idx, res in enumerate(results, start=1):
             detail_lines.append(f"\n### Rank {idx}\n")
             detail_lines.append(_metrics_row("Train", res.train_metrics))
             detail_lines.append(_metrics_row("Test", res.test_metrics))
+            detail_lines.append(_metrics_row("Combined", res.combined_metrics))
 
         content = header + table_header + "\n".join(rows) + "\n" + "".join(detail_lines)
     else:
@@ -571,8 +586,8 @@ def write_markdown(results: Sequence[OptimizationResult], cfg: OptimizerConfig) 
 # --------------------------- Public API ---------------------------
 
 def optimize(cfg: OptimizerConfig) -> list[OptimizationResult]:
-    train_target, train_momo, test_target, test_momo = _load_price_frames(cfg)
-    results = _evaluate(train_target, train_momo, test_target, test_momo, cfg)
+    train_target, train_momo, test_target, test_momo, combined_target, combined_momo = _load_price_frames(cfg)
+    results = _evaluate(train_target, train_momo, test_target, test_momo, combined_target, combined_momo, cfg)
     return results
 
 
