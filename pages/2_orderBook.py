@@ -707,30 +707,65 @@ if not open_trades.empty and prev_close:
                     "비고": f"잔여일: {days_left}일"
                 })
 
-# Add buy order (new tranche)
+# Add buy order (new tranche) + spread at lower prices
 if current_cash > 0 and tranche_budget and tranche_budget > 0:
     mode_params = ui_values["defense_buy"] if current_mode == "defense" else ui_values["offense_buy"]
     buy_limit_price = prev_close * (1 + mode_params / 100) if prev_close else None
 
     if buy_limit_price and buy_limit_price > 0:
         effective_budget = min(tranche_budget, current_cash)
-        buy_qty = int(effective_budget // buy_limit_price)
+        tp_pct = ui_values["defense_tp"] if current_mode == "defense" else ui_values["offense_tp"]
+        sl_pct = ui_values["defense_sl"] if current_mode == "defense" else ui_values["offense_sl"]
 
-        if buy_qty > 0:
-            # Calculate TP and SL for the new position
-            tp_pct = ui_values["defense_tp"] if current_mode == "defense" else ui_values["offense_tp"]
-            sl_pct = ui_values["defense_sl"] if current_mode == "defense" else ui_values["offense_sl"]
+        # Base buy order at limit price
+        if allow_fractional:
+            base_qty = effective_budget / buy_limit_price
+        else:
+            base_qty = int(effective_budget // buy_limit_price)
 
+        if base_qty > 0:
             new_tp = buy_limit_price * (1 + tp_pct / 100)
             new_sl = buy_limit_price * (1 - sl_pct / 100) if sl_pct > 0 else None
 
             order_sheet.append({
                 "구분": "매수",
                 "주문가": buy_limit_price,
-                "수량": buy_qty,
+                "수량": base_qty,
                 "변화율": f"{mode_params:+.1f}%",
                 "비고": f"→ TP: ${new_tp:.2f}, SL: ${new_sl:.2f}" if new_sl else f"→ TP: ${new_tp:.2f}"
             })
+
+            # Spread rows: show only extra shares needed at lower prices
+            spread_steps = [-3.0, -5.0, -7.0, -10.0]
+            for step in spread_steps:
+                fill_price = buy_limit_price * (1 + step / 100)
+                if fill_price <= 0:
+                    continue
+                if allow_fractional:
+                    qty = effective_budget / fill_price
+                else:
+                    qty = int(effective_budget // fill_price)
+                extra = qty - base_qty
+                if allow_fractional:
+                    if extra <= 0:
+                        continue
+                else:
+                    if int(extra) <= 0:
+                        continue
+                spread_tp = fill_price * (1 + tp_pct / 100)
+                spread_sl = fill_price * (1 - sl_pct / 100) if sl_pct > 0 else None
+                pct_from_prev = ((fill_price / prev_close) - 1) * 100 if prev_close else 0
+                note = f"TP: ${spread_tp:.2f}"
+                if spread_sl:
+                    note += f", SL: ${spread_sl:.2f}"
+
+                order_sheet.append({
+                    "구분": f"매수 ({step:+.0f}%)",
+                    "주문가": fill_price,
+                    "수량": int(extra) if not allow_fractional else extra,
+                    "변화율": f"{pct_from_prev:+.1f}%",
+                    "비고": note,
+                })
 
 # Display order sheet
 if order_sheet:
