@@ -137,6 +137,8 @@ def _prepare_defaults(saved: dict) -> dict:
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
         "log_scale": saved.get("log_scale", True),
+        "allow_fractional": saved.get("allow_fractional", False),
+        "enable_netting": saved.get("enable_netting", True),
         "pcr": float(saved.get("pcr", 0.80)),
         "lcr": float(saved.get("lcr", 0.30)),
         "cycle": int(saved.get("cycle", 10)),
@@ -371,6 +373,11 @@ with st.sidebar:
         value=defaults.get("allow_fractional", False),
         help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
     )
+    enable_netting = st.checkbox(
+        "퉁치기 적용",
+        value=defaults.get("enable_netting", True),
+        help="매수/매도가 동시에 있을 때 겹치는 수량을 상쇄하여 순매수/순매도만 표시합니다.",
+    )
 
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input(
@@ -416,6 +423,7 @@ with st.sidebar:
             "bench": bench,
             "log_scale": log_scale_enabled,
             "allow_fractional": allow_fractional,
+            "enable_netting": enable_netting,
             "pcr": pcr,
             "lcr": lcr,
             "cycle": cycle,
@@ -767,16 +775,185 @@ if current_cash > 0 and tranche_budget and tranche_budget > 0:
                     "비고": note,
                 })
 
+# Apply netting: offset matching sell and base-buy quantities in-place
+# IMPORTANT: Netting only applies when sell_price <= buy_price (overlapping execution range)
+# LOC buy executes if close <= buy_price, LOC sell executes if close >= sell_price
+# Both can execute at the same close only when sell_price <= close <= buy_price
+netting_msg = ""
+netting_details: list[dict] = []  # tracks per-row netting for debugging
+
+if enable_netting:
+    sell_indices = [i for i, r in enumerate(order_sheet) if r["구분"].startswith("매도")]
+    buy_index = next((i for i, r in enumerate(order_sheet) if r["구분"] == "매수"), None)
+
+    if buy_index is not None and sell_indices:
+        buy_price = float(order_sheet[buy_index]["주문가"])
+        total_buy_qty = float(order_sheet[buy_index]["수량"])
+        fmt_qty = (lambda q: f"{q:,.4f}") if allow_fractional else (lambda q: f"{int(q):,}")
+
+        # Only net sell orders where sell_price <= buy_price (overlapping range)
+        nettable_sell_indices = []
+        non_nettable_sell_indices = []
+        for i in sell_indices:
+            sell_price = float(order_sheet[i]["주문가"])
+            if sell_price <= buy_price:
+                nettable_sell_indices.append(i)
+            else:
+                non_nettable_sell_indices.append(i)
+
+        nettable_sell_qty = sum(float(order_sheet[i]["수량"]) for i in nettable_sell_indices)
+
+        if nettable_sell_qty > 0 and total_buy_qty > 0:
+            offset = min(nettable_sell_qty, total_buy_qty)
+
+            # Cash impact for nettable orders only
+            sell_amt = sum(float(order_sheet[i]["주문가"]) * float(order_sheet[i]["수량"]) for i in nettable_sell_indices)
+            buy_amt = buy_price * min(total_buy_qty, nettable_sell_qty)
+            cash_impact = sell_amt - buy_amt  # positive = inflow
+            cash_str = f"순 유입 ${cash_impact:,.2f}" if cash_impact >= 0 else f"순 유출 ${-cash_impact:,.2f}"
+
+            if total_buy_qty >= nettable_sell_qty:
+                # Buy side larger: reduce buy qty, remove nettable sell rows
+                net_buy = total_buy_qty - offset
+                if not allow_fractional:
+                    net_buy = int(net_buy)
+                for i in nettable_sell_indices:
+                    row = order_sheet[i]
+                    qty = float(row["수량"])
+                    netting_details.append({
+                        "매도": row["구분"],
+                        "매도가": float(row["주문가"]),
+                        "매수가": buy_price,
+                        "상쇄 수량": qty,
+                        "사유": f"매도가 ${float(row['주문가']):.2f} ≤ 매수가 ${buy_price:.2f}",
+                    })
+                    order_sheet[i] = None
+                if net_buy > 0:
+                    order_sheet[buy_index]["수량"] = net_buy
+                else:
+                    order_sheet[buy_index] = None
+                if net_buy > 0:
+                    netting_msg = f"퉁치기 적용: 매도 {fmt_qty(nettable_sell_qty)}주 상쇄 → 순매수 {fmt_qty(net_buy)}주 ({cash_str})"
+                else:
+                    netting_msg = f"퉁치기 적용: 매수·매도 {fmt_qty(total_buy_qty)}주 완전상쇄 ({cash_str})"
+            else:
+                # Sell side larger: remove buy row, reduce nettable sell rows sequentially
+                order_sheet[buy_index] = None
+                remaining = total_buy_qty
+                for i in nettable_sell_indices:
+                    row_qty = float(order_sheet[i]["수량"])
+                    reduction = min(row_qty, remaining)
+                    new_qty = row_qty - reduction
+                    remaining -= reduction
+                    if not allow_fractional:
+                        new_qty = int(new_qty)
+                    if reduction > 0:
+                        netting_details.append({
+                            "매도": order_sheet[i]["구분"],
+                            "매도가": float(order_sheet[i]["주문가"]),
+                            "매수가": buy_price,
+                            "상쇄 수량": reduction,
+                            "사유": f"매도가 ${float(order_sheet[i]['주문가']):.2f} ≤ 매수가 ${buy_price:.2f}",
+                        })
+                    if new_qty > 0:
+                        order_sheet[i]["수량"] = new_qty
+                    else:
+                        order_sheet[i] = None
+                    if remaining <= 0:
+                        break
+                net_sell = nettable_sell_qty - offset
+                netting_msg = f"퉁치기 적용: 매수 {fmt_qty(total_buy_qty)}주 상쇄 → 순매도 {fmt_qty(net_sell)}주 ({cash_str})"
+
+            # Note about non-nettable sells
+            if non_nettable_sell_indices:
+                non_nettable_qty = sum(float(order_sheet[i]["수량"]) for i in non_nettable_sell_indices if order_sheet[i] is not None)
+                if non_nettable_qty > 0:
+                    netting_msg += f" | 퉁치기 불가 매도 {fmt_qty(non_nettable_qty)}주 (매도가 > 매수가)"
+
+            order_sheet = [r for r in order_sheet if r is not None]
+
 # Display order sheet
 if order_sheet:
     order_df = pd.DataFrame(order_sheet)
-
-    # Format price column
     order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
-
     st.dataframe(order_df, width="stretch", hide_index=True)
+    if netting_msg:
+        st.caption(netting_msg)
+elif netting_msg:
+    st.info(netting_msg)
 else:
     st.write("예정된 주문이 없습니다.")
+
+# Show netting breakdown in expander for debugging
+if netting_details:
+    with st.expander("퉁치기 상세 내역", expanded=False):
+        st.markdown("#### 이번 상쇄 내역")
+        net_df = pd.DataFrame(netting_details)
+        net_df["매도가"] = net_df["매도가"].apply(lambda x: f"${x:.2f}")
+        net_df["매수가"] = net_df["매수가"].apply(lambda x: f"${x:.2f}")
+        fmt = (lambda v: f"{v:,.4f}") if allow_fractional else (lambda v: f"{int(v):,}" if v == int(v) else f"{v:,.1f}")
+        net_df["상쇄 수량"] = net_df["상쇄 수량"].apply(fmt)
+        st.dataframe(net_df, width="stretch", hide_index=True)
+
+        st.divider()
+        st.markdown("#### 퉁치기 동작 원리")
+        st.markdown(
+            "LOC 주문은 모두 **장 마감가**에 체결됩니다.\n\n"
+            "**핵심 원칙**: 매도가 ≤ 매수가 일 때만 퉁치기 발생\n"
+            "- LOC 매수: 종가 ≤ 매수가이면 체결\n"
+            "- LOC 매도: 종가 ≥ 매도가이면 체결\n"
+            "- 둘이 동시 체결되려면: 매도가 ≤ 종가 ≤ 매수가\n"
+            "- 따라서 **매도가 > 매수가**이면 겹치는 구간이 없어 퉁치기 불가"
+        )
+
+        st.divider()
+        st.markdown("#### Case 1 — 매도가 < 매수가 (퉁치기 발생)")
+        st.markdown(
+            "```\n"
+            "매수 $100 500주 / 매도 $98 300주\n"
+            "→ $98~$100 구간에서 둘 다 체결 가능\n"
+            "→ 순매수 200주\n"
+            "```"
+        )
+
+        st.divider()
+        st.markdown("#### Case 2 — 매도가 > 매수가 (퉁치기 없음)")
+        st.markdown(
+            "```\n"
+            "매수 $100 500주 / 매도 $105 300주\n"
+            "→ 겹치는 구간 없음 (종가가 둘 다 체결시키는 가격이 존재하지 않음)\n"
+            "→ 각각 독립 체결, 퉁치기 불가\n"
+            "```"
+        )
+
+        st.divider()
+        st.markdown("#### Case 3 — 매도가 = 매수가")
+        st.markdown(
+            "```\n"
+            "매수 $100 500주 / 매도 $100 300주\n"
+            "→ 종가가 정확히 $100일 때만 둘 다 체결\n"
+            "→ 순매수 200주\n"
+            "```"
+        )
+
+        st.divider()
+        st.markdown("#### Case 4 — 여러 주문 혼합")
+        st.markdown(
+            "```\n"
+            "매수 $100 500주, $95 300주\n"
+            "매도 $98 200주, $102 400주\n"
+            "\n"
+            "매도 $98 vs 매수 $100: $98 ≤ $100 → 퉁치기 O\n"
+            "매도 $102 vs 매수 $100: $102 > $100 → 퉁치기 X\n"
+            "```"
+        )
+
+        st.divider()
+        st.markdown("#### 스프레드 행 제외")
+        st.markdown(
+            "스프레드 행(`매수 (-3%)` 등)은 \"더 떨어졌을 때\" 시나리오입니다.\n"
+            "기본 매수와 동시에 체결되지 않으므로 퉁치기 대상에서 제외됩니다."
+        )
 
 # Show SL orders in a collapsible table to keep the main sheet compact
 if sl_order_sheet:
