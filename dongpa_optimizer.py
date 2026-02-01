@@ -301,15 +301,13 @@ def _load_price_frames(cfg: OptimizerConfig) -> tuple[pd.DataFrame, pd.DataFrame
     train_target = _slice_by_ranges(target_all, cfg.train_ranges)
     test_target = _slice_by_range(target_all, cfg.test_range)
 
-    train_momo = _slice_by_ranges(momo_all, cfg.train_ranges)
-    test_momo = _slice_by_range(momo_all, cfg.test_range)
-
     # Create combined train+test data
     combined_ranges = list(cfg.train_ranges) + [cfg.test_range]
     combined_target = _slice_by_ranges(target_all, combined_ranges)
-    combined_momo = _slice_by_ranges(momo_all, combined_ranges)
 
-    return train_target, train_momo, test_target, test_momo, combined_target, combined_momo
+    # momo is NOT sliced - full data needed for RSI/MA warm-up
+    # dongpa_engine will use target's date range for backtest results
+    return train_target, momo_all, test_target, momo_all, combined_target, momo_all
 
 
 # --------------------------- Scoring helpers ---------------------------

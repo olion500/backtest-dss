@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dongpa_engine import (ModeParams, CapitalParams, StrategyParams, DongpaBacktester, summarize)
@@ -23,6 +23,7 @@ NAV_LINKS = [
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
 CONFIG_DIR = Path("config")
+LOOKBACK_DAYS = 400  # Extra days for RSI/MA warm-up
 
 
 def get_available_config_files() -> list[Path]:
@@ -442,7 +443,9 @@ run = st.button("백테스트 실행")
 if run:
     st.info("데이터 로딩 중...")
     df_t = yf.download(target, start=start, end=end, progress=False, auto_adjust=False)
-    df_m = yf.download(momentum, start=start, end=end, progress=False, auto_adjust=False)
+    # Download extra data for RSI/MA warm-up
+    momo_start = start - timedelta(days=LOOKBACK_DAYS)
+    df_m = yf.download(momentum, start=momo_start, end=end, progress=False, auto_adjust=False)
 
     if df_t.empty or df_m.empty:
         st.error("데이터가 비어 있습니다. 티커/기간을 확인하세요.")

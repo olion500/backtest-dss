@@ -543,7 +543,8 @@ if df_target_filtered.empty:
     st.stop()
 
 strategy, capital = _collect_params(ui_values)
-backtester = DongpaBacktester(df_target_filtered, df_momo_filtered, strategy, capital)
+# Pass full df_momo for proper RSI/MA warm-up; df_target_filtered defines backtest period
+backtester = DongpaBacktester(df_target_filtered, df_momo, strategy, capital)
 result = backtester.run()
 journal = result.get("journal", pd.DataFrame())
 trade_log = result.get("trade_log", pd.DataFrame())

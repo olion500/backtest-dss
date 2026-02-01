@@ -189,35 +189,39 @@ class DongpaBacktester:
             self.df = self.df[self.df['Close'].notna()].copy()
         if 'Close' in self.momo.columns:
             self.momo = self.momo[self.momo['Close'].notna()].copy()
-        common_start = max(self.df.index.min(), self.momo.index.min())
-        common_end   = min(self.df.index.max(), self.momo.index.max())
-        self.df = self.df[(self.df.index>=common_start) & (self.df.index<=common_end)]
-        self.momo = self.momo[(self.momo.index>=common_start) & (self.momo.index<=common_end)]
 
+        # Calculate indicators FIRST using full momo data (for proper warm-up)
         w_close = to_weekly_close(self.momo)
 
-        # Prepare mode switching indicators based on strategy
         if self.p.mode_switch_strategy == "rsi":
-            # RSI-based mode switching
+            # RSI-based mode switching (calculate with full data)
             w_rsi = wilder_rsi(w_close, self.p.rsi_period)
             self.weekly_rsi = w_rsi
             self.weekly_rsi_delta = w_rsi.diff()
+        elif self.p.mode_switch_strategy == "ma_cross":
+            # MA cross-based mode switching (calculate with full data)
+            self.weekly_ma_short = moving_average(w_close, self.p.ma_short_period)
+            self.weekly_ma_long = moving_average(w_close, self.p.ma_long_period)
+            self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
+            self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
+        else:
+            raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
+
+        # THEN align df to common period (momo kept full for indicator lookback)
+        common_start = max(self.df.index.min(), self.momo.index.min())
+        common_end = min(self.df.index.max(), self.momo.index.max())
+        self.df = self.df[(self.df.index >= common_start) & (self.df.index <= common_end)]
+
+        # Reindex indicators to df's trading days
+        if self.p.mode_switch_strategy == "rsi":
             self.daily_rsi = self.weekly_rsi.reindex(self.df.index, method='ffill')
             self.daily_rsi_delta = self.weekly_rsi_delta.reindex(self.df.index, method='ffill')
             self.daily_prev_week = self.weekly_rsi.shift(1).reindex(self.df.index, method='ffill')
         elif self.p.mode_switch_strategy == "ma_cross":
-            # MA cross-based mode switching
-            self.weekly_ma_short = moving_average(w_close, self.p.ma_short_period)
-            self.weekly_ma_long = moving_average(w_close, self.p.ma_long_period)
             self.daily_ma_short = self.weekly_ma_short.reindex(self.df.index, method='ffill')
             self.daily_ma_long = self.weekly_ma_long.reindex(self.df.index, method='ffill')
-            # Calculate crossover signals
-            self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
-            self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
             self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill', fill_value=False)
             self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill', fill_value=False)
-        else:
-            raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
     def _decide_mode(self, idx, prev_mode) -> str:
         if self.p.mode_switch_strategy == "rsi":
