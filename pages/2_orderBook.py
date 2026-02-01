@@ -153,6 +153,7 @@ def _prepare_defaults(saved: dict) -> dict:
         "offense_tp": float(saved.get("offense_tp", 2.5)),
         "offense_sl": float(saved.get("offense_sl", 0.0)),
         "offense_hold": int(saved.get("offense_hold", 7)),
+        "spread_buy_levels": int(saved.get("spread_buy_levels", 5)),
     }
 
 
@@ -378,6 +379,14 @@ with st.sidebar:
         value=defaults.get("enable_netting", True),
         help="매수/매도가 동시에 있을 때 겹치는 수량을 상쇄하여 순매수/순매도만 표시합니다.",
     )
+    spread_buy_levels = st.number_input(
+        "추가 매수 레벨 수",
+        min_value=0,
+        max_value=20,
+        value=int(defaults.get("spread_buy_levels", 5)),
+        step=1,
+        help="폭락 대비 추가 매수 주문 개수. 공식: 매수가 = 투자금 ÷ (기본수량 + N)",
+    )
 
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input(
@@ -438,6 +447,7 @@ with st.sidebar:
             "offense_tp": off_tp,
             "offense_sl": off_sl,
             "offense_hold": off_hold,
+            "spread_buy_levels": spread_buy_levels,
             "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
         }
         if mode_switch_strategy == "Golden Cross":
@@ -467,6 +477,7 @@ ui_values = {
     "offense_tp": off_tp,
     "offense_sl": off_sl,
     "offense_hold": off_hold,
+    "spread_buy_levels": spread_buy_levels,
     "mode_switch_strategy": mode_switch_strategy,
 }
 
@@ -743,34 +754,33 @@ if current_cash > 0 and tranche_budget and tranche_budget > 0:
                 "비고": f"→ TP: ${new_tp:.2f}, SL: ${new_sl:.2f}" if new_sl else f"→ TP: ${new_tp:.2f}"
             })
 
-            # Spread rows: show only extra shares needed at lower prices
-            spread_steps = [-3.0, -5.0, -7.0, -10.0]
-            for step in spread_steps:
-                fill_price = buy_limit_price * (1 + step / 100)
-                if fill_price <= 0:
-                    continue
-                if allow_fractional:
-                    qty = effective_budget / fill_price
-                else:
-                    qty = int(effective_budget // fill_price)
-                extra = qty - base_qty
-                if allow_fractional:
-                    if extra <= 0:
-                        continue
-                else:
-                    if int(extra) <= 0:
-                        continue
-                spread_tp = fill_price * (1 + tp_pct / 100)
-                spread_sl = fill_price * (1 - sl_pct / 100) if sl_pct > 0 else None
-                pct_from_prev = ((fill_price / prev_close) - 1) * 100 if prev_close else 0
+            # Spread rows using formula: price = daily_budget / (base_qty + N)
+            # Each row represents buying 1 additional share at that price level
+            # Formula: 추가 매수 가격 = 일일 투자금 ÷ (기본 수량 + N)
+            daily_budget = effective_budget
+            max_spread_orders = ui_values.get("spread_buy_levels", 5)
+            min_drop_pct = -50.0  # Stop adding spread orders beyond 50% drop
+
+            for n in range(1, max_spread_orders + 1):
+                spread_price = daily_budget / (base_qty + n)
+
+                # Calculate drop percentage from base price
+                drop_pct = ((spread_price / buy_limit_price) - 1) * 100
+                if drop_pct < min_drop_pct:
+                    break
+
+                spread_tp = spread_price * (1 + tp_pct / 100)
+                spread_sl = spread_price * (1 - sl_pct / 100) if sl_pct > 0 else None
+                pct_from_prev = ((spread_price / prev_close) - 1) * 100 if prev_close else 0
+
                 note = f"TP: ${spread_tp:.2f}"
                 if spread_sl:
                     note += f", SL: ${spread_sl:.2f}"
 
                 order_sheet.append({
-                    "구분": f"매수 ({step:+.0f}%)",
-                    "주문가": fill_price,
-                    "수량": int(extra) if not allow_fractional else extra,
+                    "구분": f"매수 (+{n}주)",
+                    "주문가": spread_price,
+                    "수량": 1,
                     "변화율": f"{pct_from_prev:+.1f}%",
                     "비고": note,
                 })
