@@ -5,6 +5,7 @@
   "bench": "SOXX",
   "log_scale": true,
   "allow_fractional": false,
+  "enable_netting": true,
   "pcr": 0.88,
   "lcr": 0.11,
   "cycle": 1,
