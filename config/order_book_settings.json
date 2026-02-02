@@ -20,6 +20,8 @@
   "offense_tp": 6.8,
   "offense_sl": 23.2,
   "offense_hold": 51,
+  "spread_buy_levels": 5,
+  "spread_buy_step": 4,
   "mode_switch_strategy_index": 1,
   "ma_short": 2,
   "ma_long": 7
