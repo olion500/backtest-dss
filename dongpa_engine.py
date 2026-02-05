@@ -362,13 +362,13 @@ class DongpaBacktester:
                 buy_limit is not None
                 and close <= buy_limit
                 and tranche_budget > Decimal("0")
-                and buy_limit > Decimal("0")
-                and planned_buy_qty > Decimal("0")
+                and close > Decimal("0")
             ):
-                share_qty = planned_buy_qty
+                # 실제 체결 수량은 종가 기준으로 계산 (LOC는 종가에 체결)
+                raw_exec_qty = tranche_budget / close
+                share_qty = shares(raw_exec_qty, self.p.allow_fractional_shares)
                 trade_value = money(share_qty * close)
-                order_value = planned_buy_order_value
-                if order_value <= tranche_budget and trade_value <= cash:
+                if share_qty > Decimal("0") and trade_value <= cash:
                         cash = money(cash - trade_value)
                         tp = money(close * (ONE + to_decimal(m.tp_pct) / HUNDRED))
                         sl = None
