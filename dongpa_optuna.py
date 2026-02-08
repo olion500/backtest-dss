@@ -73,11 +73,6 @@ class OptunaConfig:
     off_slices_range: tuple[int, int] = (1, 20)
     off_sl_range: tuple[float, float] = (2.0, 50.0)
 
-    # Capital parameter ranges
-    cap_cycle_range: tuple[int, int] = (1, 60)
-    cap_pcr_range: tuple[float, float] = (0.3, 1.0)
-    cap_lcr_range: tuple[float, float] = (0.0, 0.8)
-
     # RSI threshold ranges (for "rsi" mode strategy)
     rsi_low_range: tuple[float, float] = (20.0, 40.0)
     rsi_mid_low_range: tuple[float, float] = (35.0, 45.0)
@@ -168,11 +163,6 @@ def create_objective(
         o_use_sl = trial.suggest_categorical("off_use_sl", [True, False])
         o_sl = trial.suggest_float("off_sl_pct", *cfg.off_sl_range) if o_use_sl else None
 
-        # --- Capital parameters ---
-        cap_cycle = trial.suggest_int("cap_cycle_days", *cfg.cap_cycle_range)
-        cap_pcr = trial.suggest_float("cap_pcr", *cfg.cap_pcr_range)
-        cap_lcr = trial.suggest_float("cap_lcr", *cfg.cap_lcr_range)
-
         defense = ModeParams(
             buy_cond_pct=d_buy, tp_pct=d_tp,
             max_hold_days=d_hold, slices=d_slices,
@@ -185,9 +175,6 @@ def create_objective(
         )
         capital = CapitalParams(
             initial_cash=cfg.initial_cash,
-            refresh_cycle_days=cap_cycle,
-            profit_compound_rate=cap_pcr,
-            loss_compound_rate=cap_lcr,
             slippage_pct=0.0,
         )
 
@@ -295,11 +282,7 @@ def create_objective(
                 "max_hold_days": o_hold, "slices": o_slices,
                 "stop_loss_pct": o_sl,
             })
-            trial.set_user_attr("capital", {
-                "refresh_cycle_days": cap_cycle,
-                "profit_compound_rate": cap_pcr,
-                "loss_compound_rate": cap_lcr,
-            })
+            trial.set_user_attr("capital", {})
             trial.set_user_attr("mode_switch_strategy", mode_strategy)
 
             return score
@@ -486,11 +469,7 @@ def format_results_df(results: list[OptimizationResult]) -> pd.DataFrame:
                 f"조건 {res.offense.buy_cond_pct:.1f}% / TP {res.offense.tp_pct:.1f}% / "
                 f"보유 {res.offense.max_hold_days}일 / 분할 {res.offense.slices} / SL {offense_sl}"
             ),
-            "자금 관리": (
-                f"주기 {res.capital.refresh_cycle_days}일 / "
-                f"PCR {res.capital.profit_compound_rate:.2f} / "
-                f"LCR {res.capital.loss_compound_rate:.2f}"
-            ),
+            "자금 관리": f"초기자금 {res.capital.initial_cash:,.0f}",
             "점수": round(res.score, 4),
             "Train CAGR(%)": round(res.train_metrics.get("CAGR", 0.0) * 100, 2),
             "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),
@@ -598,9 +577,6 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         off_hold_range=_range_int([r.offense.max_hold_days for r in top5]),
         off_slices_range=_range_int([r.offense.slices for r in top5]),
         off_sl_range=_range_float([r.offense.stop_loss_pct or 0 for r in top5]),
-        cap_cycle_range=_range_int([r.capital.refresh_cycle_days for r in top5]),
-        cap_pcr_range=_range_float([r.capital.profit_compound_rate for r in top5], clamp_max=1.0),
-        cap_lcr_range=_range_float([r.capital.loss_compound_rate for r in top5], clamp_max=1.0),
     )
 
     # Narrow RSI thresholds

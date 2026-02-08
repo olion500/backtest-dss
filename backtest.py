@@ -86,9 +86,6 @@ def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
         "enable_netting": saved.get("enable_netting", True),
         "allow_fractional": saved.get("allow_fractional", False),
         "cash_limited_buy": saved.get("cash_limited_buy", False),
-        "pcr": float(saved.get("pcr", 0.8)) * 100,  # Convert from decimal to percentage
-        "lcr": float(saved.get("lcr", 0.3)) * 100,  # Convert from decimal to percentage
-        "cycle": int(saved.get("cycle", 10)),
         "init_cash": 10000,  # Always use default 10000, don't load from config
         "defense_slices": int(saved.get("defense_slices", 7)),
         "defense_buy": float(saved.get("defense_buy", 3.0)),
@@ -244,9 +241,6 @@ else:
         "enable_netting": True,
         "allow_fractional": False,
         "cash_limited_buy": False,
-        "pcr": 80,
-        "lcr": 30,
-        "cycle": 10,
         "init_cash": 10000,
         "defense_slices": 7,
         "defense_buy": 3.0,
@@ -410,10 +404,7 @@ with st.sidebar:
         help="트렌치 예산 > 잔여 현금일 때, 현금 한도 내에서 매수합니다. OFF면 예산 부족 시 매수를 건너뜁니다.",
     )
 
-    st.header("투자금 갱신 (복리)")
-    pcr = st.number_input("이익복리율 PCR (%)", value=int(defaults["pcr"]), step=1) / 100.0
-    lcr = st.number_input("손실복리율 LCR (%)", value=int(defaults["lcr"]), step=1) / 100.0
-    cyc = st.number_input("투자금 갱신 주기(거래일)", value=int(defaults["cycle"]), step=1)
+    st.header("초기 자금")
     init_cash = st.number_input("초기 가용현금", value=float(defaults["init_cash"]), step=1000.0)
 
     st.header("안전 모드")
@@ -452,9 +443,6 @@ with st.sidebar:
                 "enable_netting": enable_netting,
                 "allow_fractional": allow_fractional,
                 "cash_limited_buy": cash_limited_buy,
-                "pcr": float(pcr),
-                "lcr": float(lcr),
-                "cycle": int(cyc),
                 "defense_slices": int(s1),
                 "defense_buy": float(cond1),
                 "defense_tp": float(tp1),
@@ -526,9 +514,6 @@ if run:
 
         cap = CapitalParams(
             initial_cash=float(init_cash),
-            refresh_cycle_days=int(cyc),
-            profit_compound_rate=float(pcr),
-            loss_compound_rate=float(lcr),
             slippage_pct=0.0,
         )
 

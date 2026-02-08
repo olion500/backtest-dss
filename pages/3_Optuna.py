@@ -146,9 +146,7 @@ def render_results(results, study, label=""):
         st.write(f"- 손절: {sl_str}")
     with col3:
         st.markdown("**자금 관리**")
-        st.write(f"- 리프레시 주기: {best.capital.refresh_cycle_days}일")
-        st.write(f"- PCR: {best.capital.profit_compound_rate:.2f}")
-        st.write(f"- LCR: {best.capital.loss_compound_rate:.2f}")
+        st.write(f"- 초기자금: {best.capital.initial_cash:,.0f}")
         st.markdown("**성과**")
         st.write(f"- Score: {best.score:.4f}")
         st.write(f"- Combined CAGR: {best.combined_metrics.get('CAGR', 0) * 100:.2f}%")
@@ -170,9 +168,6 @@ def render_results(results, study, label=""):
 def _result_to_config_dict(res) -> dict:
     """Convert an OptResult to a config dictionary."""
     config = {
-        "pcr": round(res.capital.profit_compound_rate, 2),
-        "lcr": round(res.capital.loss_compound_rate, 2),
-        "cycle": res.capital.refresh_cycle_days,
         "defense_slices": res.defense.slices,
         "defense_buy": round(res.defense.buy_cond_pct, 2),
         "defense_tp": round(res.defense.tp_pct, 2),
@@ -408,12 +403,6 @@ with st.sidebar:
         off_sl_min, off_sl_max = st.slider("손절 비율 (%) ", 2.0, 50.0, (6.0, 25.0), 1.0, key="oo_sl")
 
     st.divider()
-    st.subheader("자금 관리 범위")
-    cap_cycle_min, cap_cycle_max = st.slider("리프레시 주기 (일)", 1, 60, (5, 20), 1, key="o_cap_cycle")
-    cap_pcr_min, cap_pcr_max = st.slider("이익 재투자율 (PCR)", 0.3, 1.0, (0.6, 1.0), 0.05, key="o_cap_pcr")
-    cap_lcr_min, cap_lcr_max = st.slider("손실 반영율 (LCR)", 0.0, 0.8, (0.2, 0.5), 0.05, key="o_cap_lcr")
-
-    st.divider()
     run = st.button("Optuna 최적화 실행", type="primary", key="optuna_run")
 
 # ======================== Main Area ========================
@@ -454,9 +443,6 @@ if run:
         off_hold_range=(int(off_hold_min), int(off_hold_max)),
         off_slices_range=(int(off_slices_min), int(off_slices_max)),
         off_sl_range=(off_sl_min, off_sl_max),
-        cap_cycle_range=(int(cap_cycle_min), int(cap_cycle_max)),
-        cap_pcr_range=(cap_pcr_min, cap_pcr_max),
-        cap_lcr_range=(cap_lcr_min, cap_lcr_max),
         constraints=constraints_list if constraints_list else None,
     )
 

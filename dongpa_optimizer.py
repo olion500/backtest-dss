@@ -131,16 +131,10 @@ class ModeParamRanges:
 @dataclass
 class CapitalParamRanges:
     """Parameter ranges for capital management."""
-    refresh_cycle_days: ParamRange
-    profit_compound_rate: ParamRange
-    loss_compound_rate: ParamRange
 
     def sample(self) -> dict[str, float | int]:
         """Generate a random parameter set."""
         return {
-            "refresh_cycle_days": self.refresh_cycle_days.sample(),
-            "profit_compound_rate": self.profit_compound_rate.sample(),
-            "loss_compound_rate": self.loss_compound_rate.sample(),
             "slippage_pct": 0.0,
         }
 
@@ -246,11 +240,7 @@ DEFAULT_OFFENSE_RANGES = ModeParamRanges(
     allow_no_stop_loss=True,
 )
 
-DEFAULT_CAPITAL_RANGES = CapitalParamRanges(
-    refresh_cycle_days=ParamRange(1, 60, is_int=True),
-    profit_compound_rate=ParamRange(0.3, 1.0, is_int=False),
-    loss_compound_rate=ParamRange(0.0, 0.8, is_int=False),
-)
+DEFAULT_CAPITAL_RANGES = CapitalParamRanges()
 
 DEFAULT_RSI_THRESHOLD_RANGES = RSIThresholdRanges(
     rsi_low_threshold=ParamRange(20.0, 40.0, is_int=False),
@@ -322,10 +312,7 @@ def _format_mode_params(mp: ModeParams) -> str:
 
 
 def _format_capital_params(cp: CapitalParams) -> str:
-    return (
-        f"주기 {cp.refresh_cycle_days}일, PCR {cp.profit_compound_rate:.2f}, "
-        f"LCR {cp.loss_compound_rate:.2f}"
-    )
+    return f"초기자금 {cp.initial_cash:,.0f}"
 
 
 def _format_rsi_thresholds(rsi_cfg: dict | None) -> str:

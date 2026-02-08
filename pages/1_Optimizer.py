@@ -152,12 +152,6 @@ with st.sidebar:
         off_allow_no_sl = st.checkbox("손절 없음 허용 (30% 확률) ", value=True)
 
     st.divider()
-    st.subheader("자금 관리 범위")
-    cap_cycle_min, cap_cycle_max = st.slider("리프레시 주기 (일)", 1, 60, (5, 20), 1)
-    cap_pcr_min, cap_pcr_max = st.slider("이익 재투자율 (PCR)", 0.3, 1.0, (0.6, 1.0), 0.05)
-    cap_lcr_min, cap_lcr_max = st.slider("손실 반영율 (LCR)", 0.0, 0.8, (0.2, 0.5), 0.05)
-
-    st.divider()
     run = st.button("최적화 실행", type="primary")
 
 if run:
@@ -183,9 +177,6 @@ if run:
     )
 
     capital_ranges = CapitalParamRanges(
-        refresh_cycle_days=ParamRange(cap_cycle_min, cap_cycle_max, is_int=True),
-        profit_compound_rate=ParamRange(cap_pcr_min, cap_pcr_max, is_int=False),
-        loss_compound_rate=ParamRange(cap_lcr_min, cap_lcr_max, is_int=False),
     )
 
     # Build MA period ranges if Golden Cross mode
@@ -258,7 +249,7 @@ if run:
                     f"조건 {res.offense.buy_cond_pct:.1f}% / TP {res.offense.tp_pct:.1f}% / "
                     f"보유 {res.offense.max_hold_days}일 / 분할 {res.offense.slices} / SL {offense_sl}"
                 ),
-                "자금 관리": f"주기 {res.capital.refresh_cycle_days}일 / PCR {res.capital.profit_compound_rate:.2f} / LCR {res.capital.loss_compound_rate:.2f}",
+                "자금 관리": f"초기자금 {res.capital.initial_cash:,.0f}",
                 "점수": round(res.score, 4),
                 "Train CAGR(%)": round(res.train_metrics.get("CAGR", 0.0) * 100, 2),
                 "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),

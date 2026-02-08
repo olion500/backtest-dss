@@ -142,9 +142,6 @@ class ModeParams:
 @dataclass
 class CapitalParams:
     initial_cash: float
-    refresh_cycle_days: int
-    profit_compound_rate: float  # PCR, e.g., 0.8
-    loss_compound_rate: float    # LCR, e.g., 0.3
     slippage_pct: float = 0.0
 
 @dataclass
@@ -310,11 +307,6 @@ class DongpaBacktester:
         daily_rows = []
         equity_curve = []
         eq_dates = []
-        day_in_cycle = 0
-        cycle_pnl = Decimal("0")
-        profit_compound = to_decimal(self.c.profit_compound_rate)
-        loss_compound = to_decimal(self.c.loss_compound_rate)
-
         realized_cumulative = Decimal("0")
 
         def tranche_budget_for(slices: int, base_cash: Decimal) -> Decimal:
@@ -323,17 +315,12 @@ class DongpaBacktester:
         m = self.p.defense
         tranche_base_cash = cash
         tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
-        pending_tranche_base = None
         prev_close = money(self.df['Close'].iloc[0])
 
         peak_equity = float(cash)
 
         for i, d in enumerate(dates):
             close = money(self.df.loc[d, 'Close'])
-
-            if pending_tranche_base is not None:
-                tranche_base_cash = pending_tranche_base
-                pending_tranche_base = None
 
             # Mode decision (weekly RSI based)
             new_mode = self._decide_mode(d, mode)
@@ -473,21 +460,9 @@ class DongpaBacktester:
 
             realized_cumulative = money(realized_cumulative + realized_today)
 
-            # Capital refresh
-            day_in_cycle += 1
-            cycle_pnl = money(cycle_pnl + realized_today)
-            if day_in_cycle >= self.c.refresh_cycle_days:
-                if cycle_pnl >= Decimal("0"):
-                    # Profits already in cash from sell proceeds;
-                    # withdraw the portion NOT reinvested
-                    cash = money(cash - money(cycle_pnl * (ONE - profit_compound)))
-                else:
-                    # Losses already reflected in cash;
-                    # replenish the portion NOT absorbed
-                    cash = money(cash - money(cycle_pnl * (ONE - loss_compound)))
-                pending_tranche_base = money(max(cash, initial_cash + realized_cumulative))
-                cycle_pnl = Decimal("0")
-                day_in_cycle = 0
+            # After sells free up cash, update tranche base immediately
+            if sell_qty_total > Decimal("0") and cash > tranche_base_cash:
+                tranche_base_cash = money(max(cash, initial_cash + max(Decimal("0"), realized_cumulative)))
 
             # Mark-to-close (for equity curve)
             position_qty = sum(l['qty'] for l in lots)

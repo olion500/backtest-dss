@@ -140,9 +140,6 @@ def _prepare_defaults(saved: dict) -> dict:
         "log_scale": saved.get("log_scale", True),
         "allow_fractional": saved.get("allow_fractional", False),
         "enable_netting": saved.get("enable_netting", True),
-        "pcr": float(saved.get("pcr", 0.80)),
-        "lcr": float(saved.get("lcr", 0.30)),
-        "cycle": int(saved.get("cycle", 10)),
         "init_cash": float(saved.get("init_cash", 10000)),
         "defense_slices": int(saved.get("defense_slices", 7)),
         "defense_buy": float(saved.get("defense_buy", 3.0)),
@@ -217,9 +214,6 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
 
     capital = CapitalParams(
         initial_cash=float(ui_values["init_cash"]),
-        refresh_cycle_days=int(ui_values["cycle"]),
-        profit_compound_rate=float(ui_values["pcr"]),
-        loss_compound_rate=float(ui_values["lcr"]),
         slippage_pct=0.0,
     )
     return strategy, capital
@@ -449,22 +443,7 @@ with st.sidebar:
         help="각 레벨에서 매수할 주식 수. 예: 2면 +2주, +4주, +6주...",
     )
 
-    st.header("투자금 갱신 (복리)")
-    pcr = st.number_input(
-        "이익복리율 PCR (%)",
-        value=float(defaults["pcr"] * 100),
-        step=1.0,
-    ) / 100.0
-    lcr = st.number_input(
-        "손실복리율 LCR (%)",
-        value=float(defaults["lcr"] * 100),
-        step=1.0,
-    ) / 100.0
-    cycle = st.number_input(
-        "투자금 갱신 주기(거래일)",
-        value=int(defaults["cycle"]),
-        step=1,
-    )
+    st.header("초기 자금")
     init_cash = st.number_input(
         "초기 가용현금",
         value=float(defaults["init_cash"]),
@@ -495,9 +474,6 @@ with st.sidebar:
             "allow_fractional": allow_fractional,
             "enable_netting": enable_netting,
             "cash_limited_buy": cash_limited_buy,
-            "pcr": pcr,
-            "lcr": lcr,
-            "cycle": cycle,
             "init_cash": init_cash,
             "defense_slices": def_slice,
             "defense_buy": def_buy,
@@ -532,9 +508,6 @@ ui_values = {
     "bench": bench.strip().upper(),
     "allow_fractional": allow_fractional,
     "cash_limited_buy": cash_limited_buy,
-    "pcr": pcr,
-    "lcr": lcr,
-    "cycle": cycle,
     "init_cash": init_cash,
     "defense_slices": def_slice,
     "defense_buy": def_buy,

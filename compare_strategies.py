@@ -61,9 +61,6 @@ def main():
     )
     old_capital = CapitalParams(
         initial_cash=10000.0,
-        refresh_cycle_days=5,
-        profit_compound_rate=0.95,
-        loss_compound_rate=0.48,
         slippage_pct=0.0
     )
 
@@ -84,9 +81,6 @@ def main():
     )
     new_capital = CapitalParams(
         initial_cash=10000.0,
-        refresh_cycle_days=1,
-        profit_compound_rate=0.88,
-        loss_compound_rate=0.11,
         slippage_pct=0.0
     )
 
@@ -127,12 +121,12 @@ def main():
     old_off_sl = f"{old_offense.stop_loss_pct}%" if old_offense.stop_loss_pct else "없음"
     print(f"  Defense: buy={old_defense.buy_cond_pct}%, tp={old_defense.tp_pct}%, hold={old_defense.max_hold_days}d, N={old_defense.slices}, SL={old_def_sl}")
     print(f"  Offense: buy={old_offense.buy_cond_pct}%, tp={old_offense.tp_pct}%, hold={old_offense.max_hold_days}d, N={old_offense.slices}, SL={old_off_sl}")
-    print(f"  Capital: cycle={old_capital.refresh_cycle_days}d, PCR={old_capital.profit_compound_rate}, LCR={old_capital.loss_compound_rate}")
+    print(f"  Capital: initial_cash={old_capital.initial_cash}")
 
     print("\n🚀 OPTIMIZED PARAMETERS:")
     print(f"  Defense: buy={new_defense.buy_cond_pct}%, tp={new_defense.tp_pct}%, hold={new_defense.max_hold_days}d, N={new_defense.slices}, SL={new_defense.stop_loss_pct}%")
     print(f"  Offense: buy={new_offense.buy_cond_pct}%, tp={new_offense.tp_pct}%, hold={new_offense.max_hold_days}d, N={new_offense.slices}, SL={new_offense.stop_loss_pct}%")
-    print(f"  Capital: cycle={new_capital.refresh_cycle_days}d, PCR={new_capital.profit_compound_rate}, LCR={new_capital.loss_compound_rate}")
+    print(f"  Capital: initial_cash={new_capital.initial_cash}")
 
     print("\n" + "=" * 70)
     print(f"{'Metric':<25} {'CURRENT':<20} {'OPTIMIZED':<20} {'Change':<15}")

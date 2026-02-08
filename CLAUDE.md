@@ -10,7 +10,7 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 - All orders execute at **LOC (Limit-On-Close)** - no intraday execution
 - Daily tranche budget system: available cash divided into N equal parts
 - Mode switching driven by weekly RSI (14, Wilder) momentum from QQQ
-- Capital refresh cycles with configurable profit/loss contribution rates (PCR/LCR)
+- Tranche budget system with automatic rebalancing on sell
 - Integer share enforcement with monetary precision to 2 decimal places
 
 ## Core Architecture
@@ -20,7 +20,7 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 **`dongpa_engine.py`** - Backtesting engine and core logic
 - `DongpaBacktester` class: Main backtest orchestrator
 - `ModeParams`: Mode-specific parameters (buy_cond_pct, tp_pct, max_hold_days, slices, stop_loss_pct)
-- `CapitalParams`: Capital management (initial_cash, refresh_cycle_days, PCR, LCR)
+- `CapitalParams`: Capital management (initial_cash)
 - `StrategyParams`: Complete strategy configuration
 - Signal helpers: `wilder_rsi()`, `to_weekly_close()`, `cross_up()`, `cross_down()`
 - Monetary precision helpers: `money()`, `to_decimal()` for 2-decimal rounding
@@ -58,7 +58,7 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
    - Daily LOC buy if `close <= prev_close * (1 + buy_cond_pct)`
    - LOC sell if `close >= TP` or max_hold_days exceeded or stop_loss triggered
    - Tranche budget = cash / N slices
-5. **Capital Refresh**: Every `refresh_cycle_days`, adjust cash by realized P&L × PCR/LCR
+5. **Tranche Rebalance**: After sells, tranche base updated to reflect available cash
 6. **Output**: Trade journal (Korean columns), equity curve, metrics
 
 ## Development Commands
@@ -128,21 +128,7 @@ PORT=9000 make run
 
 **Tranche Budget**: `available_cash / N_slices`
 - Recalculated on mode change if `reset_on_mode_change` enabled
-- Recalculated at capital refresh cycle
-
-**Capital Refresh Cycle** (every `refresh_cycle_days`):
-```python
-realized_pnl = sum(closed_trades_in_cycle)
-if realized_pnl > 0:
-    cash += realized_pnl * PCR
-else:
-    cash += realized_pnl * LCR  # LCR typically 0.3 (30% of loss)
-```
-
-Recommended defaults:
-- PCR = 0.8 (80% of profits reinvested)
-- LCR = 0.3 (30% of losses deducted)
-- refresh_cycle_days = 10
+- Updated immediately after sells when cash exceeds tranche base
 
 ### Recommended Parameter Ranges
 

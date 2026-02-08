@@ -48,7 +48,7 @@ def print_results(results, phase_label):
         print(f"\n--- #{i} | Score: {res.score:.4f} ---")
         print(f"  Defense: buy {d.buy_cond_pct:.2f}%, TP {d.tp_pct:.2f}%, hold {d.max_hold_days}d, slices {d.slices}, SL {d_sl}")
         print(f"  Offense: buy {o.buy_cond_pct:.2f}%, TP {o.tp_pct:.2f}%, hold {o.max_hold_days}d, slices {o.slices}, SL {o_sl}")
-        print(f"  Capital: cycle {c.refresh_cycle_days}d, PCR {c.profit_compound_rate:.2f}, LCR {c.loss_compound_rate:.2f}")
+        print(f"  Capital: initial_cash {c.initial_cash:,.0f}")
         if res.rsi_thresholds:
             t = res.rsi_thresholds
             print(f"  RSI: L{t['rsi_low_threshold']:.1f}/ML{t['rsi_mid_low']:.1f}/N{t['rsi_neutral']:.1f}/MH{t['rsi_mid_high']:.1f}/H{t['rsi_high_threshold']:.1f}")
@@ -68,9 +68,6 @@ def apply_to_config(res, config_path="config/order_book_settings.json"):
         current = {}
 
     current.update({
-        "pcr": round(res.capital.profit_compound_rate, 2),
-        "lcr": round(res.capital.loss_compound_rate, 2),
-        "cycle": res.capital.refresh_cycle_days,
         "defense_slices": res.defense.slices,
         "defense_buy": round(res.defense.buy_cond_pct, 2),
         "defense_tp": round(res.defense.tp_pct, 2),
@@ -123,9 +120,6 @@ def main():
         off_hold_range=(2, 70),
         off_slices_range=(2, 10),
         off_sl_range=(2.0, 50.0),
-        cap_cycle_range=(1, 30),
-        cap_pcr_range=(0.3, 1.0),
-        cap_lcr_range=(0.0, 0.5),
         ma_short_range=(2, 10),
         ma_long_range=(5, 30),
     )
