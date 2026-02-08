@@ -21,6 +21,7 @@ NAV_LINKS = [
     ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
     ("pages/2_orderBook.py", "orderBook"),
+    ("pages/3_Optuna.py", "Optuna"),
 ]
 
 

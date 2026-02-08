@@ -33,6 +33,7 @@ NAV_LINKS = [
     ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
     ("pages/2_orderBook.py", "orderBook"),
+    ("pages/3_Optuna.py", "Optuna"),
 ]
 
 
@@ -153,8 +154,14 @@ def _prepare_defaults(saved: dict) -> dict:
         "offense_tp": float(saved.get("offense_tp", 2.5)),
         "offense_sl": float(saved.get("offense_sl", 0.0)),
         "offense_hold": int(saved.get("offense_hold", 7)),
+        "cash_limited_buy": saved.get("cash_limited_buy", False),
         "spread_buy_levels": int(saved.get("spread_buy_levels", 5)),
         "spread_buy_step": int(saved.get("spread_buy_step", 1)),
+        "rsi_high_threshold": float(saved.get("rsi_high_threshold", 65.0)),
+        "rsi_mid_high": float(saved.get("rsi_mid_high", 60.0)),
+        "rsi_neutral": float(saved.get("rsi_neutral", 50.0)),
+        "rsi_mid_low": float(saved.get("rsi_mid_low", 40.0)),
+        "rsi_low_threshold": float(saved.get("rsi_low_threshold", 35.0)),
     }
 
 
@@ -183,6 +190,7 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         # Keep engine netting enabled for consistency, even though UI hides the toggle.
         "enable_netting": True,
         "allow_fractional_shares": ui_values["allow_fractional"],
+        "cash_limited_buy": ui_values.get("cash_limited_buy", False),
         "defense": defense,
         "offense": offense,
     }
@@ -198,6 +206,11 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         strategy_dict.update({
             "mode_switch_strategy": "rsi",
             "rsi_period": 14,
+            "rsi_high_threshold": float(ui_values.get("rsi_high_threshold", 65.0)),
+            "rsi_mid_high": float(ui_values.get("rsi_mid_high", 60.0)),
+            "rsi_neutral": float(ui_values.get("rsi_neutral", 50.0)),
+            "rsi_mid_low": float(ui_values.get("rsi_mid_low", 40.0)),
+            "rsi_low_threshold": float(ui_values.get("rsi_low_threshold", 35.0)),
         })
 
     strategy = StrategyParams(**strategy_dict)
@@ -342,6 +355,39 @@ with st.sidebar:
         help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
     )
 
+    rsi_high_threshold = defaults["rsi_high_threshold"]
+    rsi_mid_high = defaults["rsi_mid_high"]
+    rsi_neutral = defaults["rsi_neutral"]
+    rsi_mid_low = defaults["rsi_mid_low"]
+    rsi_low_threshold = defaults["rsi_low_threshold"]
+    if mode_switch_strategy == "RSI":
+        with st.expander("RSI 임계값 설정", expanded=False):
+            rsi_high_threshold = st.number_input(
+                "상한 (High)", value=float(defaults["rsi_high_threshold"]),
+                step=1.0, format="%.1f", help="RSI가 이 값 이상이고 하락 중이면 안전 모드",
+                key="ob_rsi_high",
+            )
+            rsi_mid_high = st.number_input(
+                "중상 (Mid-High)", value=float(defaults["rsi_mid_high"]),
+                step=1.0, format="%.1f", help="RSI가 neutral~이 값 사이이고 상승 중이면 공세 모드",
+                key="ob_rsi_mid_high",
+            )
+            rsi_neutral = st.number_input(
+                "중립선 (Neutral)", value=float(defaults["rsi_neutral"]),
+                step=1.0, format="%.1f", help="RSI 교차 감지 기준선",
+                key="ob_rsi_neutral",
+            )
+            rsi_mid_low = st.number_input(
+                "중하 (Mid-Low)", value=float(defaults["rsi_mid_low"]),
+                step=1.0, format="%.1f", help="RSI가 이 값~neutral 사이이고 하락 중이면 안전 모드",
+                key="ob_rsi_mid_low",
+            )
+            rsi_low_threshold = st.number_input(
+                "하한 (Low)", value=float(defaults["rsi_low_threshold"]),
+                step=1.0, format="%.1f", help="RSI가 이 값 미만이고 상승 중이면 공세 모드",
+                key="ob_rsi_low",
+            )
+
     # Show MA period inputs only if Golden Cross is selected
     ma_short = None
     ma_long = None
@@ -379,6 +425,11 @@ with st.sidebar:
         "퉁치기 적용",
         value=defaults.get("enable_netting", True),
         help="매수/매도가 동시에 있을 때 겹치는 수량을 상쇄하여 순매수/순매도만 표시합니다.",
+    )
+    cash_limited_buy = st.checkbox(
+        "현금 한도 매수",
+        value=defaults.get("cash_limited_buy", False),
+        help="트렌치 예산 > 잔여 현금일 때, 현금 한도 내에서 매수합니다. OFF면 예산 부족 시 매수를 건너뜁니다.",
     )
     col_spread1, col_spread2 = st.columns(2)
     spread_buy_levels = col_spread1.number_input(
@@ -443,6 +494,7 @@ with st.sidebar:
             "log_scale": log_scale_enabled,
             "allow_fractional": allow_fractional,
             "enable_netting": enable_netting,
+            "cash_limited_buy": cash_limited_buy,
             "pcr": pcr,
             "lcr": lcr,
             "cycle": cycle,
@@ -460,6 +512,11 @@ with st.sidebar:
             "spread_buy_levels": spread_buy_levels,
             "spread_buy_step": spread_buy_step,
             "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+            "rsi_high_threshold": float(rsi_high_threshold),
+            "rsi_mid_high": float(rsi_mid_high),
+            "rsi_neutral": float(rsi_neutral),
+            "rsi_mid_low": float(rsi_mid_low),
+            "rsi_low_threshold": float(rsi_low_threshold),
         }
         if mode_switch_strategy == "Golden Cross":
             settings_payload["ma_short"] = ma_short
@@ -474,6 +531,7 @@ ui_values = {
     "momentum": momentum.strip().upper(),
     "bench": bench.strip().upper(),
     "allow_fractional": allow_fractional,
+    "cash_limited_buy": cash_limited_buy,
     "pcr": pcr,
     "lcr": lcr,
     "cycle": cycle,
@@ -491,6 +549,11 @@ ui_values = {
     "spread_buy_levels": spread_buy_levels,
     "spread_buy_step": spread_buy_step,
     "mode_switch_strategy": mode_switch_strategy,
+    "rsi_high_threshold": rsi_high_threshold,
+    "rsi_mid_high": rsi_mid_high,
+    "rsi_neutral": rsi_neutral,
+    "rsi_mid_low": rsi_mid_low,
+    "rsi_low_threshold": rsi_low_threshold,
 }
 
 # Add MA parameters if Golden Cross mode

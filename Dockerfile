@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY dongpa_engine.py dongpa_optimizer.py backtest.py strategy_performance.md ./
+COPY *.py ./
 COPY pages ./pages
 
 EXPOSE 8501

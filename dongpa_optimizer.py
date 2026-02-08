@@ -278,6 +278,7 @@ class OptimizationResult:
     rsi_thresholds: dict | None = None  # RSI threshold configuration if optimized
     ma_periods: dict | None = None      # MA period configuration if optimized
     mode_switch_strategy: str = "rsi"   # Mode switching strategy used
+    cash_limited_buy: bool = False      # Whether cash-limited buy was enabled
 
 
 # --------------------------- Data loading ---------------------------
