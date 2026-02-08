@@ -169,6 +169,8 @@ class StrategyParams:
     # Moving average parameters (for "ma_cross" strategy)
     ma_short_period: int = 5          # Short MA period (weeks for weekly data)
     ma_long_period: int = 20          # Long MA period (weeks for weekly data)
+    # Buy execution: use min(tranche_budget, cash) instead of skipping when cash < tranche_budget
+    cash_limited_buy: bool = False
 
 # ---------------------- Engine ----------------------
 
@@ -365,7 +367,8 @@ class DongpaBacktester:
                 and close > Decimal("0")
             ):
                 # 실제 체결 수량은 종가 기준으로 계산 (LOC는 종가에 체결)
-                raw_exec_qty = tranche_budget / close
+                exec_budget = min(tranche_budget, cash) if self.p.cash_limited_buy else tranche_budget
+                raw_exec_qty = exec_budget / close
                 share_qty = shares(raw_exec_qty, self.p.allow_fractional_shares)
                 trade_value = money(share_qty * close)
                 if share_qty > Decimal("0") and trade_value <= cash:
@@ -475,10 +478,14 @@ class DongpaBacktester:
             cycle_pnl = money(cycle_pnl + realized_today)
             if day_in_cycle >= self.c.refresh_cycle_days:
                 if cycle_pnl >= Decimal("0"):
-                    cash = money(cash + money(cycle_pnl * profit_compound))
+                    # Profits already in cash from sell proceeds;
+                    # withdraw the portion NOT reinvested
+                    cash = money(cash - money(cycle_pnl * (ONE - profit_compound)))
                 else:
-                    cash = money(cash + money(cycle_pnl * loss_compound))
-                pending_tranche_base = money(max(Decimal("0"), initial_cash + realized_cumulative))
+                    # Losses already reflected in cash;
+                    # replenish the portion NOT absorbed
+                    cash = money(cash - money(cycle_pnl * (ONE - loss_compound)))
+                pending_tranche_base = money(max(cash, initial_cash + realized_cumulative))
                 cycle_pnl = Decimal("0")
                 day_in_cycle = 0
 

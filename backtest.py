@@ -19,6 +19,7 @@ NAV_LINKS = [
     ("backtest.py", "backtest"),
     ("pages/1_Optimizer.py", "Optimizer"),
     ("pages/2_orderBook.py", "orderBook"),
+    ("pages/3_Optuna.py", "Optuna"),
 ]
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
@@ -77,8 +78,14 @@ def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
         "mode_switch_strategy_index": int(saved.get("mode_switch_strategy_index", 0)),
         "ma_short": int(saved.get("ma_short", 3)),
         "ma_long": int(saved.get("ma_long", 7)),
+        "rsi_high_threshold": float(saved.get("rsi_high_threshold", 65.0)),
+        "rsi_mid_high": float(saved.get("rsi_mid_high", 60.0)),
+        "rsi_neutral": float(saved.get("rsi_neutral", 50.0)),
+        "rsi_mid_low": float(saved.get("rsi_mid_low", 40.0)),
+        "rsi_low_threshold": float(saved.get("rsi_low_threshold", 35.0)),
         "enable_netting": saved.get("enable_netting", True),
         "allow_fractional": saved.get("allow_fractional", False),
+        "cash_limited_buy": saved.get("cash_limited_buy", False),
         "pcr": float(saved.get("pcr", 0.8)) * 100,  # Convert from decimal to percentage
         "lcr": float(saved.get("lcr", 0.3)) * 100,  # Convert from decimal to percentage
         "cycle": int(saved.get("cycle", 10)),
@@ -229,8 +236,14 @@ else:
         "mode_switch_strategy_index": 0,
         "ma_short": 3,
         "ma_long": 7,
+        "rsi_high_threshold": 65.0,
+        "rsi_mid_high": 60.0,
+        "rsi_neutral": 50.0,
+        "rsi_mid_low": 40.0,
+        "rsi_low_threshold": 35.0,
         "enable_netting": True,
         "allow_fractional": False,
+        "cash_limited_buy": False,
         "pcr": 80,
         "lcr": 30,
         "cycle": 10,
@@ -262,6 +275,34 @@ with st.sidebar:
         index=int(defaults.get("mode_switch_strategy_index", 0)),
         help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
     )
+
+    rsi_high_threshold = defaults["rsi_high_threshold"]
+    rsi_mid_high = defaults["rsi_mid_high"]
+    rsi_neutral = defaults["rsi_neutral"]
+    rsi_mid_low = defaults["rsi_mid_low"]
+    rsi_low_threshold = defaults["rsi_low_threshold"]
+    if mode_switch_strategy == "RSI":
+        with st.expander("RSI 임계값 설정", expanded=False):
+            rsi_high_threshold = st.number_input(
+                "상한 (High)", value=float(defaults["rsi_high_threshold"]),
+                step=1.0, format="%.1f", help="RSI가 이 값 이상이고 하락 중이면 안전 모드"
+            )
+            rsi_mid_high = st.number_input(
+                "중상 (Mid-High)", value=float(defaults["rsi_mid_high"]),
+                step=1.0, format="%.1f", help="RSI가 neutral~이 값 사이이고 상승 중이면 공세 모드"
+            )
+            rsi_neutral = st.number_input(
+                "중립선 (Neutral)", value=float(defaults["rsi_neutral"]),
+                step=1.0, format="%.1f", help="RSI 교차 감지 기준선"
+            )
+            rsi_mid_low = st.number_input(
+                "중하 (Mid-Low)", value=float(defaults["rsi_mid_low"]),
+                step=1.0, format="%.1f", help="RSI가 이 값~neutral 사이이고 하락 중이면 안전 모드"
+            )
+            rsi_low_threshold = st.number_input(
+                "하한 (Low)", value=float(defaults["rsi_low_threshold"]),
+                step=1.0, format="%.1f", help="RSI가 이 값 미만이고 상승 중이면 공세 모드"
+            )
 
     ma_short = None
     ma_long = None
@@ -363,6 +404,11 @@ with st.sidebar:
         value=defaults.get("allow_fractional", False),
         help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
     )
+    cash_limited_buy = st.checkbox(
+        "현금 한도 매수",
+        value=defaults.get("cash_limited_buy", False),
+        help="트렌치 예산 > 잔여 현금일 때, 현금 한도 내에서 매수합니다. OFF면 예산 부족 시 매수를 건너뜁니다.",
+    )
 
     st.header("투자금 갱신 (복리)")
     pcr = st.number_input("이익복리율 PCR (%)", value=int(defaults["pcr"]), step=1) / 100.0
@@ -405,6 +451,7 @@ with st.sidebar:
                 "log_scale": log_scale_enabled,
                 "enable_netting": enable_netting,
                 "allow_fractional": allow_fractional,
+                "cash_limited_buy": cash_limited_buy,
                 "pcr": float(pcr),
                 "lcr": float(lcr),
                 "cycle": int(cyc),
@@ -419,6 +466,11 @@ with st.sidebar:
                 "offense_sl": float(sl2),
                 "offense_hold": int(hold2),
                 "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+                "rsi_high_threshold": float(rsi_high_threshold),
+                "rsi_mid_high": float(rsi_mid_high),
+                "rsi_neutral": float(rsi_neutral),
+                "rsi_mid_low": float(rsi_mid_low),
+                "rsi_low_threshold": float(rsi_low_threshold),
             }
 
             if mode_switch_strategy == "Golden Cross":
@@ -496,6 +548,7 @@ if run:
                 reset_on_mode_change=True,
                 enable_netting=enable_netting,
                 allow_fractional_shares=allow_fractional,
+                cash_limited_buy=cash_limited_buy,
                 defense=defense,
                 offense=offense,
             )
@@ -505,14 +558,20 @@ if run:
                 target_ticker=target,
                 momentum_ticker=momentum,
                 benchmark_ticker=bench if bench.strip() else None,
-            mode_switch_strategy="rsi",
-            rsi_period=14,
-            reset_on_mode_change=True,
-            enable_netting=enable_netting,
-            allow_fractional_shares=allow_fractional,
-            defense=defense,
-            offense=offense,
-        )
+                mode_switch_strategy="rsi",
+                rsi_period=14,
+                rsi_high_threshold=float(rsi_high_threshold),
+                rsi_mid_high=float(rsi_mid_high),
+                rsi_neutral=float(rsi_neutral),
+                rsi_mid_low=float(rsi_mid_low),
+                rsi_low_threshold=float(rsi_low_threshold),
+                reset_on_mode_change=True,
+                enable_netting=enable_netting,
+                allow_fractional_shares=allow_fractional,
+                cash_limited_buy=cash_limited_buy,
+                defense=defense,
+                offense=offense,
+            )
 
     bt = DongpaBacktester(df_t, df_m, params, cap)
     res = bt.run()
@@ -531,8 +590,21 @@ if run:
     st.subheader("Equity Curve vs Target Price")
     eq_df, combined_df = prepare_equity_price_frames(eq, df_t['Close'])
 
+    # Extract offense/defense mode periods for background coloring
+    mode_bg = pd.DataFrame()
+    if not journal.empty and "모드" in journal.columns:
+        mj = journal[["거래일자", "모드"]].copy()
+        mj["거래일자"] = pd.to_datetime(mj["거래일자"])
+        mj["grp"] = (mj["모드"] != mj["모드"].shift(1)).cumsum()
+        mode_bg = mj.groupby("grp").agg(
+            start=("거래일자", "first"),
+            end=("거래일자", "last"),
+            mode=("모드", "first"),
+        ).reset_index(drop=True)
+        mode_bg["end"] = mode_bg["end"] + pd.Timedelta(days=1)
+
     chart_config = EquityPriceChartConfig(target_label=target, log_scale=log_scale_enabled)
-    chart = build_equity_price_chart(eq_df, combined_df, chart_config)
+    chart = build_equity_price_chart(eq_df, combined_df, chart_config, mode_backgrounds=mode_bg)
     if chart is not None:
         st.altair_chart(chart, width="stretch")
 

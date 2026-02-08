@@ -65,6 +65,7 @@ def build_equity_price_chart(
     combined_df: pd.DataFrame,
     config: EquityPriceChartConfig,
     extra_lines: Iterable[ExtraLineConfig] | None = None,
+    mode_backgrounds: pd.DataFrame | None = None,
 ) -> alt.Chart | None:
     if eq_df.empty:
         return None
@@ -157,5 +158,25 @@ def build_equity_price_chart(
         tooltip=tooltip_fields,
     )
 
-    layers = [equity_line, price_line, *extra_layers, hover_overlay]
+    mode_layer = []
+    if mode_backgrounds is not None and not mode_backgrounds.empty:
+        mode_rects = (
+            alt.Chart(mode_backgrounds)
+            .mark_rect(opacity=0.08)
+            .encode(
+                x='start:T',
+                x2='end:T',
+                color=alt.Color(
+                    'mode:N',
+                    scale=alt.Scale(
+                        domain=['공세', '안전'],
+                        range=['#ff6b6b', '#4dabf7'],
+                    ),
+                    legend=alt.Legend(title='모드'),
+                ),
+            )
+        )
+        mode_layer = [mode_rects]
+
+    layers = [*mode_layer, equity_line, price_line, *extra_layers, hover_overlay]
     return alt.layer(*layers).resolve_scale(y='independent').properties(height=config.height).interactive()
