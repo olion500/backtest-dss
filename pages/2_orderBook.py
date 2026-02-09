@@ -17,6 +17,7 @@ from dongpa_engine import (
     DongpaBacktester,
     ModeParams,
     StrategyParams,
+    _scalar,
     summarize,
 )
 from chart_utils import (
@@ -618,9 +619,7 @@ tranche_budget = _safe_float(last_row.get("일일트렌치예산"))
 # Get RSI value
 rsi_value = None
 if hasattr(backtester, "daily_rsi") and last_timestamp in backtester.daily_rsi.index:
-    rsi_raw = backtester.daily_rsi.loc[last_timestamp]
-    if isinstance(rsi_raw, pd.Series):
-        rsi_raw = rsi_raw.squeeze()
+    rsi_raw = _scalar(backtester.daily_rsi.loc[last_timestamp])
     if rsi_raw is not None and not pd.isna(rsi_raw):
         rsi_value = float(rsi_raw)
 
