@@ -313,14 +313,15 @@ class DongpaBacktester:
 
             mode = "defense"
             for week_date in pre_weeks.index:
-                rsi_val = float(pre_weeks.loc[week_date])
-                if pd.isna(rsi_val):
+                rsi_raw = _scalar(pre_weeks.loc[week_date])
+                if pd.isna(rsi_raw):
                     continue
+                rsi_val = float(rsi_raw)
 
-                delta_raw = rsi_delta.get(week_date)
+                delta_raw = _scalar(rsi_delta.loc[week_date]) if week_date in rsi_delta.index else None
                 delta = float(delta_raw) if delta_raw is not None and not pd.isna(delta_raw) else 0.0
 
-                prev_raw = prev_rsi.get(week_date)
+                prev_raw = _scalar(prev_rsi.loc[week_date]) if week_date in prev_rsi.index else None
                 prev_w = float(prev_raw) if prev_raw is not None and not pd.isna(prev_raw) else rsi_val
 
                 is_down = delta < 0
@@ -351,8 +352,8 @@ class DongpaBacktester:
                 return "defense"
 
             # Use the last available MA values before backtest start
-            last_short = float(pre_short.iloc[-1])
-            last_long = float(pre_long.iloc[-1])
+            last_short = float(_scalar(pre_short.iloc[-1]))
+            last_long = float(_scalar(pre_long.iloc[-1]))
 
             if pd.isna(last_short) or pd.isna(last_long):
                 return "defense"
