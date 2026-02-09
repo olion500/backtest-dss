@@ -290,6 +290,77 @@ class DongpaBacktester:
         else:
             return "defense"
 
+    def _determine_initial_mode(self) -> str:
+        """Determine initial mode by replaying weekly indicator data before backtest start.
+
+        Instead of always starting with "defense", this looks at the pre-backtest
+        weekly data and replays mode switching logic to find what mode should be
+        active at the start of the backtest period.
+        """
+        if len(self.df.index) == 0:
+            return "defense"
+
+        backtest_start = self.df.index[0]
+
+        if self.p.mode_switch_strategy == "rsi":
+            # Get weekly RSI data before backtest start
+            pre_weeks = self.weekly_rsi[self.weekly_rsi.index < backtest_start]
+            if pre_weeks.empty:
+                return "defense"
+
+            rsi_delta = self.weekly_rsi_delta
+            prev_rsi = self.weekly_rsi.shift(1)
+
+            mode = "defense"
+            for week_date in pre_weeks.index:
+                rsi_val = float(pre_weeks.loc[week_date])
+                if pd.isna(rsi_val):
+                    continue
+
+                delta_raw = rsi_delta.get(week_date)
+                delta = float(delta_raw) if delta_raw is not None and not pd.isna(delta_raw) else 0.0
+
+                prev_raw = prev_rsi.get(week_date)
+                prev_w = float(prev_raw) if prev_raw is not None and not pd.isna(prev_raw) else rsi_val
+
+                is_down = delta < 0
+                is_up = delta > 0
+
+                rsi_high = self.p.rsi_high_threshold
+                rsi_mid_low = self.p.rsi_mid_low
+                rsi_mid_high = self.p.rsi_mid_high
+                rsi_low = self.p.rsi_low_threshold
+                rsi_neutral = self.p.rsi_neutral
+
+                cond_def = (is_down and (rsi_val >= rsi_high or (rsi_mid_low < rsi_val < rsi_neutral) or cross_down(prev_w, rsi_val, rsi_neutral)))
+                cond_off = (is_up and (cross_up(prev_w, rsi_val, rsi_neutral) or (rsi_neutral < rsi_val < rsi_mid_high) or (rsi_val < rsi_low)))
+
+                if cond_off and not cond_def:
+                    mode = "offense"
+                elif cond_def and not cond_off:
+                    mode = "defense"
+                # else: maintain current mode
+
+            return mode
+
+        elif self.p.mode_switch_strategy == "ma_cross":
+            # Get weekly MA data before backtest start
+            pre_short = self.weekly_ma_short[self.weekly_ma_short.index < backtest_start]
+            pre_long = self.weekly_ma_long[self.weekly_ma_long.index < backtest_start]
+            if pre_short.empty or pre_long.empty:
+                return "defense"
+
+            # Use the last available MA values before backtest start
+            last_short = float(pre_short.iloc[-1])
+            last_long = float(pre_long.iloc[-1])
+
+            if pd.isna(last_short) or pd.isna(last_long):
+                return "defense"
+
+            return "offense" if last_short > last_long else "defense"
+
+        return "defense"
+
     def run(self):
         dates = self.df.index
         cash = money(self.c.initial_cash)
@@ -301,7 +372,7 @@ class DongpaBacktester:
             self.results = {"equity": equity_series, "journal": journal_df, "cash_end": money_to_float(cash), "open_positions": 0}
             return self.results
 
-        mode = "defense"
+        mode = self._determine_initial_mode()
         lots = []   # [{'qty', 'fill', 'tp', 'days', 'buy_date', 'trade_idx'}]
         trades = []
         daily_rows = []
@@ -312,7 +383,7 @@ class DongpaBacktester:
         def tranche_budget_for(slices: int, base_cash: Decimal) -> Decimal:
             return money(base_cash / Decimal(max(1, slices)))
 
-        m = self.p.defense
+        m = self.p.offense if mode == "offense" else self.p.defense
         tranche_base_cash = cash
         tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
         prev_close = money(self.df['Close'].iloc[0])
