@@ -32,17 +32,6 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 - Computes Buy & Hold comparison and trade statistics
 - Saves results to `outputs/` directory (gitignored)
 
-**`dongpa_optimizer.py`** - Parameter grid search optimizer
-- Runs multi-period backtests across parameter combinations
-- Uses 2022+2025 as training set, 2023-2024 as test set
-- Scores combinations by: avg_CAGR - (avg_MDD × weight)
-- Outputs ranked results to `strategy_performance.md`
-
-**`pages/1_Optimizer.py`** - Streamlit page for running optimizer
-- UI wrapper around `dongpa_optimizer.py`
-- Configurable grid search parameters
-- Visual result display with Altair charts
-
 **`pages/2_orderBook.py`** - LOC order schedule generator
 - Real-time order planning based on latest market data
 - Persists settings to `config/order_book_settings.json`
@@ -82,8 +71,8 @@ make dev             # Run dev container with source mounted
 ### Testing & Optimization
 ```bash
 python -m pytest                    # Run test suite (if tests/ exists)
-make optimize                       # Run parameter optimizer in Docker
-python dongpa_optimizer.py          # Run optimizer locally
+make optuna                         # Run Optuna optimizer
+python run_optuna.py                # Run Optuna optimizer locally
 ```
 
 ### Port Configuration
@@ -152,10 +141,10 @@ PORT=9000 make run
 backtest-dss/
 ├── backtest.py              # Main Streamlit dashboard
 ├── dongpa_engine.py         # Core backtest engine
-├── dongpa_optimizer.py      # Parameter grid search
+├── dongpa_optuna.py         # Optuna-based optimizer engine
 ├── pages/
-│   ├── 1_Optimizer.py      # Optimizer UI
-│   └── 2_orderBook.py      # LOC order scheduler
+│   ├── 2_orderBook.py      # LOC order scheduler
+│   └── 3_Optuna.py         # Optuna optimizer UI
 ├── config/
 │   ├── order_book_settings.json    # Persisted order book config
 │   └── order_book_history.csv      # Order history log

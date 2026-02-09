@@ -5,7 +5,7 @@ PORT ?= 8501
 DEV_IMAGE := $(APP_NAME)-dev
 DOCKER_RUN := docker run --rm -p $(PORT):8501 $(APP_NAME):latest
 
-.PHONY: help install run-local build build-dev run shell dev clean optimize optuna
+.PHONY: help install run-local build build-dev run shell dev clean optuna
 
 help:
 	@echo "Dongpa backtest helpers"
@@ -17,7 +17,6 @@ help:
 	@echo "make shell      Open a bash shell inside the app container"
 	@echo "make build-dev  Force rebuild the live-reload dev image ($(DEV_IMAGE):latest)"
 	@echo "make dev        Run dev container (auto-builds image if missing)"
-	@echo "make optimize   Run dongpa_optimizer.py (auto-builds image if missing)"
 	@echo "make optuna     Run 2-phase Optuna optimizer (300 wide + 900 focused)"
 	@echo "make clean      Remove built Docker images"
 
@@ -50,18 +49,6 @@ dev:
 
 clean:
 	- docker rmi $(APP_NAME):latest $(DEV_IMAGE):latest
-
-optimize:
-	@if ! docker image inspect $(DEV_IMAGE):latest > /dev/null 2>&1; then \
-		echo "Dev image not found, building..."; \
-		$(MAKE) build-dev; \
-	fi
-	docker run --rm \
-		-v "$(CURDIR)":/app \
-		--workdir /app \
-		--entrypoint python3 \
-		$(DEV_IMAGE):latest \
-	dongpa_optimizer.py
 
 optuna:
 	uv run python run_optuna.py $(ARGS)

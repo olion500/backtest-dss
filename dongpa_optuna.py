@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Sequence
 
 import optuna
 import pandas as pd
+import yfinance as yf
 
 from dongpa_engine import (
     CapitalParams,
@@ -20,15 +22,91 @@ from dongpa_engine import (
     StrategyParams,
     summarize,
 )
-from dongpa_optimizer import (
-    DateRange,
-    OptimizationResult,
-    _download_price_history,
-    _slice_by_range,
-    _slice_by_ranges,
-    _to_timestamp,
-    _score,
-)
+
+# --------------------------- Date/data helpers (moved from dongpa_optimizer) --
+
+DateLike = str | date | datetime | pd.Timestamp
+DateRange = tuple[DateLike, DateLike]
+
+
+def _to_timestamp(value: DateLike) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert(None)
+    return ts
+
+
+def _normalize(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        raise ValueError("Price frame is empty")
+    frame = df.copy()
+    idx = pd.DatetimeIndex(frame.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert(None)
+    frame.index = idx
+    return frame
+
+
+def _slice_by_ranges(df: pd.DataFrame, ranges: Sequence[DateRange]) -> pd.DataFrame:
+    slices: list[pd.DataFrame] = []
+    for start, end in ranges:
+        start_ts = _to_timestamp(start)
+        end_ts = _to_timestamp(end)
+        piece = df.loc[start_ts:end_ts].copy()
+        if not piece.empty:
+            slices.append(piece)
+    if not slices:
+        raise ValueError("Requested ranges produced an empty dataframe")
+    combined = pd.concat(slices).sort_index()
+    idx = pd.DatetimeIndex(combined.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert(None)
+    combined.index = idx
+    return combined
+
+
+def _slice_by_range(df: pd.DataFrame, date_range: DateRange) -> pd.DataFrame:
+    start, end = (_to_timestamp(date_range[0]), _to_timestamp(date_range[1]))
+    piece = df.loc[start:end].copy()
+    if piece.empty:
+        raise ValueError("Requested range produced an empty dataframe")
+    idx = pd.DatetimeIndex(piece.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert(None)
+    piece.index = idx
+    return piece
+
+
+def _download_price_history(ticker: str, start: DateLike, end: DateLike) -> pd.DataFrame:
+    data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
+    if data.empty:
+        raise ValueError(f"No data returned for {ticker} between {start} and {end}")
+    return _normalize(data)
+
+
+def _score(train_metrics: dict, test_metrics: dict, penalty: float) -> float:
+    train_cagr = train_metrics.get("CAGR", 0.0)
+    train_mdd = abs(train_metrics.get("Max Drawdown", 0.0))
+    test_cagr = test_metrics.get("CAGR", 0.0)
+    test_mdd = abs(test_metrics.get("Max Drawdown", 0.0))
+    avg_cagr = (train_cagr + test_cagr) / 2
+    avg_mdd = (train_mdd + test_mdd) / 2
+    return avg_cagr - penalty * avg_mdd
+
+
+@dataclass
+class OptimizationResult:
+    defense: ModeParams
+    offense: ModeParams
+    capital: CapitalParams
+    score: float
+    train_metrics: dict
+    test_metrics: dict
+    combined_metrics: dict
+    rsi_thresholds: dict | None = None
+    ma_periods: dict | None = None
+    mode_switch_strategy: str = "rsi"
+    cash_limited_buy: bool = False
 
 # Suppress Optuna's verbose logging by default
 optuna.logging.set_verbosity(optuna.logging.WARNING)
