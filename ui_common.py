@@ -20,7 +20,7 @@ NAV_LINKS = [
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
 CONFIG_DIR = Path("config")
-LOOKBACK_DAYS = 400  # Extra days for RSI/MA warm-up
+LOOKBACK_DAYS = 1000  # Extra days for weekly RSI EMA warm-up convergence
 
 DEFAULT_PARAMS = {
     "target": "SOXL",
