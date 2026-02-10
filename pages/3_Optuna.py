@@ -148,6 +148,11 @@ def render_results(results, study, label=""):
         st.write(f"- Mid-Low: {t['rsi_mid_low']:.1f}")
         st.write(f"- Low: {t['rsi_low_threshold']:.1f}")
 
+    if best.roc_period:
+        st.markdown("---")
+        st.markdown("**ROC 설정**")
+        st.write(f"- 기간: {best.roc_period['roc_period']}주")
+
     return best
 
 
@@ -204,22 +209,26 @@ with st.sidebar:
     st.subheader("모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross", "Both (탐색)"],
+        options=["RSI", "Golden Cross", "ROC", "Both (탐색)"],
         index=0,
-        help="RSI: RSI 기반 | Golden Cross: MA 교차 기반 | Both: 둘 다 탐색",
+        help="RSI: RSI 기반 | Golden Cross: MA 교차 기반 | ROC: N주 변화율 기반 | Both: 모두 탐색",
         key="optuna_mode_strategy",
     )
 
     optimize_rsi_thresholds = False
     optimize_ma_periods = False
+    optimize_roc_period = False
 
     if mode_switch_strategy == "RSI":
         optimize_rsi_thresholds = st.checkbox("RSI 임계값 최적화", value=False, key="optuna_opt_rsi")
     elif mode_switch_strategy == "Golden Cross":
         optimize_ma_periods = st.checkbox("MA 기간 최적화", value=False, key="optuna_opt_ma")
+    elif mode_switch_strategy == "ROC":
+        optimize_roc_period = st.checkbox("ROC 기간 최적화", value=False, key="optuna_opt_roc")
     elif mode_switch_strategy == "Both (탐색)":
         optimize_rsi_thresholds = st.checkbox("RSI 임계값 최적화", value=False, key="optuna_opt_rsi_both")
         optimize_ma_periods = st.checkbox("MA 기간 최적화", value=False, key="optuna_opt_ma_both")
+        optimize_roc_period = st.checkbox("ROC 기간 최적화", value=False, key="optuna_opt_roc_both")
 
     optimize_cash_limited_buy = st.checkbox(
         "현금 한도 매수 최적화",
@@ -345,6 +354,8 @@ if run:
         mode_val = "rsi"
     elif mode_switch_strategy == "Golden Cross":
         mode_val = "ma_cross"
+    elif mode_switch_strategy == "ROC":
+        mode_val = "roc"
     else:
         mode_val = "both"
 
@@ -362,6 +373,7 @@ if run:
         mode_switch_strategy=mode_val,
         optimize_rsi_thresholds=optimize_rsi_thresholds,
         optimize_ma_periods=optimize_ma_periods,
+        optimize_roc_period=optimize_roc_period,
         optimize_cash_limited_buy=optimize_cash_limited_buy,
         def_buy_range=(def_buy_min, def_buy_max),
         def_tp_range=(def_tp_min, def_tp_max),

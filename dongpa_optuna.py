@@ -107,6 +107,7 @@ class OptimizationResult:
     combined_metrics: dict
     rsi_thresholds: dict | None = None
     ma_periods: dict | None = None
+    roc_period: dict | None = None
     mode_switch_strategy: str = "rsi"
     cash_limited_buy: bool = False
 
@@ -163,9 +164,13 @@ class OptunaConfig:
     ma_short_range: tuple[int, int] = (3, 10)
     ma_long_range: tuple[int, int] = (15, 30)
 
+    # ROC period range (for "roc" mode strategy)
+    roc_period_range: tuple[int, int] = (2, 12)
+
     # Feature toggles
     optimize_rsi_thresholds: bool = False
     optimize_ma_periods: bool = False
+    optimize_roc_period: bool = False
     optimize_cash_limited_buy: bool = False
 
     # Constraints: list of (date_range, max_mdd, min_cagr) tuples
@@ -255,7 +260,7 @@ def create_objective(
         # --- Mode switching strategy ---
         mode_strategy = cfg.mode_switch_strategy
         if mode_strategy == "both":
-            mode_strategy = trial.suggest_categorical("mode_strategy", ["rsi", "ma_cross"])
+            mode_strategy = trial.suggest_categorical("mode_strategy", ["rsi", "ma_cross", "roc"])
 
         # --- Cash-limited buy ---
         if cfg.optimize_cash_limited_buy:
@@ -301,6 +306,11 @@ def create_objective(
                     ma_long = ma_short + 2
             params_dict["ma_short_period"] = ma_short
             params_dict["ma_long_period"] = ma_long
+
+        # --- ROC period optimization ---
+        if cfg.optimize_roc_period and mode_strategy == "roc":
+            roc_period = trial.suggest_int("roc_period", *cfg.roc_period_range)
+            params_dict["roc_period"] = roc_period
 
         params = StrategyParams(**params_dict)
 
@@ -510,6 +520,11 @@ def extract_results(
             ma_periods = {"ma_short_period": ma_short, "ma_long_period": ma_long}
             params_dict.update(ma_periods)
 
+        roc_period_dict = None
+        if "roc_period" in trial.params:
+            roc_period_dict = {"roc_period": trial.params["roc_period"]}
+            params_dict["roc_period"] = trial.params["roc_period"]
+
         # Cash-limited buy
         trial_cash_limited = trial.params.get("cash_limited_buy", False)
         params_dict["cash_limited_buy"] = trial_cash_limited
@@ -533,6 +548,7 @@ def extract_results(
             combined_metrics=combined_metrics,
             rsi_thresholds=rsi_thresholds,
             ma_periods=ma_periods,
+            roc_period=roc_period_dict,
             mode_switch_strategy=mode_strategy,
             cash_limited_buy=trial_cash_limited,
         ))
@@ -582,6 +598,8 @@ def format_results_df(results: list[OptimizationResult]) -> pd.DataFrame:
                 f"Short {res.ma_periods['ma_short_period']}주 / "
                 f"Long {res.ma_periods['ma_long_period']}주"
             )
+        if res.roc_period:
+            row["ROC Period"] = f"{res.roc_period['roc_period']}주"
         if res.cash_limited_buy:
             row["현금한도매수"] = "ON"
 
@@ -654,6 +672,7 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         mode_switch_strategy=dominant_mode,
         optimize_rsi_thresholds=(dominant_mode == "rsi"),
         optimize_ma_periods=(dominant_mode == "ma_cross"),
+        optimize_roc_period=(dominant_mode == "roc"),
         optimize_cash_limited_buy=cfg.optimize_cash_limited_buy,
         constraints=cfg.constraints,
         progress_callback=cfg.progress_callback,
@@ -687,6 +706,12 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
             narrowed.ma_short_range = _range_int([r.ma_periods["ma_short_period"] for r in ma_results])
             narrowed.ma_long_range = _range_int([r.ma_periods["ma_long_period"] for r in ma_results])
 
+    # Narrow ROC period
+    if dominant_mode == "roc":
+        roc_results = [r for r in top5 if r.roc_period]
+        if roc_results:
+            narrowed.roc_period_range = _range_int([r.roc_period["roc_period"] for r in roc_results], clamp_min=2)
+
     return narrowed
 
 
@@ -705,7 +730,7 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
         "offense_tp": round(res.offense.tp_pct, 2),
         "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
         "offense_hold": res.offense.max_hold_days,
-        "mode_switch_strategy_index": 0 if res.mode_switch_strategy == "rsi" else 1,
+        "mode_switch_strategy_index": {"rsi": 0, "ma_cross": 1, "roc": 2}.get(res.mode_switch_strategy, 0),
         "cash_limited_buy": res.cash_limited_buy,
     }
     if res.rsi_thresholds:
@@ -721,6 +746,8 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
             "ma_short": res.ma_periods.get("ma_short_period", 3),
             "ma_long": res.ma_periods.get("ma_long_period", 7),
         })
+    if res.roc_period:
+        config["roc_period"] = res.roc_period.get("roc_period", 4)
     return config
 
 

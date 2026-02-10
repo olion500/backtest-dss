@@ -30,6 +30,7 @@ DEFAULT_PARAMS = {
     "mode_switch_strategy_index": 0,
     "ma_short": 3,
     "ma_long": 7,
+    "roc_period": 4,
     "rsi_high_threshold": 65.0,
     "rsi_mid_high": 60.0,
     "rsi_neutral": 50.0,

@@ -121,6 +121,7 @@ def _prepare_defaults(saved: dict) -> dict:
         "rsi_neutral": float(saved.get("rsi_neutral", 50.0)),
         "rsi_mid_low": float(saved.get("rsi_mid_low", 40.0)),
         "rsi_low_threshold": float(saved.get("rsi_low_threshold", 35.0)),
+        "roc_period": int(saved.get("roc_period", 4)),
     }
 
 
@@ -157,6 +158,11 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
             "mode_switch_strategy": "ma_cross",
             "ma_short_period": int(ui_values["ma_short"]),
             "ma_long_period": int(ui_values["ma_long"]),
+        })
+    elif ui_values.get("mode_switch_strategy") == "ROC":
+        strategy_dict.update({
+            "mode_switch_strategy": "roc",
+            "roc_period": int(ui_values.get("roc_period", 4)),
         })
     else:
         strategy_dict.update({
@@ -223,9 +229,9 @@ with st.sidebar:
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross"],
+        options=["RSI", "Golden Cross", "ROC"],
         index=saved_values.get("mode_switch_strategy_index", 0),
-        help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
+        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 (양수=공세, 음수=안전)"
     )
 
     rsi_high_threshold = defaults["rsi_high_threshold"]
@@ -285,6 +291,17 @@ with st.sidebar:
 
         if ma_short >= ma_long:
             st.warning("⚠️ Short MA는 Long MA보다 작아야 합니다!")
+
+    roc_period = int(defaults.get("roc_period", 4))
+    if mode_switch_strategy == "ROC":
+        roc_period = st.number_input(
+            "ROC 기간 (주)",
+            min_value=1,
+            max_value=52,
+            value=int(defaults.get("roc_period", 4)),
+            step=1,
+            help="N주 변화율 기간. 양수면 공세, 음수면 안전 모드"
+        )
 
     st.divider()
 
@@ -366,7 +383,7 @@ with st.sidebar:
             "offense_hold": off_hold,
             "spread_buy_levels": spread_buy_levels,
             "spread_buy_step": spread_buy_step,
-            "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+            "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2}[mode_switch_strategy],
             "rsi_high_threshold": float(rsi_high_threshold),
             "rsi_mid_high": float(rsi_mid_high),
             "rsi_neutral": float(rsi_neutral),
@@ -376,6 +393,8 @@ with st.sidebar:
         if mode_switch_strategy == "Golden Cross":
             settings_payload["ma_short"] = ma_short
             settings_payload["ma_long"] = ma_long
+        elif mode_switch_strategy == "ROC":
+            settings_payload["roc_period"] = roc_period
         save_settings(settings_payload)
         st.success("설정을 저장했습니다.")
 
@@ -408,13 +427,15 @@ ui_values = {
     "rsi_low_threshold": rsi_low_threshold,
 }
 
-# Add MA parameters if Golden Cross mode
+# Add strategy-specific parameters
 if mode_switch_strategy == "Golden Cross":
     if ma_short >= ma_long:
         st.error("❌ Short MA는 Long MA보다 작아야 합니다!")
         st.stop()
     ui_values["ma_short"] = ma_short
     ui_values["ma_long"] = ma_long
+elif mode_switch_strategy == "ROC":
+    ui_values["roc_period"] = roc_period
 
 
 # Calculate data fetch range
@@ -508,6 +529,16 @@ mode_line = f"현재 모드: **{mode_label}**"
 # Show mode indicator based on strategy
 if ui_values.get("mode_switch_strategy") == "Golden Cross":
     mode_line += f" (Golden Cross 전략: {ui_values['ma_short']}주 × {ui_values['ma_long']}주 MA)"
+elif ui_values.get("mode_switch_strategy") == "ROC":
+    roc_val = None
+    if hasattr(backtester, "daily_roc") and last_timestamp in backtester.daily_roc.index:
+        roc_raw = _scalar(backtester.daily_roc.loc[last_timestamp])
+        if roc_raw is not None and not pd.isna(roc_raw):
+            roc_val = float(roc_raw)
+    if roc_val is not None:
+        mode_line += f" (ROC {roc_val:.4f}, {ui_values.get('roc_period', 4)}주)"
+    else:
+        mode_line += f" (ROC {ui_values.get('roc_period', 4)}주)"
 elif rsi_value is not None:
     mode_line += f" (주봉 RSI {rsi_value:.2f})"
 

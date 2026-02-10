@@ -115,9 +115,9 @@ with st.sidebar:
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross"],
+        options=["RSI", "Golden Cross", "ROC"],
         index=int(defaults.get("mode_switch_strategy_index", 0)),
-        help="RSI: 기존 RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 모드 전환"
+        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 (양수=공세, 음수=안전)"
     )
 
     rsi_high_threshold = defaults["rsi_high_threshold"]
@@ -171,6 +171,17 @@ with st.sidebar:
 
         if ma_short >= ma_long:
             st.warning("⚠️ Short MA는 Long MA보다 작아야 합니다!")
+
+    roc_period = int(defaults.get("roc_period", 4))
+    if mode_switch_strategy == "ROC":
+        roc_period = st.number_input(
+            "ROC 기간 (주)",
+            min_value=1,
+            max_value=52,
+            value=int(defaults.get("roc_period", 4)),
+            step=1,
+            help="N주 변화율 기간. 양수면 공세, 음수면 안전 모드"
+        )
 
     st.divider()
 
@@ -303,7 +314,7 @@ with st.sidebar:
                 "offense_tp": float(tp2),
                 "offense_sl": float(sl2),
                 "offense_hold": int(hold2),
-                "mode_switch_strategy_index": 0 if mode_switch_strategy == "RSI" else 1,
+                "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2}[mode_switch_strategy],
                 "rsi_high_threshold": float(rsi_high_threshold),
                 "rsi_mid_high": float(rsi_mid_high),
                 "rsi_neutral": float(rsi_neutral),
@@ -314,6 +325,8 @@ with st.sidebar:
             if mode_switch_strategy == "Golden Cross":
                 save_payload["ma_short"] = int(ma_short)
                 save_payload["ma_long"] = int(ma_long)
+            elif mode_switch_strategy == "ROC":
+                save_payload["roc_period"] = int(roc_period)
 
             save_filename = save_config_name.strip()
             if not save_filename.endswith(".json"):
@@ -377,6 +390,18 @@ if run:
                 mode_switch_strategy="ma_cross",
                 ma_short_period=int(ma_short),
                 ma_long_period=int(ma_long),
+                enable_netting=enable_netting,
+                allow_fractional_shares=allow_fractional,
+                cash_limited_buy=cash_limited_buy,
+                defense=defense,
+                offense=offense,
+            )
+        elif mode_switch_strategy == "ROC":
+            params = StrategyParams(
+                target_ticker=target,
+                momentum_ticker=momentum,
+                mode_switch_strategy="roc",
+                roc_period=int(roc_period),
                 enable_netting=enable_netting,
                 allow_fractional_shares=allow_fractional,
                 cash_limited_buy=cash_limited_buy,

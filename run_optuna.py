@@ -52,6 +52,8 @@ def print_results(results, phase_label):
             print(f"  RSI: L{t['rsi_low_threshold']:.1f}/ML{t['rsi_mid_low']:.1f}/N{t['rsi_neutral']:.1f}/MH{t['rsi_mid_high']:.1f}/H{t['rsi_high_threshold']:.1f}")
         if res.ma_periods:
             print(f"  MA: Short {res.ma_periods['ma_short_period']}w, Long {res.ma_periods['ma_long_period']}w")
+        if res.roc_period:
+            print(f"  ROC: {res.roc_period['roc_period']}주")
         print(f"  Train:    CAGR {res.train_metrics.get('CAGR',0)*100:.2f}%, MDD {res.train_metrics.get('Max Drawdown',0)*100:.2f}%")
         print(f"  Test:     CAGR {res.test_metrics.get('CAGR',0)*100:.2f}%, MDD {res.test_metrics.get('Max Drawdown',0)*100:.2f}%")
         print(f"  Combined: CAGR {res.combined_metrics.get('CAGR',0)*100:.2f}%, MDD {res.combined_metrics.get('Max Drawdown',0)*100:.2f}%, Calmar {res.combined_metrics.get('Calmar Ratio',0):.2f}")
@@ -80,6 +82,7 @@ def main():
         mode_switch_strategy="both",
         optimize_rsi_thresholds=True,
         optimize_ma_periods=True,
+        optimize_roc_period=True,
         # Wide ranges
         def_buy_range=(0.5, 10.0),
         def_tp_range=(0.1, 5.0),

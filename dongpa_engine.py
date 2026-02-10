@@ -52,6 +52,12 @@ def death_cross(short_ma: pd.Series, long_ma: pd.Series) -> pd.Series:
     return (prev_short >= prev_long) & (short_ma < long_ma)
 
 
+def weekly_roc(series: pd.Series, period: int = 4) -> pd.Series:
+    """N주 변화율 (Rate of Change). 양수=상승, 음수=하락."""
+    shifted = series.shift(period)
+    return (series - shifted) / shifted.replace(0, np.nan)
+
+
 def _scalar(value):
     if isinstance(value, pd.Series):
         if value.empty:
@@ -163,6 +169,8 @@ class StrategyParams:
     # Moving average parameters (for "ma_cross" strategy)
     ma_short_period: int = 5          # Short MA period (weeks for weekly data)
     ma_long_period: int = 20          # Long MA period (weeks for weekly data)
+    # ROC parameters (for "roc" strategy)
+    roc_period: int = 4               # N-week Rate of Change period
     # Buy execution: use min(tranche_budget, cash) instead of skipping when cash < tranche_budget
     cash_limited_buy: bool = False
 
@@ -204,6 +212,9 @@ class DongpaBacktester:
             self.weekly_ma_long = moving_average(w_close, self.p.ma_long_period)
             self.weekly_golden = golden_cross(self.weekly_ma_short, self.weekly_ma_long)
             self.weekly_death = death_cross(self.weekly_ma_short, self.weekly_ma_long)
+        elif self.p.mode_switch_strategy == "roc":
+            # ROC-based mode switching (calculate with full data)
+            self.weekly_roc_series = weekly_roc(w_close, self.p.roc_period)
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
@@ -222,12 +233,16 @@ class DongpaBacktester:
             self.daily_ma_long = self.weekly_ma_long.reindex(self.df.index, method='ffill')
             self.daily_golden = self.weekly_golden.reindex(self.df.index, method='ffill', fill_value=False)
             self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill', fill_value=False)
+        elif self.p.mode_switch_strategy == "roc":
+            self.daily_roc = self.weekly_roc_series.reindex(self.df.index, method='ffill')
 
     def _decide_mode(self, idx, prev_mode) -> str:
         if self.p.mode_switch_strategy == "rsi":
             return self._decide_mode_rsi(idx, prev_mode)
         elif self.p.mode_switch_strategy == "ma_cross":
             return self._decide_mode_ma_cross(idx, prev_mode)
+        elif self.p.mode_switch_strategy == "roc":
+            return self._decide_mode_roc(idx, prev_mode)
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
@@ -294,6 +309,18 @@ class DongpaBacktester:
         else:
             return "defense"
 
+    def _decide_mode_roc(self, idx, prev_mode) -> str:
+        """ROC-based mode switching: positive ROC = offense, negative = defense."""
+        roc_raw = _scalar(self.daily_roc.loc[idx])
+        if pd.isna(roc_raw):
+            return prev_mode or "defense"
+        roc_val = float(roc_raw)
+        if roc_val > 0:
+            return "offense"
+        elif roc_val < 0:
+            return "defense"
+        return prev_mode or "defense"
+
     def _determine_initial_mode(self) -> str:
         """Determine initial mode by replaying weekly indicator data before backtest start.
 
@@ -349,6 +376,18 @@ class DongpaBacktester:
                 return "defense"
 
             return "offense" if last_short > last_long else "defense"
+
+        elif self.p.mode_switch_strategy == "roc":
+            # Get weekly ROC data before backtest start
+            pre_roc = self.weekly_roc_series[self.weekly_roc_series.index < backtest_start]
+            if pre_roc.empty:
+                return "defense"
+
+            last_roc = _scalar(pre_roc.iloc[-1])
+            if pd.isna(last_roc):
+                return "defense"
+
+            return "offense" if float(last_roc) > 0 else "defense"
 
         return "defense"
 
