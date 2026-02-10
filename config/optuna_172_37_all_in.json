@@ -1,0 +1,19 @@
+{
+  "defense_slices": 22,
+  "defense_buy": 9.73,
+  "defense_tp": 1.13,
+  "defense_sl": 13.8,
+  "defense_hold": 47,
+  "offense_slices": 1,
+  "offense_buy": 2.98,
+  "offense_tp": 0.84,
+  "offense_sl": 35.4,
+  "offense_hold": 49,
+  "mode_switch_strategy_index": 0,
+  "cash_limited_buy": false,
+  "rsi_high_threshold": 72.0,
+  "rsi_mid_high": 57.8,
+  "rsi_neutral": 48.1,
+  "rsi_mid_low": 39.5,
+  "rsi_low_threshold": 21.8
+}

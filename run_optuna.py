@@ -22,7 +22,7 @@ def parse_args():
     p.add_argument("--benchmark", default="SOXX", help="Benchmark ticker (default: SOXX)")
     p.add_argument("--cash", type=float, default=10000.0, help="Initial cash (default: 10000)")
     p.add_argument("--trials", type=int, default=300, help="Phase 1 trials (default: 300)")
-    p.add_argument("--penalty", type=float, default=0.7, help="MDD penalty weight (default: 0.7)")
+    p.add_argument("--penalty", type=float, default=0.7, help="MDD penalty weight for ranking (default: 0.7)")
     p.add_argument("--top", type=int, default=10, help="Top N results to show (default: 10)")
     p.add_argument("--train-start", default="2020-01-01", help="Train start date")
     p.add_argument("--train-end", default="2022-12-31", help="Train end date")

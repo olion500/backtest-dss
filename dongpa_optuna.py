@@ -347,9 +347,18 @@ def create_objective(
 
             score = _score(train_metrics, test_metrics, cfg.score_penalty)
 
+            # Compute multi-objective return values
+            train_cagr_v = train_metrics.get("CAGR", 0.0)
+            train_mdd_v = abs(train_metrics.get("Max Drawdown", 0.0))
+            test_cagr_v = test_metrics.get("CAGR", 0.0)
+            test_mdd_v = abs(test_metrics.get("Max Drawdown", 0.0))
+            avg_cagr = (train_cagr_v + test_cagr_v) / 2
+            avg_mdd = (train_mdd_v + test_mdd_v) / 2
+
             # Store metrics as user attributes for later retrieval
             trial.set_user_attr("train_metrics", train_metrics)
             trial.set_user_attr("test_metrics", test_metrics)
+            trial.set_user_attr("score", score)
             trial.set_user_attr("defense", {
                 "buy_cond_pct": d_buy, "tp_pct": d_tp,
                 "max_hold_days": d_hold, "slices": d_slices,
@@ -363,13 +372,13 @@ def create_objective(
             trial.set_user_attr("capital", {})
             trial.set_user_attr("mode_switch_strategy", mode_strategy)
 
-            return score
+            return avg_cagr, avg_mdd
 
         except optuna.TrialPruned:
             raise
         except Exception:
             logger.debug("Trial %d failed", trial.number, exc_info=True)
-            return float("-inf")
+            raise optuna.TrialPruned()
 
     return objective
 
@@ -389,9 +398,9 @@ def run_optuna(cfg: OptunaConfig) -> optuna.Study:
         constraint_frames=constraint_frames or None,
     )
 
-    sampler = optuna.samplers.TPESampler(seed=42)
+    sampler = optuna.samplers.NSGAIISampler(seed=42)
     study = optuna.create_study(
-        direction="maximize",
+        directions=["maximize", "minimize"],
         sampler=sampler,
         study_name="dongpa_optuna",
     )
@@ -399,14 +408,18 @@ def run_optuna(cfg: OptunaConfig) -> optuna.Study:
     # Wrap objective with progress callback
     if cfg.progress_callback:
         original_objective = objective
+        _best_score: list[float | None] = [None]
 
         def objective_with_progress(trial):
-            result = original_objective(trial)
             try:
-                best = study.best_value
-            except ValueError:
-                best = None
-            cfg.progress_callback(trial.number + 1, cfg.n_trials, best)
+                result = original_objective(trial)
+            except optuna.TrialPruned:
+                cfg.progress_callback(trial.number + 1, cfg.n_trials, _best_score[0])
+                raise
+            score = trial.user_attrs.get("score")
+            if score is not None and (_best_score[0] is None or score > _best_score[0]):
+                _best_score[0] = score
+            cfg.progress_callback(trial.number + 1, cfg.n_trials, _best_score[0])
             return result
 
         study.optimize(objective_with_progress, n_trials=cfg.n_trials, show_progress_bar=False)
@@ -432,7 +445,7 @@ def extract_results(
 
     # Sort completed trials by score (descending)
     completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
-    completed.sort(key=lambda t: t.value, reverse=True)
+    completed.sort(key=lambda t: t.user_attrs.get("score", float("-inf")), reverse=True)
     top_trials = completed[:top_n]
 
     if not top_trials:
@@ -516,7 +529,7 @@ def extract_results(
             defense=defense,
             offense=offense,
             capital=capital,
-            score=trial.value,
+            score=trial.user_attrs.get("score", 0.0),
             train_metrics=trial.user_attrs.get("train_metrics", {}),
             test_metrics=trial.user_attrs.get("test_metrics", {}),
             combined_metrics=combined_metrics,
@@ -586,11 +599,14 @@ def get_history_df(study: optuna.Study) -> pd.DataFrame:
     for trial in study.trials:
         if trial.state != optuna.trial.TrialState.COMPLETE:
             continue
-        if trial.value > best_so_far:
-            best_so_far = trial.value
+        score = trial.user_attrs.get("score", float("-inf"))
+        if score > best_so_far:
+            best_so_far = score
         rows.append({
             "Trial": trial.number,
-            "Score": trial.value,
+            "Score": score,
+            "CAGR": trial.values[0] if trial.values else 0.0,
+            "MDD": trial.values[1] if trial.values else 0.0,
             "Best Score": best_so_far,
         })
     return pd.DataFrame(rows)

@@ -19,6 +19,14 @@ from dongpa_optuna import (
     run_optuna,
 )
 
+def _best_score_from_study(study):
+    """Compute best score from multi-objective study using stored user attrs."""
+    completed = [t for t in study.trials if t.state.name == "COMPLETE"]
+    if not completed:
+        return 0.0
+    return max(t.user_attrs.get("score", float("-inf")) for t in completed)
+
+
 NAV_LINKS = [
     ("backtest.py", "backtest"),
     ("pages/2_orderBook.py", "orderBook"),
@@ -322,8 +330,8 @@ with st.sidebar:
         )
 
     score_penalty = st.slider(
-        "MDD 패널티 가중치", min_value=0.0, max_value=2.0, value=0.6, step=0.05,
-        help="점수 = 평균 CAGR - 패널티 x 평균 |MDD|",
+        "MDD 패널티 가중치 (결과 정렬용)", min_value=0.0, max_value=2.0, value=0.6, step=0.05,
+        help="Pareto 최적화 후 결과 정렬: 점수 = 평균 CAGR - 패널티 × 평균 |MDD|",
         key="optuna_penalty",
     )
     top_n = st.number_input(
@@ -483,7 +491,7 @@ if run:
             # Show Phase 1 summary briefly
             st.info(
                 f"Phase 1 완료: {completed1}개 완료, {pruned1}개 pruned, "
-                f"Best Score: {study1.best_value:.4f} → Phase 2 집중 탐색 시작..."
+                f"Best Score: {_best_score_from_study(study1):.4f} → Phase 2 집중 탐색 시작..."
             )
 
             # ── Phase 2 ──
@@ -522,7 +530,7 @@ if run:
             progress_bar.progress(1.0)
             status_msg = (
                 f"완료: {completed1}개 완료, {pruned1}개 pruned, "
-                f"Best Score: {study1.best_value:.4f}"
+                f"Best Score: {_best_score_from_study(study1):.4f}"
             )
             status_text.text(status_msg)
             final_results = results1
