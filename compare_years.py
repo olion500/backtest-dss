@@ -117,7 +117,7 @@ def main():
             momentum_ticker="QQQ",
             benchmark_ticker="SOXX",
             rsi_period=14,
-            reset_on_mode_change=True,
+
             enable_netting=True,
             defense=current_defense,
             offense=current_offense,
@@ -131,7 +131,7 @@ def main():
             momentum_ticker="QQQ",
             benchmark_ticker="SOXX",
             rsi_period=14,
-            reset_on_mode_change=True,
+
             enable_netting=True,
             defense=opt_defense,
             offense=opt_offense,

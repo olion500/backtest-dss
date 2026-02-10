@@ -488,6 +488,7 @@ if run:
 
     if df_t.empty or df_m.empty:
         st.error("데이터가 비어 있습니다. 티커/기간을 확인하세요.")
+        st.stop()
     else:
         outputs_dir = Path("outputs")
         outputs_dir.mkdir(exist_ok=True)
@@ -529,7 +530,6 @@ if run:
                 mode_switch_strategy="ma_cross",
                 ma_short_period=int(ma_short),
                 ma_long_period=int(ma_long),
-                reset_on_mode_change=True,
                 enable_netting=enable_netting,
                 allow_fractional_shares=allow_fractional,
                 cash_limited_buy=cash_limited_buy,
@@ -549,7 +549,6 @@ if run:
                 rsi_neutral=float(rsi_neutral),
                 rsi_mid_low=float(rsi_mid_low),
                 rsi_low_threshold=float(rsi_low_threshold),
-                reset_on_mode_change=True,
                 enable_netting=enable_netting,
                 allow_fractional_shares=allow_fractional,
                 cash_limited_buy=cash_limited_buy,
@@ -567,7 +566,8 @@ if run:
     st.success("완료! 가격 데이터는 outputs/ 아래 CSV로 저장되었습니다.")
 
     summary_metrics = summarize(eq)
-    momentum_hold_pct = compute_buy_and_hold_return(df_m)
+    df_m_period = df_m[(df_m.index >= pd.Timestamp(start)) & (df_m.index <= pd.Timestamp(end))]
+    momentum_hold_pct = compute_buy_and_hold_return(df_m_period)
     target_hold_pct = compute_buy_and_hold_return(df_t)
     strategy_perf_pct = compute_equity_return(eq)
 

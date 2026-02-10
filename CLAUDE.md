@@ -116,7 +116,7 @@ PORT=9000 make run
 ### Capital Management
 
 **Tranche Budget**: `available_cash / N_slices`
-- Recalculated on mode change if `reset_on_mode_change` enabled
+- Recalculated every day based on current tranche base and mode's N_slices
 - Updated immediately after sells when cash exceeds tranche base
 
 ### Recommended Parameter Ranges

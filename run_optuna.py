@@ -78,8 +78,22 @@ def apply_to_config(res, config_path="config/order_book_settings.json"):
         "offense_tp": round(res.offense.tp_pct, 2),
         "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
         "offense_hold": res.offense.max_hold_days,
-        "mode_switch_strategy_index": 0,  # RSI
+        "mode_switch_strategy_index": 0 if res.mode_switch_strategy == "rsi" else 1,
     })
+
+    if res.rsi_thresholds:
+        current.update({
+            "rsi_high_threshold": round(res.rsi_thresholds["rsi_high_threshold"], 1),
+            "rsi_mid_high": round(res.rsi_thresholds["rsi_mid_high"], 1),
+            "rsi_neutral": round(res.rsi_thresholds["rsi_neutral"], 1),
+            "rsi_mid_low": round(res.rsi_thresholds["rsi_mid_low"], 1),
+            "rsi_low_threshold": round(res.rsi_thresholds["rsi_low_threshold"], 1),
+        })
+    if res.ma_periods:
+        current.update({
+            "ma_short": res.ma_periods.get("ma_short_period", 3),
+            "ma_long": res.ma_periods.get("ma_long_period", 7),
+        })
 
     path.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"\nConfig updated: {config_path}")

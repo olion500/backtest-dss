@@ -150,7 +150,6 @@ class StrategyParams:
     momentum_ticker: str
     benchmark_ticker: str | None
     rsi_period: int = 14
-    reset_on_mode_change: bool = True
     enable_netting: bool = True
     allow_fractional_shares: bool = False
     defense: ModeParams = None
@@ -395,13 +394,8 @@ class DongpaBacktester:
             close = money(self.df.loc[d, 'Close'])
 
             # Mode decision (weekly RSI based)
-            new_mode = self._decide_mode(d, mode)
-            if new_mode != mode and self.p.reset_on_mode_change:
-                mode = new_mode
-                m = self.p.offense if mode == "offense" else self.p.defense
-            else:
-                mode = new_mode
-                m = self.p.offense if mode == "offense" else self.p.defense
+            mode = self._decide_mode(d, mode)
+            m = self.p.offense if mode == "offense" else self.p.defense
 
             tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
 

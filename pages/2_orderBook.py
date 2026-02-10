@@ -183,8 +183,6 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         "target_ticker": ui_values["target"],
         "momentum_ticker": ui_values["momentum"],
         "benchmark_ticker": ui_values["bench"] if ui_values["bench"].strip() else None,
-        "reset_on_mode_change": True,
-        # Keep engine netting enabled for consistency, even though UI hides the toggle.
         "enable_netting": True,
         "allow_fractional_shares": ui_values["allow_fractional"],
         "cash_limited_buy": ui_values.get("cash_limited_buy", False),
@@ -667,12 +665,11 @@ if not open_trades.empty and prev_close:
             unrealized_pnl = current_value - cost_basis
             unrealized_pct = ((prev_close / buy_price) - 1) * 100 if buy_price and prev_close else None
 
-            # Check expiration
-            buy_date_ts = pd.to_datetime(buy_date, errors="coerce")
+            # Check expiration (trading days from engine's 보유기간)
+            hold_period = _safe_int(trade.get("보유기간(일)", 0))
             days_left = None
-            if pd.notna(buy_date_ts) and max_hold > 0:
-                expire_date = buy_date_ts + pd.Timedelta(days=max_hold - 1)
-                days_left = (expire_date - last_timestamp).days
+            if max_hold > 0 and hold_period > 0:
+                days_left = max_hold - hold_period
 
             # Determine status
             status = []
@@ -732,13 +729,12 @@ if not open_trades.empty and prev_close:
         max_hold = _safe_int(trade.get("최대보유일", 0))
 
         if buy_qty > 0:
-            # Calculate days left
-            buy_date_ts = pd.to_datetime(buy_date, errors="coerce")
+            # Calculate days left (trading days from engine's 보유기간)
+            hold_period = _safe_int(trade.get("보유기간(일)", 0))
             days_left = None
             is_expiring = False
-            if pd.notna(buy_date_ts) and max_hold > 0:
-                expire_date = buy_date_ts + pd.Timedelta(days=max_hold - 1)
-                days_left = (expire_date - last_timestamp).days
+            if max_hold > 0 and hold_period > 0:
+                days_left = max_hold - hold_period
                 is_expiring = days_left <= 0
 
             # TP sell order
