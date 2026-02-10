@@ -117,7 +117,7 @@ PORT=9000 make run
 
 **Tranche Budget**: `available_cash / N_slices`
 - Recalculated every day based on current tranche base and mode's N_slices
-- Updated immediately after sells when cash exceeds tranche base
+- Tranche base resets to current cash after every sell (no ratchet behavior)
 
 ### Recommended Parameter Ranges
 

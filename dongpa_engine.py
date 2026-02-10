@@ -503,8 +503,6 @@ class DongpaBacktester:
 
                     trade_entry = trades[lot['trade_idx']]
                     hold_days = int((i - lot['buy_idx']) + 1)
-                    if sell_reason == "MOC":
-                        hold_days = min(hold_days + 1, lot['max_hold'])
                     trade_entry.update({
                         "매도일자": d.strftime("%Y-%m-%d"),
                         "매도평균": money_to_float(close),
@@ -526,9 +524,11 @@ class DongpaBacktester:
 
             realized_cumulative = money(realized_cumulative + realized_today)
 
-            # After sells free up cash, update tranche base immediately
-            if sell_qty_total > Decimal("0") and cash > tranche_base_cash:
-                tranche_base_cash = money(max(cash, initial_cash + max(Decimal("0"), realized_cumulative)))
+            # After sells, reset tranche base to current cash so budget
+            # always reflects available capital (prevents budget deadlock
+            # where tranche_base stays at a historical peak while cash shrinks).
+            if sell_qty_total > Decimal("0"):
+                tranche_base_cash = cash
 
             # Mark-to-close (for equity curve)
             position_qty = sum(l['qty'] for l in lots)
@@ -548,7 +548,7 @@ class DongpaBacktester:
                 qty_display = shares_to_float(planned_buy_qty, self.p.allow_fractional_shares)
                 buy_summary = f"매수 {qty_display}주 @ {buy_price:.2f} (예산 ${buy_budget:,.2f})"
 
-            sell_summary = "매도 없음"
+            sell_summary = "TP대기 없음"
             if lots:
                 tp_groups: dict[Decimal, Decimal] = {}
                 for lot in lots:
@@ -558,7 +558,7 @@ class DongpaBacktester:
                     f"{shares_to_float(qty, self.p.allow_fractional_shares)}주 @ {money_to_float(tp):.2f}"
                     for tp, qty in sorted(tp_groups.items(), key=lambda item: float(item[0]))
                 ]
-                sell_summary = "매도 " + ", ".join(sell_entries)
+                sell_summary = "TP대기 " + ", ".join(sell_entries)
 
             order_summary = f"{buy_summary} | {sell_summary}" if buy_summary or sell_summary else "예약 없음"
 
@@ -577,6 +577,9 @@ class DongpaBacktester:
             raw_sell_qty = sell_qty_total
             raw_sell_amt = sell_amt_total
 
+            # Netting is display-only: offsets buy/sell quantities in the daily
+            # journal for reporting purposes. Actual cash, lots, and positions
+            # are already settled independently above.
             net_buy_qty = raw_buy_qty
             net_sell_qty = raw_sell_qty
             net_buy_amt = raw_buy_amt

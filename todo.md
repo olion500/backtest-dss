@@ -13,10 +13,10 @@
 
 ## Logic Issues
 
-- [ ] **LOGIC-1**: `dongpa_engine.py:512-513` - MOC 보유기간 `hold_days = min(hold_days + 1, max_hold)` 로직이 항상 무효 (MOC 시점에서 hold_days == max_hold이므로 +1이 cap됨). Dead code 정리.
-- [ ] **LOGIC-2**: `dongpa_engine.py:536-537` - `tranche_base_cash`가 절대 감소하지 않음. 큰 수익 후 연속 손실 시 tranche_budget이 cash보다 커져서 매수 불가 (budget deadlock). `cash_limited_buy` 꺼져있으면 장기 drawdown 동안 매수 완전 정지.
-- [ ] **LOGIC-3**: `dongpa_engine.py:558-567` - 예약요약에서 buy_summary는 당일 계획, sell_summary는 미래 TP 목표. 시점 혼재.
-- [ ] **LOGIC-4**: Netting은 daily journal 표시용일 뿐 실제 cash/lots에 영향 없음. 실제 브로커 netting과 다른 동작임을 문서화 필요.
+- [x] **LOGIC-1**: `dongpa_engine.py:512-513` - MOC hold_days dead code 제거. `min(hold_days + 1, max_hold)` 항상 무효였음.
+- [x] **LOGIC-2**: `dongpa_engine.py:536-537` - tranche_base_cash를 매도 후 항상 현재 cash로 리셋하도록 변경. 이전 ratchet(비감소) 방식 제거. budget deadlock 해소.
+- [x] **LOGIC-3**: `dongpa_engine.py:558-567` - sell_summary 라벨을 "매도"에서 "TP대기"로 변경하여 미래 매도 대기 주문임을 명시.
+- [x] **LOGIC-4**: Netting 코드에 display-only임을 명시하는 코멘트 추가. 실제 cash/lots에 영향 없음을 문서화.
 
 ## Refactoring
 
