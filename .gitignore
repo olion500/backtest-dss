@@ -5,3 +5,7 @@ results/
 market_data/
 outputs/
 *.log
+
+
+config/*.json
+
