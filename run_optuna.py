@@ -71,7 +71,6 @@ def main():
     cfg1 = OptunaConfig(
         target_ticker=args.ticker,
         momentum_ticker=args.momentum,
-        benchmark_ticker=args.benchmark,
         initial_cash=args.cash,
         train_ranges=train_ranges,
         test_range=test_range,

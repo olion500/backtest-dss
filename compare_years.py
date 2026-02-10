@@ -57,10 +57,7 @@ def main():
         slices=3,
         stop_loss_pct=None  # No stop loss!
     )
-    current_capital = CapitalParams(
-        initial_cash=10000.0,
-        slippage_pct=0.0
-    )
+    current_capital = CapitalParams(initial_cash=10000.0)
 
     # OPTIMIZED PARAMETERS (Rank #1 from optimizer)
     opt_defense = ModeParams(
@@ -77,10 +74,7 @@ def main():
         slices=3,
         stop_loss_pct=23.2
     )
-    opt_capital = CapitalParams(
-        initial_cash=10000.0,
-        slippage_pct=0.0
-    )
+    opt_capital = CapitalParams(initial_cash=10000.0)
 
     print("\n📊 CURRENT CONFIG:")
     print(f"  Defense: buy={current_defense.buy_cond_pct}%, tp={current_defense.tp_pct}%, hold={current_defense.max_hold_days}d, N={current_defense.slices}, SL=없음")
@@ -115,7 +109,6 @@ def main():
         current_params = StrategyParams(
             target_ticker="SOXL",
             momentum_ticker="QQQ",
-            benchmark_ticker="SOXX",
             rsi_period=14,
 
             enable_netting=True,
@@ -129,7 +122,6 @@ def main():
         opt_params = StrategyParams(
             target_ticker="SOXL",
             momentum_ticker="QQQ",
-            benchmark_ticker="SOXX",
             rsi_period=14,
 
             enable_netting=True,

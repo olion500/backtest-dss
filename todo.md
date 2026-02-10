@@ -29,9 +29,9 @@
 
 ## Dead Code / Unused
 
-- [ ] **DEAD-1**: `CapitalParams.slippage_pct` - 정의만 있고 엔진에서 한 번도 사용 안 됨. 제거하거나 실제 구현.
-- [ ] **DEAD-2**: `StrategyParams.benchmark_ticker` - 엔진 내부에서 미사용. UI에서만 사용. StrategyParams에서 제거 고려.
-- [ ] **DEAD-3**: `create_objective()`에 `combined_target/combined_momo` 파라미터 전달되지만 objective 내부에서 미사용.
+- [x] **DEAD-1**: `CapitalParams.slippage_pct` 제거. 정의만 있고 엔진에서 미사용. 모든 호출부에서 삭제.
+- [x] **DEAD-2**: `StrategyParams.benchmark_ticker` 제거. 엔진 미사용, UI는 자체 변수 사용. `OptunaConfig`에서도 삭제.
+- [x] **DEAD-3**: `create_objective()`에서 미사용 `combined_target/combined_momo` 파라미터 제거.
 
 ## Performance
 

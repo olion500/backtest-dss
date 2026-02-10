@@ -20,7 +20,7 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 **`dongpa_engine.py`** - Backtesting engine and core logic
 - `DongpaBacktester` class: Main backtest orchestrator
 - `ModeParams`: Mode-specific parameters (buy_cond_pct, tp_pct, max_hold_days, slices, stop_loss_pct)
-- `CapitalParams`: Capital management (initial_cash)
+- `CapitalParams`: Capital management (`initial_cash` only)
 - `StrategyParams`: Complete strategy configuration
 - Signal helpers: `wilder_rsi()`, `to_weekly_close()`, `cross_up()`, `cross_down()`
 - Monetary precision helpers: `money()`, `to_decimal()` for 2-decimal rounding
@@ -183,7 +183,7 @@ backtest-dss/
 - **New indicators**: Add to `dongpa_engine.py` indicator section
 - **Alternative modes**: Modify `decide_mode()` logic in backtester
 - **Custom exits**: Extend sell logic in main backtest loop
-- **Slippage**: Implement via `slippage_pct` parameter (currently unused)
+- **Slippage**: Not modeled; add to `CapitalParams` if needed
 
 ## Documentation References
 

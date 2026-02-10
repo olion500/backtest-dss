@@ -59,10 +59,7 @@ def main():
         slices=3,
         stop_loss_pct=None  # No stop loss!
     )
-    old_capital = CapitalParams(
-        initial_cash=10000.0,
-        slippage_pct=0.0
-    )
+    old_capital = CapitalParams(initial_cash=10000.0)
 
     # OPTIMIZED PARAMETERS (from config/order_book_settings.json - Rank #1)
     new_defense = ModeParams(
@@ -79,17 +76,13 @@ def main():
         slices=3,
         stop_loss_pct=23.2
     )
-    new_capital = CapitalParams(
-        initial_cash=10000.0,
-        slippage_pct=0.0
-    )
+    new_capital = CapitalParams(initial_cash=10000.0)
 
     # Run backtests
     print("\nRunning backtest with OLD parameters...")
     old_params = StrategyParams(
         target_ticker="SOXL",
         momentum_ticker="QQQ",
-        benchmark_ticker="SOXX",
         rsi_period=14,
         enable_netting=True,
         defense=old_defense,
@@ -101,7 +94,6 @@ def main():
     new_params = StrategyParams(
         target_ticker="SOXL",
         momentum_ticker="QQQ",
-        benchmark_ticker="SOXX",
         rsi_period=14,
         enable_netting=True,
         defense=new_defense,

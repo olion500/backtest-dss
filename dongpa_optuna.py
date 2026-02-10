@@ -123,7 +123,6 @@ class OptunaConfig:
     """Configuration for Optuna-based optimization."""
     target_ticker: str
     momentum_ticker: str
-    benchmark_ticker: str | None = None
     initial_cash: float = 10000.0
     train_ranges: Sequence[DateRange] = (
         ("2022-01-01", "2022-12-31"),
@@ -219,8 +218,6 @@ def create_objective(
     train_momo: pd.DataFrame,
     test_target: pd.DataFrame,
     test_momo: pd.DataFrame,
-    combined_target: pd.DataFrame,
-    combined_momo: pd.DataFrame,
     cfg: OptunaConfig,
     constraint_frames: list | None = None,
 ):
@@ -253,10 +250,7 @@ def create_objective(
             max_hold_days=o_hold, slices=o_slices,
             stop_loss_pct=o_sl,
         )
-        capital = CapitalParams(
-            initial_cash=cfg.initial_cash,
-            slippage_pct=0.0,
-        )
+        capital = CapitalParams(initial_cash=cfg.initial_cash)
 
         # --- Mode switching strategy ---
         mode_strategy = cfg.mode_switch_strategy
@@ -272,7 +266,6 @@ def create_objective(
         params_dict: dict = {
             "target_ticker": cfg.target_ticker,
             "momentum_ticker": cfg.momentum_ticker,
-            "benchmark_ticker": cfg.benchmark_ticker,
             "rsi_period": cfg.rsi_period,
             "enable_netting": cfg.enable_netting,
             "cash_limited_buy": cash_limited_buy,
@@ -389,12 +382,11 @@ def create_objective(
 def run_optuna(cfg: OptunaConfig) -> optuna.Study:
     """Run Optuna optimization and return the study object."""
     frames = _load_price_frames(cfg)
-    train_target, train_momo, test_target, test_momo, combined_target, combined_momo, constraint_frames = frames
+    train_target, train_momo, test_target, test_momo, _, _, constraint_frames = frames
 
     objective = create_objective(
         train_target, train_momo,
         test_target, test_momo,
-        combined_target, combined_momo,
         cfg,
         constraint_frames=constraint_frames or None,
     )
@@ -465,13 +457,12 @@ def extract_results(
 
         defense = ModeParams(**d_attrs)
         offense = ModeParams(**o_attrs)
-        capital = CapitalParams(initial_cash=cfg.initial_cash, slippage_pct=0.0, **c_attrs)
+        capital = CapitalParams(initial_cash=cfg.initial_cash, **c_attrs)
 
         # Build StrategyParams for combined backtest
         params_dict: dict = {
             "target_ticker": cfg.target_ticker,
             "momentum_ticker": cfg.momentum_ticker,
-            "benchmark_ticker": cfg.benchmark_ticker,
             "rsi_period": cfg.rsi_period,
             "enable_netting": cfg.enable_netting,
             "defense": defense,
@@ -645,7 +636,6 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
     narrowed = OptunaConfig(
         target_ticker=cfg.target_ticker,
         momentum_ticker=cfg.momentum_ticker,
-        benchmark_ticker=cfg.benchmark_ticker,
         initial_cash=cfg.initial_cash,
         train_ranges=cfg.train_ranges,
         test_range=cfg.test_range,
@@ -756,7 +746,6 @@ if __name__ == "__main__":  # pragma: no cover
     default_cfg = OptunaConfig(
         target_ticker="SOXL",
         momentum_ticker="QQQ",
-        benchmark_ticker="SOXX",
         n_trials=300,
         score_penalty=0.7,
     )

@@ -363,10 +363,7 @@ if run:
             stop_loss_pct=float(sl2) if sl2 > 0 else None,
         )
 
-        cap = CapitalParams(
-            initial_cash=float(init_cash),
-            slippage_pct=0.0,
-        )
+        cap = CapitalParams(initial_cash=float(init_cash))
 
         # Set mode switch strategy parameters
         if mode_switch_strategy == "Golden Cross":
@@ -377,7 +374,6 @@ if run:
             params = StrategyParams(
                 target_ticker=target,
                 momentum_ticker=momentum,
-                benchmark_ticker=bench if bench.strip() else None,
                 mode_switch_strategy="ma_cross",
                 ma_short_period=int(ma_short),
                 ma_long_period=int(ma_long),
@@ -392,7 +388,6 @@ if run:
             params = StrategyParams(
                 target_ticker=target,
                 momentum_ticker=momentum,
-                benchmark_ticker=bench if bench.strip() else None,
                 mode_switch_strategy="rsi",
                 rsi_period=14,
                 rsi_high_threshold=float(rsi_high_threshold),

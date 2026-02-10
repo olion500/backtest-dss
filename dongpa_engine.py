@@ -142,13 +142,11 @@ class ModeParams:
 @dataclass
 class CapitalParams:
     initial_cash: float
-    slippage_pct: float = 0.0
 
 @dataclass
 class StrategyParams:
     target_ticker: str
     momentum_ticker: str
-    benchmark_ticker: str | None
     rsi_period: int = 14
     enable_netting: bool = True
     allow_fractional_shares: bool = False

@@ -144,7 +144,6 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
     strategy_dict = {
         "target_ticker": ui_values["target"],
         "momentum_ticker": ui_values["momentum"],
-        "benchmark_ticker": ui_values["bench"] if ui_values["bench"].strip() else None,
         "enable_netting": True,
         "allow_fractional_shares": ui_values["allow_fractional"],
         "cash_limited_buy": ui_values.get("cash_limited_buy", False),
@@ -172,10 +171,7 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
 
     strategy = StrategyParams(**strategy_dict)
 
-    capital = CapitalParams(
-        initial_cash=float(ui_values["init_cash"]),
-        slippage_pct=0.0,
-    )
+    capital = CapitalParams(initial_cash=float(ui_values["init_cash"]))
     return strategy, capital
 
 

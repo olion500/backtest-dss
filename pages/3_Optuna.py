@@ -351,7 +351,6 @@ if run:
     config = OptunaConfig(
         target_ticker=target.strip(),
         momentum_ticker=momentum.strip(),
-        benchmark_ticker=bench_arg,
         initial_cash=float(initial_cash),
         train_ranges=train_ranges,
         test_range=test_range,
