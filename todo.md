@@ -20,12 +20,12 @@
 
 ## Refactoring
 
-- [ ] **REFACTOR-1**: `render_navigation()` 3곳 복사붙이기 (`backtest.py`, `orderBook.py`, `3_Optuna.py`). 공통 모듈로 추출.
-- [ ] **REFACTOR-2**: `compute_trade_metrics()` (`backtest.py:133`) vs `_compute_metrics()` (`orderBook.py:224`) 거의 동일. 통합.
-- [ ] **REFACTOR-3**: `_determine_initial_mode()` RSI 로직 (`dongpa_engine.py:293-345`)이 `_decide_mode_rsi()` (233-263) 중복 복사. 변경 시 두 곳 동시 수정 필요.
-- [ ] **REFACTOR-4**: `apply_to_config()` 중복 - `run_optuna.py:62` vs `pages/3_Optuna.py:207`. 통합 필요 (3_Optuna.py 버전이 올바름).
-- [ ] **REFACTOR-5**: 기본값 (`SOXL`, `QQQ`, `SOXX`, 10000, 7 slices 등) 5개 파일에 분산 하드코딩. 단일 config로 통합.
-- [ ] **REFACTOR-6**: `_load_settings()` 중복 - `backtest.py:55` vs `orderBook.py:55`. 공통 함수로 추출.
+- [x] **REFACTOR-1**: `render_navigation()` 3곳 복사붙이기 → `ui_common.py`로 추출. 3곳 모두 import로 전환.
+- [x] **REFACTOR-2**: `compute_trade_metrics()` vs `_compute_metrics()` → `ui_common.py`에 통합. 양쪽 import로 전환.
+- [x] **REFACTOR-3**: `_determine_initial_mode()` RSI 로직 중복 → `_eval_rsi_conditions()` 헬퍼 추출. 양쪽에서 호출.
+- [x] **REFACTOR-4**: `apply_to_config()` 중복 → `dongpa_optuna.py`에 `result_to_config_dict()`, `apply_to_config()`, `save_result_as_config()` 통합. `run_optuna.py`, `3_Optuna.py` import로 전환.
+- [x] **REFACTOR-5**: 기본값 하드코딩 → `ui_common.DEFAULT_PARAMS`로 통합. `backtest.py` fallback에서 사용.
+- [x] **REFACTOR-6**: `_load_settings()` 중복 → `ui_common.load_settings()`/`save_settings()`로 통합. 양쪽 import로 전환.
 
 ## Dead Code / Unused
 

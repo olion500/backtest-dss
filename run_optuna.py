@@ -9,10 +9,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
 
-from dongpa_optuna import OptunaConfig, run_optuna, extract_results, narrow_config
+from dongpa_optuna import OptunaConfig, run_optuna, extract_results, narrow_config, apply_to_config
 
 
 def parse_args():
@@ -57,46 +55,6 @@ def print_results(results, phase_label):
         print(f"  Train:    CAGR {res.train_metrics.get('CAGR',0)*100:.2f}%, MDD {res.train_metrics.get('Max Drawdown',0)*100:.2f}%")
         print(f"  Test:     CAGR {res.test_metrics.get('CAGR',0)*100:.2f}%, MDD {res.test_metrics.get('Max Drawdown',0)*100:.2f}%")
         print(f"  Combined: CAGR {res.combined_metrics.get('CAGR',0)*100:.2f}%, MDD {res.combined_metrics.get('Max Drawdown',0)*100:.2f}%, Calmar {res.combined_metrics.get('Calmar Ratio',0):.2f}")
-
-
-def apply_to_config(res, config_path="config/order_book_settings.json"):
-    """Apply best result to order_book_settings.json, backing up first."""
-    path = Path(config_path)
-    if path.exists():
-        current = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        current = {}
-
-    current.update({
-        "defense_slices": res.defense.slices,
-        "defense_buy": round(res.defense.buy_cond_pct, 2),
-        "defense_tp": round(res.defense.tp_pct, 2),
-        "defense_sl": round(res.defense.stop_loss_pct, 1) if res.defense.stop_loss_pct else 0.0,
-        "defense_hold": res.defense.max_hold_days,
-        "offense_slices": res.offense.slices,
-        "offense_buy": round(res.offense.buy_cond_pct, 2),
-        "offense_tp": round(res.offense.tp_pct, 2),
-        "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
-        "offense_hold": res.offense.max_hold_days,
-        "mode_switch_strategy_index": 0 if res.mode_switch_strategy == "rsi" else 1,
-    })
-
-    if res.rsi_thresholds:
-        current.update({
-            "rsi_high_threshold": round(res.rsi_thresholds["rsi_high_threshold"], 1),
-            "rsi_mid_high": round(res.rsi_thresholds["rsi_mid_high"], 1),
-            "rsi_neutral": round(res.rsi_thresholds["rsi_neutral"], 1),
-            "rsi_mid_low": round(res.rsi_thresholds["rsi_mid_low"], 1),
-            "rsi_low_threshold": round(res.rsi_thresholds["rsi_low_threshold"], 1),
-        })
-    if res.ma_periods:
-        current.update({
-            "ma_short": res.ma_periods.get("ma_short_period", 3),
-            "ma_long": res.ma_periods.get("ma_long_period", 7),
-        })
-
-    path.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"\nConfig updated: {config_path}")
 
 
 def main():

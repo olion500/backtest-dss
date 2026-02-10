@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import math
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -25,49 +23,13 @@ from chart_utils import (
     prepare_equity_price_frames,
     build_equity_price_chart,
 )
-
-
-SETTINGS_PATH = Path("config") / "order_book_settings.json"
-LOOKBACK_DAYS = 400
-
-NAV_LINKS = [
-    ("backtest.py", "backtest"),
-    ("pages/2_orderBook.py", "orderBook"),
-    ("pages/3_Optuna.py", "Optuna"),
-]
-
-
-def render_navigation() -> None:
-    st.markdown(
-        """
-        <style>
-        [data-testid='stSidebarNav'] {display: none;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.sidebar.markdown("### Pages")
-    for path, label in NAV_LINKS:
-        st.sidebar.page_link(path, label=label)
-    st.sidebar.divider()
-
-
-def _load_settings() -> dict:
-    if SETTINGS_PATH.exists():
-        try:
-            with SETTINGS_PATH.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            if isinstance(data, dict):
-                return data
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
-
-
-def _save_settings(payload: dict) -> None:
-    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with SETTINGS_PATH.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
+from ui_common import (
+    LOOKBACK_DAYS,
+    compute_trade_metrics,
+    load_settings,
+    render_navigation,
+    save_settings,
+)
 
 
 def _safe_int(value: object) -> int:
@@ -219,90 +181,13 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
 
 
 
-def _compute_metrics(trade_log: pd.DataFrame, initial_cash: float) -> dict[str, float | int | None] | None:
-    if trade_log is None or trade_log.empty:
-        return None
-
-    closed = trade_log[trade_log.get("상태") == "완료"].copy()
-    if closed.empty:
-        return {
-            "trade_count": 0,
-            "moc_count": 0,
-            "net_profit": 0.0,
-            "avg_hold_days": None,
-            "avg_return_pct": None,
-            "avg_gain_pct": None,
-            "avg_loss_pct": None,
-            "avg_gain": None,
-            "avg_loss": None,
-            "period_return_pct": None,
-        }
-
-    for col in ("실현손익", "보유기간(일)", "수익률(%)"):
-        if col in closed.columns:
-            closed[col] = pd.to_numeric(closed[col], errors="coerce")
-
-    closed = closed.dropna(subset=["실현손익"])
-    if closed.empty:
-        return {
-            "trade_count": 0,
-            "moc_count": 0,
-            "net_profit": 0.0,
-            "avg_hold_days": None,
-            "avg_return_pct": None,
-            "avg_gain_pct": None,
-            "avg_loss_pct": None,
-            "avg_gain": None,
-            "avg_loss": None,
-            "period_return_pct": None,
-        }
-
-    net_profit = float(closed["실현손익"].sum())
-    trade_count = int(len(closed))
-    moc_count = int((closed.get("청산사유") == "MOC").sum()) if "청산사유" in closed.columns else 0
-    avg_hold = float(closed["보유기간(일)"].mean()) if "보유기간(일)" in closed.columns else None
-    avg_return_pct = None
-    if "수익률(%)" in closed.columns and closed["수익률(%)"].notna().any():
-        avg_return_pct = float(closed["수익률(%)"].dropna().mean())
-    gain_series = closed.loc[closed["실현손익"] > 0, "실현손익"]
-    loss_series = closed.loc[closed["실현손익"] < 0, "실현손익"]
-    gain_pct_series = pd.Series(dtype=float)
-    loss_pct_series = pd.Series(dtype=float)
-    if "수익률(%)" in closed.columns:
-        pct_series = pd.to_numeric(closed["수익률(%)"], errors="coerce")
-        gain_pct_series = pct_series[pct_series > 0]
-        loss_pct_series = pct_series[pct_series < 0]
-
-    avg_gain = float(gain_series.mean()) if not gain_series.empty else None
-    avg_loss = float(loss_series.mean()) if not loss_series.empty else None
-    avg_gain_pct = float(gain_pct_series.mean()) if not gain_pct_series.empty else None
-    avg_loss_pct = float(loss_pct_series.mean()) if not loss_pct_series.empty else None
-
-    period_return_pct = None
-    if initial_cash > 0:
-        period_return_pct = (net_profit / initial_cash) * 100.0
-
-    return {
-        "trade_count": trade_count,
-        "moc_count": moc_count,
-        "net_profit": net_profit,
-        "avg_hold_days": avg_hold,
-        "avg_return_pct": avg_return_pct,
-        "avg_gain_pct": avg_gain_pct,
-        "avg_loss_pct": avg_loss_pct,
-        "avg_gain": avg_gain,
-        "avg_loss": avg_loss,
-        "period_return_pct": period_return_pct,
-    }
-
-
 st.set_page_config(page_title="orderBook", layout="wide")
 
 render_navigation()
 
 
 today = date.today()
-saved_values = _load_settings()
+saved_values = load_settings()
 defaults = _prepare_defaults(saved_values)
 
 st.title("orderBook")
@@ -495,7 +380,7 @@ with st.sidebar:
         if mode_switch_strategy == "Golden Cross":
             settings_payload["ma_short"] = ma_short
             settings_payload["ma_long"] = ma_long
-        _save_settings(settings_payload)
+        save_settings(settings_payload)
         st.success("설정을 저장했습니다.")
 
 
@@ -1083,7 +968,7 @@ if not equity.empty:
     summary_bottom[3].metric("CAGR", f"{summary_metrics['CAGR']:.2%}")
 
 # Trade metrics
-metrics = _compute_metrics(trade_log, float(ui_values["init_cash"]))
+metrics = compute_trade_metrics(trade_log, float(ui_values["init_cash"]))
 if metrics:
     st.markdown("---")
     st.subheader("실현 지표")

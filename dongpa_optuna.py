@@ -6,9 +6,11 @@ and returns ranked results.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Sequence
 
 import optuna
@@ -689,6 +691,63 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
             narrowed.ma_long_range = _range_int([r.ma_periods["ma_long_period"] for r in ma_results])
 
     return narrowed
+
+
+# --------------------------- Config export helpers ---------------------------
+
+def result_to_config_dict(res: OptimizationResult) -> dict:
+    """Convert an OptimizationResult to a config dictionary."""
+    config = {
+        "defense_slices": res.defense.slices,
+        "defense_buy": round(res.defense.buy_cond_pct, 2),
+        "defense_tp": round(res.defense.tp_pct, 2),
+        "defense_sl": round(res.defense.stop_loss_pct, 1) if res.defense.stop_loss_pct else 0.0,
+        "defense_hold": res.defense.max_hold_days,
+        "offense_slices": res.offense.slices,
+        "offense_buy": round(res.offense.buy_cond_pct, 2),
+        "offense_tp": round(res.offense.tp_pct, 2),
+        "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
+        "offense_hold": res.offense.max_hold_days,
+        "mode_switch_strategy_index": 0 if res.mode_switch_strategy == "rsi" else 1,
+        "cash_limited_buy": res.cash_limited_buy,
+    }
+    if res.rsi_thresholds:
+        config.update({
+            "rsi_high_threshold": round(res.rsi_thresholds["rsi_high_threshold"], 1),
+            "rsi_mid_high": round(res.rsi_thresholds["rsi_mid_high"], 1),
+            "rsi_neutral": round(res.rsi_thresholds["rsi_neutral"], 1),
+            "rsi_mid_low": round(res.rsi_thresholds["rsi_mid_low"], 1),
+            "rsi_low_threshold": round(res.rsi_thresholds["rsi_low_threshold"], 1),
+        })
+    if res.ma_periods:
+        config.update({
+            "ma_short": res.ma_periods.get("ma_short_period", 3),
+            "ma_long": res.ma_periods.get("ma_long_period", 7),
+        })
+    return config
+
+
+def apply_to_config(res: OptimizationResult, config_path: str = "config/order_book_settings.json") -> None:
+    """Apply best result to order_book_settings.json."""
+    path = Path(config_path)
+    if path.exists():
+        current = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        current = {}
+    current.update(result_to_config_dict(res))
+    path.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def save_result_as_config(res: OptimizationResult, filename: str) -> Path:
+    """Save a single OptimizationResult as a named config JSON file."""
+    config_dir = Path("config")
+    config_dir.mkdir(exist_ok=True)
+    if not filename.endswith(".json"):
+        filename += ".json"
+    path = config_dir / filename
+    config = result_to_config_dict(res)
+    path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
 
 
 # --------------------------- CLI entry point ---------------------------

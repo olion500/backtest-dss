@@ -13,90 +13,34 @@ from chart_utils import (
     prepare_equity_price_frames,
     build_equity_price_chart,
 )
-
-
-NAV_LINKS = [
-    ("backtest.py", "backtest"),
-    ("pages/2_orderBook.py", "orderBook"),
-    ("pages/3_Optuna.py", "Optuna"),
-]
-
-SETTINGS_PATH = Path("config") / "order_book_settings.json"
-CONFIG_DIR = Path("config")
-LOOKBACK_DAYS = 400  # Extra days for RSI/MA warm-up
-
-
-def get_available_config_files() -> list[Path]:
-    """Get all JSON config files in the config directory."""
-    if not CONFIG_DIR.exists():
-        return []
-    # Find all .json files including backups (.json.backup_*)
-    json_files = list(CONFIG_DIR.glob("*.json*"))
-    # Sort by modification time (newest first)
-    json_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return json_files
-
-
-def render_navigation() -> None:
-    st.markdown(
-        """
-        <style>
-        [data-testid='stSidebarNav'] {display: none;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.sidebar.markdown("### Pages")
-    for path, label in NAV_LINKS:
-        st.sidebar.page_link(path, label=label)
-    st.sidebar.divider()
-
-
-def _load_settings(config_path: Path | None = None) -> dict:
-    """Load settings from a config file."""
-    path = config_path if config_path else SETTINGS_PATH
-    if path.exists():
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            if isinstance(data, dict):
-                return data
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
+from ui_common import (
+    CONFIG_DIR,
+    DEFAULT_PARAMS,
+    LOOKBACK_DAYS,
+    compute_trade_metrics,
+    get_available_config_files,
+    load_settings,
+    render_navigation,
+)
 
 
 def _prepare_defaults(saved: dict, year_start: date, today: date) -> dict:
-    return {
+    result = {
         "start_date": year_start,  # Always use year_start, don't load from config
         "end_date": today,  # Always use today for end date
-        "target": saved.get("target", "SOXL"),
-        "momentum": saved.get("momentum", "QQQ"),
-        "bench": saved.get("bench", "SOXX"),
-        "log_scale": saved.get("log_scale", True),
-        "mode_switch_strategy_index": int(saved.get("mode_switch_strategy_index", 0)),
-        "ma_short": int(saved.get("ma_short", 3)),
-        "ma_long": int(saved.get("ma_long", 7)),
-        "rsi_high_threshold": float(saved.get("rsi_high_threshold", 65.0)),
-        "rsi_mid_high": float(saved.get("rsi_mid_high", 60.0)),
-        "rsi_neutral": float(saved.get("rsi_neutral", 50.0)),
-        "rsi_mid_low": float(saved.get("rsi_mid_low", 40.0)),
-        "rsi_low_threshold": float(saved.get("rsi_low_threshold", 35.0)),
-        "enable_netting": saved.get("enable_netting", True),
-        "allow_fractional": saved.get("allow_fractional", False),
-        "cash_limited_buy": saved.get("cash_limited_buy", False),
         "init_cash": 10000,  # Always use default 10000, don't load from config
-        "defense_slices": int(saved.get("defense_slices", 7)),
-        "defense_buy": float(saved.get("defense_buy", 3.0)),
-        "defense_tp": float(saved.get("defense_tp", 0.2)),
-        "defense_sl": float(saved.get("defense_sl", 0.0)),
-        "defense_hold": int(saved.get("defense_hold", 30)),
-        "offense_slices": int(saved.get("offense_slices", 7)),
-        "offense_buy": float(saved.get("offense_buy", 5.0)),
-        "offense_tp": float(saved.get("offense_tp", 2.5)),
-        "offense_sl": float(saved.get("offense_sl", 0.0)),
-        "offense_hold": int(saved.get("offense_hold", 7)),
     }
+    for key, default_val in DEFAULT_PARAMS.items():
+        if key in ("init_cash",):
+            continue  # Already set above
+        raw = saved.get(key, default_val)
+        if isinstance(default_val, int):
+            result[key] = int(raw)
+        elif isinstance(default_val, float):
+            result[key] = float(raw)
+        else:
+            result[key] = raw
+    return result
 
 
 def compute_buy_and_hold_return(df: pd.DataFrame) -> float | None:
@@ -130,70 +74,6 @@ def compute_equity_return(series: pd.Series) -> float | None:
     return ((end / start) - 1) * 100.0
 
 
-def compute_trade_metrics(trade_log: pd.DataFrame | None, initial_cash: float) -> dict[str, float | int | None] | None:
-    if trade_log is None or trade_log.empty:
-        return None
-
-    closed = trade_log[trade_log["상태"] == "완료"].copy()
-    if closed.empty:
-        return {
-            "trade_count": 0,
-            "moc_count": 0,
-            "net_profit": 0.0,
-            "avg_hold_days": None,
-            "avg_return_pct": None,
-            "avg_gain_pct": None,
-            "avg_loss_pct": None,
-            "avg_gain": None,
-            "avg_loss": None,
-        }
-
-    for col in ("실현손익", "보유기간(일)", "수익률(%)"):
-        if col in closed.columns:
-            closed[col] = pd.to_numeric(closed[col], errors="coerce")
-
-    closed = closed.dropna(subset=["실현손익"])
-    if closed.empty:
-        return {
-            "trade_count": 0,
-            "moc_count": 0,
-            "net_profit": 0.0,
-            "avg_hold_days": None,
-            "avg_return_pct": None,
-            "avg_gain_pct": None,
-            "avg_loss_pct": None,
-            "avg_gain": None,
-            "avg_loss": None,
-        }
-
-    net_profit = float(closed["실현손익"].sum())
-    trade_count = int(len(closed))
-    moc_count = int((closed["청산사유"] == "MOC").sum()) if "청산사유" in closed.columns else 0
-    avg_hold = float(closed["보유기간(일)"].mean()) if "보유기간(일)" in closed.columns else None
-    avg_return_pct = None
-    if "수익률(%)" in closed.columns and closed["수익률(%)"].notna().any():
-        avg_return_pct = float(closed["수익률(%)"].dropna().mean())
-    gain_series = closed.loc[closed["실현손익"] > 0, "실현손익"]
-    loss_series = closed.loc[closed["실현손익"] < 0, "실현손익"]
-    gain_pct_series = closed.loc[closed["수익률(%)"] > 0, "수익률(%)"] if "수익률(%)" in closed.columns else pd.Series(dtype=float)
-    loss_pct_series = closed.loc[closed["수익률(%)"] < 0, "수익률(%)"] if "수익률(%)" in closed.columns else pd.Series(dtype=float)
-    avg_gain = float(gain_series.mean()) if not gain_series.empty else None
-    avg_loss = float(loss_series.mean()) if not loss_series.empty else None
-    avg_gain_pct = float(gain_pct_series.mean()) if not gain_pct_series.empty else None
-    avg_loss_pct = float(loss_pct_series.mean()) if not loss_pct_series.empty else None
-
-    return {
-        "trade_count": trade_count,
-        "moc_count": moc_count,
-        "net_profit": net_profit,
-        "avg_hold_days": avg_hold,
-        "avg_return_pct": avg_return_pct,
-        "avg_gain_pct": avg_gain_pct,
-        "avg_loss_pct": avg_loss_pct,
-        "avg_gain": avg_gain,
-        "avg_loss": avg_loss,
-    }
-
 st.set_page_config(page_title="backtest", layout="wide")
 
 today = date.today()
@@ -212,7 +92,7 @@ if "loaded_defaults" not in st.session_state:
 
 # Auto-load settings on first page load
 if not st.session_state.config_loaded:
-    saved_values = _load_settings()
+    saved_values = load_settings()
     if saved_values:
         st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
         st.session_state.config_loaded = True
@@ -222,36 +102,7 @@ if st.session_state.config_loaded and st.session_state.loaded_defaults:
     defaults = st.session_state.loaded_defaults
 else:
     # Use hardcoded defaults (fallback if no saved settings)
-    defaults = {
-        "start_date": year_start,
-        "end_date": today,
-        "target": "SOXL",
-        "momentum": "QQQ",
-        "bench": "SOXX",
-        "log_scale": True,
-        "mode_switch_strategy_index": 0,
-        "ma_short": 3,
-        "ma_long": 7,
-        "rsi_high_threshold": 65.0,
-        "rsi_mid_high": 60.0,
-        "rsi_neutral": 50.0,
-        "rsi_mid_low": 40.0,
-        "rsi_low_threshold": 35.0,
-        "enable_netting": True,
-        "allow_fractional": False,
-        "cash_limited_buy": False,
-        "init_cash": 10000,
-        "defense_slices": 7,
-        "defense_buy": 3.0,
-        "defense_tp": 0.2,
-        "defense_sl": 0.0,
-        "defense_hold": 30,
-        "offense_slices": 7,
-        "offense_buy": 5.0,
-        "offense_tp": 2.5,
-        "offense_sl": 0.0,
-        "offense_hold": 7,
-    }
+    defaults = {"start_date": year_start, "end_date": today, **DEFAULT_PARAMS}
 
 with st.sidebar:
     log_scale_enabled = st.toggle(
@@ -361,7 +212,7 @@ with st.sidebar:
                 st.rerun()
             else:
                 selected_path = config_options[selected_config_name]
-                saved_values = _load_settings(selected_path)
+                saved_values = load_settings(selected_path)
                 if saved_values:
                     st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
                     st.session_state.config_loaded = True

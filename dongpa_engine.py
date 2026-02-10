@@ -229,6 +229,26 @@ class DongpaBacktester:
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
+    def _eval_rsi_conditions(self, rsi: float, prev_w: float, delta: float) -> str | None:
+        """Evaluate RSI conditions and return mode change, or None to keep current."""
+        is_down = delta < 0
+        is_up = delta > 0
+
+        rsi_high = self.p.rsi_high_threshold
+        rsi_mid_low = self.p.rsi_mid_low
+        rsi_mid_high = self.p.rsi_mid_high
+        rsi_low = self.p.rsi_low_threshold
+        rsi_neutral = self.p.rsi_neutral
+
+        cond_def = (is_down and (rsi >= rsi_high or (rsi_mid_low < rsi < rsi_neutral) or cross_down(prev_w, rsi, rsi_neutral)))
+        cond_off = (is_up and (cross_up(prev_w, rsi, rsi_neutral) or (rsi_neutral < rsi < rsi_mid_high) or (rsi < rsi_low)))
+
+        if cond_off and not cond_def:
+            return "offense"
+        if cond_def and not cond_off:
+            return "defense"
+        return None
+
     def _decide_mode_rsi(self, idx, prev_mode) -> str:
         """RSI-based mode switching logic."""
         rsi_raw = _scalar(self.daily_rsi.loc[idx])
@@ -242,24 +262,7 @@ class DongpaBacktester:
         delta_raw = _scalar(self.daily_rsi_delta.loc[idx])
         delta = float(delta_raw) if not pd.isna(delta_raw) else 0.0
 
-        is_down = delta < 0
-        is_up   = delta > 0
-
-        # Use configurable RSI thresholds
-        rsi_high = self.p.rsi_high_threshold
-        rsi_mid_low = self.p.rsi_mid_low
-        rsi_mid_high = self.p.rsi_mid_high
-        rsi_low = self.p.rsi_low_threshold
-        rsi_neutral = self.p.rsi_neutral
-
-        cond_def = (is_down and (rsi >= rsi_high or (rsi_mid_low < rsi < rsi_neutral) or cross_down(prev_w, rsi, rsi_neutral)))
-        cond_off = (is_up   and (cross_up(prev_w, rsi, rsi_neutral) or (rsi_neutral < rsi < rsi_mid_high) or (rsi < rsi_low)))
-
-        if cond_off and not cond_def:
-            return "offense"
-        if cond_def and not cond_off:
-            return "defense"
-        return prev_mode or "defense"
+        return self._eval_rsi_conditions(rsi, prev_w, delta) or prev_mode or "defense"
 
     def _decide_mode_ma_cross(self, idx, prev_mode) -> str:
         """MA cross-based mode switching logic."""
@@ -323,23 +326,9 @@ class DongpaBacktester:
                 prev_raw = _scalar(prev_rsi.loc[week_date]) if week_date in prev_rsi.index else None
                 prev_w = float(prev_raw) if prev_raw is not None and not pd.isna(prev_raw) else rsi_val
 
-                is_down = delta < 0
-                is_up = delta > 0
-
-                rsi_high = self.p.rsi_high_threshold
-                rsi_mid_low = self.p.rsi_mid_low
-                rsi_mid_high = self.p.rsi_mid_high
-                rsi_low = self.p.rsi_low_threshold
-                rsi_neutral = self.p.rsi_neutral
-
-                cond_def = (is_down and (rsi_val >= rsi_high or (rsi_mid_low < rsi_val < rsi_neutral) or cross_down(prev_w, rsi_val, rsi_neutral)))
-                cond_off = (is_up and (cross_up(prev_w, rsi_val, rsi_neutral) or (rsi_neutral < rsi_val < rsi_mid_high) or (rsi_val < rsi_low)))
-
-                if cond_off and not cond_def:
-                    mode = "offense"
-                elif cond_def and not cond_off:
-                    mode = "defense"
-                # else: maintain current mode
+                result = self._eval_rsi_conditions(rsi_val, prev_w, delta)
+                if result is not None:
+                    mode = result
 
             return mode
 

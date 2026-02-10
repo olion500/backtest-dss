@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from pathlib import Path
 
 import altair as alt
 import pandas as pd
@@ -12,12 +10,15 @@ import streamlit as st
 
 from dongpa_optuna import (
     OptunaConfig,
+    apply_to_config,
     extract_results,
     format_results_df,
     get_history_df,
     narrow_config,
     run_optuna,
+    save_result_as_config,
 )
+from ui_common import render_navigation
 
 def _best_score_from_study(study):
     """Compute best score from multi-objective study using stored user attrs."""
@@ -25,28 +26,6 @@ def _best_score_from_study(study):
     if not completed:
         return 0.0
     return max(t.user_attrs.get("score", float("-inf")) for t in completed)
-
-
-NAV_LINKS = [
-    ("backtest.py", "backtest"),
-    ("pages/2_orderBook.py", "orderBook"),
-    ("pages/3_Optuna.py", "Optuna"),
-]
-
-
-def render_navigation() -> None:
-    st.markdown(
-        """
-        <style>
-        [data-testid='stSidebarNav'] {display: none;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.sidebar.markdown("### Pages")
-    for path, label in NAV_LINKS:
-        st.sidebar.page_link(path, label=label)
-    st.sidebar.divider()
 
 
 def render_results(results, study, label=""):
@@ -170,61 +149,6 @@ def render_results(results, study, label=""):
         st.write(f"- Low: {t['rsi_low_threshold']:.1f}")
 
     return best
-
-
-def _result_to_config_dict(res) -> dict:
-    """Convert an OptResult to a config dictionary."""
-    config = {
-        "defense_slices": res.defense.slices,
-        "defense_buy": round(res.defense.buy_cond_pct, 2),
-        "defense_tp": round(res.defense.tp_pct, 2),
-        "defense_sl": round(res.defense.stop_loss_pct, 1) if res.defense.stop_loss_pct else 0.0,
-        "defense_hold": res.defense.max_hold_days,
-        "offense_slices": res.offense.slices,
-        "offense_buy": round(res.offense.buy_cond_pct, 2),
-        "offense_tp": round(res.offense.tp_pct, 2),
-        "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
-        "offense_hold": res.offense.max_hold_days,
-        "mode_switch_strategy_index": 0 if res.mode_switch_strategy == "rsi" else 1,
-        "cash_limited_buy": res.cash_limited_buy,
-    }
-    if res.rsi_thresholds:
-        config.update({
-            "rsi_high_threshold": round(res.rsi_thresholds["rsi_high_threshold"], 1),
-            "rsi_mid_high": round(res.rsi_thresholds["rsi_mid_high"], 1),
-            "rsi_neutral": round(res.rsi_thresholds["rsi_neutral"], 1),
-            "rsi_mid_low": round(res.rsi_thresholds["rsi_mid_low"], 1),
-            "rsi_low_threshold": round(res.rsi_thresholds["rsi_low_threshold"], 1),
-        })
-    if res.ma_periods:
-        config.update({
-            "ma_short": res.ma_periods.get("ma_short_period", 3),
-            "ma_long": res.ma_periods.get("ma_long_period", 7),
-        })
-    return config
-
-
-def apply_to_config(res, config_path="config/order_book_settings.json"):
-    """Apply best result to order_book_settings.json."""
-    path = Path(config_path)
-    if path.exists():
-        current = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        current = {}
-    current.update(_result_to_config_dict(res))
-    path.write_text(json.dumps(current, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def save_result_as_config(res, filename: str) -> Path:
-    """Save a single OptResult as a named config JSON file."""
-    config_dir = Path("config")
-    config_dir.mkdir(exist_ok=True)
-    if not filename.endswith(".json"):
-        filename += ".json"
-    path = config_dir / filename
-    config = _result_to_config_dict(res)
-    path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return path
 
 
 # ======================== Page Config ========================
