@@ -404,8 +404,8 @@ if run:
         # ── Phase 1 ──
         phase_label = "Phase 1 (Wide)" if use_two_phase else ""
         with st.spinner(f"{'Phase 1: 넓은 탐색' if use_two_phase else 'Optuna 최적화'} 실행 중..."):
-            study1 = run_optuna(config)
-        results1 = extract_results(study1, config)
+            study1, frames1 = run_optuna(config)
+        results1 = extract_results(study1, config, price_frames=frames1)
 
         completed1 = sum(1 for t in study1.trials if t.state.name == "COMPLETE")
         pruned1 = sum(1 for t in study1.trials if t.state.name == "PRUNED")
@@ -427,8 +427,8 @@ if run:
             config2.progress_callback = p2_progress
 
             with st.spinner("Phase 2: 수렴 영역 집중 탐색 중..."):
-                study2 = run_optuna(config2)
-            results2 = extract_results(study2, config2)
+                study2, frames2 = run_optuna(config2)
+            results2 = extract_results(study2, config2, price_frames=frames2)
 
             completed2 = sum(1 for t in study2.trials if t.state.name == "COMPLETE")
             pruned2 = sum(1 for t in study2.trials if t.state.name == "PRUNED")

@@ -35,8 +35,8 @@
 
 ## Performance
 
-- [ ] **PERF-1**: `dongpa_optuna.py:455` - `extract_results()`에서 Yahoo Finance 재다운로드. `run_optuna()`의 데이터를 재사용하도록 변경.
-- [ ] **PERF-2**: `pages/2_orderBook.py` - 페이지 로드마다 전체 백테스트 실행. `st.cache_data` 캐싱 없음.
+- [x] **PERF-1**: `dongpa_optuna.py:455` - `extract_results()`에서 Yahoo Finance 재다운로드. `run_optuna()`의 데이터를 재사용하도록 변경.
+- [x] **PERF-2**: `pages/2_orderBook.py` - 페이지 로드마다 전체 백테스트 실행. `st.cache_data` 캐싱 없음.
 
 ## Type Safety
 

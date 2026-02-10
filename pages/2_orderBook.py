@@ -435,21 +435,14 @@ else:
     end_fetch = today
     market_started = True
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _download_prices(ticker: str, start, end):
+    """Cached yfinance download (TTL 10 min)."""
+    return yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
+
 with st.spinner(f"{start_date}부터 {backtest_end_date}까지 백테스트 실행 중..."):
-    df_target = yf.download(
-        ui_values["target"],
-        start=data_fetch_start,
-        end=end_fetch,
-        progress=False,
-        auto_adjust=False,
-    )
-    df_momo = yf.download(
-        ui_values["momentum"],
-        start=data_fetch_start,
-        end=end_fetch,
-        progress=False,
-        auto_adjust=False,
-    )
+    df_target = _download_prices(ui_values["target"], data_fetch_start, end_fetch)
+    df_momo = _download_prices(ui_values["momentum"], data_fetch_start, end_fetch)
 
 if df_target.empty or df_momo.empty:
     st.error("데이터가 비어 있습니다. 티커를 확인하거나 거래 가능일을 기다려 주세요.")

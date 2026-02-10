@@ -379,8 +379,12 @@ def create_objective(
 
 # --------------------------- Runner ---------------------------
 
-def run_optuna(cfg: OptunaConfig) -> optuna.Study:
-    """Run Optuna optimization and return the study object."""
+def run_optuna(cfg: OptunaConfig) -> tuple[optuna.Study, tuple]:
+    """Run Optuna optimization and return (study, price_frames).
+
+    The returned price_frames can be passed to extract_results() to avoid
+    re-downloading data from Yahoo Finance.
+    """
     frames = _load_price_frames(cfg)
     train_target, train_momo, test_target, test_momo, _, _, constraint_frames = frames
 
@@ -419,7 +423,7 @@ def run_optuna(cfg: OptunaConfig) -> optuna.Study:
     else:
         study.optimize(objective, n_trials=cfg.n_trials, show_progress_bar=True)
 
-    return study
+    return study, frames
 
 
 # --------------------------- Result extraction ---------------------------
@@ -428,10 +432,12 @@ def extract_results(
     study: optuna.Study,
     cfg: OptunaConfig,
     top_n: int | None = None,
+    price_frames: tuple | None = None,
 ) -> list[OptimizationResult]:
     """Extract top results from an Optuna study as OptimizationResult objects.
 
     Runs combined backtest for top trials to get combined_metrics.
+    Pass price_frames from run_optuna() to avoid re-downloading data.
     """
     if top_n is None:
         top_n = cfg.top_n
@@ -444,9 +450,10 @@ def extract_results(
     if not top_trials:
         return []
 
-    # Load data for combined backtest
-    frames = _load_price_frames(cfg)
-    _, _, _, _, combined_target, combined_momo, _ = frames
+    # Reuse pre-loaded frames or download fresh
+    if price_frames is None:
+        price_frames = _load_price_frames(cfg)
+    _, _, _, _, combined_target, combined_momo, _ = price_frames
 
     results: list[OptimizationResult] = []
     for trial in top_trials:
@@ -750,8 +757,8 @@ if __name__ == "__main__":  # pragma: no cover
         score_penalty=0.7,
     )
     try:
-        study = run_optuna(default_cfg)
-        results = extract_results(study, default_cfg, top_n=5)
+        study, frames = run_optuna(default_cfg)
+        results = extract_results(study, default_cfg, top_n=5, price_frames=frames)
         print(f"Evaluated {len(study.trials)} trials")
         if results:
             print("\nTop 3 results:")

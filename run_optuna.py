@@ -95,8 +95,8 @@ def main():
         ma_long_range=(5, 30),
     )
 
-    study1 = run_optuna(cfg1)
-    results1 = extract_results(study1, cfg1, top_n=args.top)
+    study1, frames1 = run_optuna(cfg1)
+    results1 = extract_results(study1, cfg1, top_n=args.top, price_frames=frames1)
     print_results(results1, "Phase 1 (Wide)")
 
     if args.skip_phase2 or not results1:
@@ -110,8 +110,8 @@ def main():
     cfg2 = narrow_config(cfg1, results1, phase2_trials=phase2_trials)
     print(f"\nPhase 2: Focused search ({phase2_trials} trials, mode={cfg2.mode_switch_strategy})")
 
-    study2 = run_optuna(cfg2)
-    results2 = extract_results(study2, cfg2, top_n=args.top)
+    study2, frames2 = run_optuna(cfg2)
+    results2 = extract_results(study2, cfg2, top_n=args.top, price_frames=frames2)
     print_results(results2, "Phase 2 (Focused)")
 
     # Summary
