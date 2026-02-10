@@ -1,10 +1,11 @@
 """Run Optuna optimization in two phases: wide exploration then focused search.
 
+Maximizes Calmar ratio (CAGR / |MDD|) averaged across train and test windows.
+
 Usage:
     python run_optuna.py                    # Default: 300 wide + 1000 focused
     python run_optuna.py --trials 500       # Custom wide trials (focused = wide * 3)
     python run_optuna.py --ticker TQQQ      # Different target ticker
-    python run_optuna.py --penalty 0.5      # Lower MDD penalty (more aggressive)
 """
 from __future__ import annotations
 
@@ -20,7 +21,6 @@ def parse_args():
     p.add_argument("--benchmark", default="SOXX", help="Benchmark ticker (default: SOXX)")
     p.add_argument("--cash", type=float, default=10000.0, help="Initial cash (default: 10000)")
     p.add_argument("--trials", type=int, default=300, help="Phase 1 trials (default: 300)")
-    p.add_argument("--penalty", type=float, default=0.7, help="MDD penalty weight for ranking (default: 0.7)")
     p.add_argument("--top", type=int, default=10, help="Top N results to show (default: 10)")
     p.add_argument("--train-start", default="2020-01-01", help="Train start date")
     p.add_argument("--train-end", default="2022-12-31", help="Train end date")
@@ -43,7 +43,7 @@ def print_results(results, phase_label):
         d_sl = f"{d.stop_loss_pct:.1f}%" if d.stop_loss_pct else "없음"
         o_sl = f"{o.stop_loss_pct:.1f}%" if o.stop_loss_pct else "없음"
 
-        print(f"\n--- #{i} | Score: {res.score:.4f} ---")
+        print(f"\n--- #{i} | Calmar: {res.score:.4f} ---")
         print(f"  Defense: buy {d.buy_cond_pct:.2f}%, TP {d.tp_pct:.2f}%, hold {d.max_hold_days}d, slices {d.slices}, SL {d_sl}")
         print(f"  Offense: buy {o.buy_cond_pct:.2f}%, TP {o.tp_pct:.2f}%, hold {o.max_hold_days}d, slices {o.slices}, SL {o_sl}")
         print(f"  Capital: initial_cash {c.initial_cash:,.0f}")
@@ -77,7 +77,6 @@ def main():
         train_ranges=train_ranges,
         test_range=test_range,
         n_trials=args.trials,
-        score_penalty=args.penalty,
         top_n=args.top,
         mode_switch_strategy="both",
         optimize_rsi_thresholds=True,
@@ -123,9 +122,9 @@ def main():
     print(f"\n{'='*80}")
     print("  Summary")
     print(f"{'='*80}")
-    print(f"  Phase 1 Best: Score {best1.score:.4f}")
+    print(f"  Phase 1 Best: Calmar {best1.score:.4f}")
     if best2:
-        print(f"  Phase 2 Best: Score {best2.score:.4f}")
+        print(f"  Phase 2 Best: Calmar {best2.score:.4f}")
         improvement = ((best2.score - best1.score) / abs(best1.score)) * 100
         print(f"  Improvement:  {improvement:+.1f}%")
 

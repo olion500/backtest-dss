@@ -1,8 +1,7 @@
 """Optuna-based parameter optimizer for Dongpa strategy.
 
-Uses Bayesian Optimization (TPE algorithm) to efficiently explore the
-parameter space. Evaluates combinations on training and test windows,
-and returns ranked results.
+Uses Bayesian Optimization (TPE algorithm) to maximize Calmar ratio
+(CAGR / |MDD|) averaged across training and test windows.
 """
 from __future__ import annotations
 
@@ -86,14 +85,17 @@ def _download_price_history(ticker: str, start: DateLike, end: DateLike) -> pd.D
     return _normalize(data)
 
 
-def _score(train_metrics: dict, test_metrics: dict, penalty: float) -> float:
+def _score(train_metrics: dict, test_metrics: dict) -> float:
+    """Calmar ratio = avg_cagr / avg_mdd.  Higher is better."""
     train_cagr = train_metrics.get("CAGR", 0.0)
     train_mdd = abs(train_metrics.get("Max Drawdown", 0.0))
     test_cagr = test_metrics.get("CAGR", 0.0)
     test_mdd = abs(test_metrics.get("Max Drawdown", 0.0))
     avg_cagr = (train_cagr + test_cagr) / 2
     avg_mdd = (train_mdd + test_mdd) / 2
-    return avg_cagr - penalty * avg_mdd
+    if avg_mdd == 0:
+        return avg_cagr * 100 if avg_cagr > 0 else 0.0
+    return avg_cagr / avg_mdd
 
 
 @dataclass
@@ -132,7 +134,6 @@ class OptunaConfig:
     test_range: DateRange = ("2023-01-01", "2024-12-31")
     rsi_period: int = 14
     enable_netting: bool = True
-    score_penalty: float = 0.6
     n_trials: int = 300
     top_n: int = 20
 
@@ -349,15 +350,7 @@ def create_objective(
 
                 trial.set_user_attr("constraint_metrics", constraint_results)
 
-            score = _score(train_metrics, test_metrics, cfg.score_penalty)
-
-            # Compute multi-objective return values
-            train_cagr_v = train_metrics.get("CAGR", 0.0)
-            train_mdd_v = abs(train_metrics.get("Max Drawdown", 0.0))
-            test_cagr_v = test_metrics.get("CAGR", 0.0)
-            test_mdd_v = abs(test_metrics.get("Max Drawdown", 0.0))
-            avg_cagr = (train_cagr_v + test_cagr_v) / 2
-            avg_mdd = (train_mdd_v + test_mdd_v) / 2
+            score = _score(train_metrics, test_metrics)
 
             # Store metrics as user attributes for later retrieval
             trial.set_user_attr("train_metrics", train_metrics)
@@ -376,7 +369,7 @@ def create_objective(
             trial.set_user_attr("capital", {})
             trial.set_user_attr("mode_switch_strategy", mode_strategy)
 
-            return avg_cagr, avg_mdd
+            return score
 
         except optuna.TrialPruned:
             raise
@@ -405,9 +398,9 @@ def run_optuna(cfg: OptunaConfig) -> tuple[optuna.Study, tuple]:
         constraint_frames=constraint_frames or None,
     )
 
-    sampler = optuna.samplers.NSGAIISampler(seed=42)
+    sampler = optuna.samplers.TPESampler(seed=42)
     study = optuna.create_study(
-        directions=["maximize", "minimize"],
+        direction="maximize",
         sampler=sampler,
         study_name="dongpa_optuna",
     )
@@ -575,7 +568,7 @@ def format_results_df(results: list[OptimizationResult]) -> pd.DataFrame:
                 f"보유 {res.offense.max_hold_days}일 / 분할 {res.offense.slices} / SL {offense_sl}"
             ),
             "자금 관리": f"초기자금 {res.capital.initial_cash:,.0f}",
-            "점수": round(res.score, 4),
+            "Calmar": round(res.score, 4),
             "Train CAGR(%)": round(res.train_metrics.get("CAGR", 0.0) * 100, 2),
             "Train MDD(%)": round(res.train_metrics.get("Max Drawdown", 0.0) * 100, 2),
             "Test CAGR(%)": round(res.test_metrics.get("CAGR", 0.0) * 100, 2),
@@ -618,12 +611,16 @@ def get_history_df(study: optuna.Study) -> pd.DataFrame:
         score = trial.user_attrs.get("score", float("-inf"))
         if score > best_so_far:
             best_so_far = score
+        train_m = trial.user_attrs.get("train_metrics", {})
+        test_m = trial.user_attrs.get("test_metrics", {})
+        avg_cagr = (train_m.get("CAGR", 0.0) + test_m.get("CAGR", 0.0)) / 2
+        avg_mdd = (abs(train_m.get("Max Drawdown", 0.0)) + abs(test_m.get("Max Drawdown", 0.0))) / 2
         rows.append({
             "Trial": trial.number,
-            "Score": score,
-            "CAGR": trial.values[0] if trial.values else 0.0,
-            "MDD": trial.values[1] if trial.values else 0.0,
-            "Best Score": best_so_far,
+            "Calmar": score,
+            "CAGR": avg_cagr * 100,
+            "MDD": avg_mdd * 100,
+            "Best Calmar": best_so_far,
         })
     return pd.DataFrame(rows)
 
@@ -666,7 +663,6 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         test_range=cfg.test_range,
         rsi_period=cfg.rsi_period,
         enable_netting=cfg.enable_netting,
-        score_penalty=cfg.score_penalty,
         n_trials=phase2_trials if phase2_trials else cfg.n_trials * 3,
         top_n=cfg.top_n,
         mode_switch_strategy=dominant_mode,
@@ -781,7 +777,6 @@ if __name__ == "__main__":  # pragma: no cover
         target_ticker="SOXL",
         momentum_ticker="QQQ",
         n_trials=300,
-        score_penalty=0.7,
     )
     try:
         study, frames = run_optuna(default_cfg)

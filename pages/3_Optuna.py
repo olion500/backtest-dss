@@ -43,8 +43,8 @@ def render_results(results, study, label=""):
             .mark_line(point=True, strokeWidth=2)
             .encode(
                 x=alt.X("Trial:Q", title="Trial"),
-                y=alt.Y("Best Score:Q", title="Best Score", scale=alt.Scale(zero=False)),
-                tooltip=["Trial", alt.Tooltip("Score:Q", format=".4f"), alt.Tooltip("Best Score:Q", format=".4f")],
+                y=alt.Y("Best Calmar:Q", title="Best Calmar", scale=alt.Scale(zero=False)),
+                tooltip=["Trial", alt.Tooltip("Calmar:Q", format=".4f"), alt.Tooltip("Best Calmar:Q", format=".4f")],
             )
             .interactive()
         )
@@ -53,8 +53,8 @@ def render_results(results, study, label=""):
             .mark_circle(size=30, opacity=0.4, color="gray")
             .encode(
                 x="Trial:Q",
-                y=alt.Y("Score:Q", scale=alt.Scale(zero=False)),
-                tooltip=["Trial", alt.Tooltip("Score:Q", format=".4f")],
+                y=alt.Y("Calmar:Q", scale=alt.Scale(zero=False)),
+                tooltip=["Trial", alt.Tooltip("Calmar:Q", format=".4f")],
             )
         )
         st.altair_chart(scatter + history_chart, width="stretch")
@@ -134,7 +134,7 @@ def render_results(results, study, label=""):
         st.markdown("**자금 관리**")
         st.write(f"- 초기자금: {best.capital.initial_cash:,.0f}")
         st.markdown("**성과**")
-        st.write(f"- Score: {best.score:.4f}")
+        st.write(f"- Calmar: {best.score:.4f}")
         st.write(f"- Combined CAGR: {best.combined_metrics.get('CAGR', 0) * 100:.2f}%")
         st.write(f"- Combined MDD: {best.combined_metrics.get('Max Drawdown', 0) * 100:.2f}%")
 
@@ -164,7 +164,7 @@ render_navigation()
 
 st.title("동파 파라미터 최적화 (Optuna TPE)")
 st.caption(
-    "Optuna의 TPE(Tree-structured Parzen Estimator) 알고리즘으로 파라미터를 탐색합니다. "
+    "Optuna TPE 알고리즘으로 Calmar ratio (CAGR/MDD)를 최대화하는 파라미터를 탐색합니다. "
     "2-Phase 모드는 넓은 탐색 후 수렴 영역을 자동으로 좁혀 정밀 탐색합니다."
 )
 
@@ -262,11 +262,6 @@ with st.sidebar:
             key="optuna_p2_mult",
         )
 
-    score_penalty = st.slider(
-        "MDD 패널티 가중치 (결과 정렬용)", min_value=0.0, max_value=2.0, value=0.6, step=0.05,
-        help="Pareto 최적화 후 결과 정렬: 점수 = 평균 CAGR - 패널티 × 평균 |MDD|",
-        key="optuna_penalty",
-    )
     top_n = st.number_input(
         "상위 결과 수", value=20, min_value=5, max_value=100, step=5,
         key="optuna_top_n",
@@ -367,7 +362,6 @@ if run:
         test_range=test_range,
         rsi_period=int(rsi_period),
         enable_netting=enable_netting,
-        score_penalty=float(score_penalty),
         n_trials=int(n_trials),
         top_n=int(top_n),
         mode_switch_strategy=mode_val,
@@ -404,7 +398,7 @@ if run:
         phase_label = ""
         if use_two_phase:
             phase_label = "Phase 1 | " if phase_offset == 0 else "Phase 2 | "
-        status_text.text(f"{phase_label}Trial {current}/{phase_total} | Best Score: {best_str}")
+        status_text.text(f"{phase_label}Trial {current}/{phase_total} | Best Calmar: {best_str}")
 
     # Phase 1 progress
     def p1_progress(current, phase_total, best_score):
@@ -426,7 +420,7 @@ if run:
             # Show Phase 1 summary briefly
             st.info(
                 f"Phase 1 완료: {completed1}개 완료, {pruned1}개 pruned, "
-                f"Best Score: {_best_score_from_study(study1):.4f} → Phase 2 집중 탐색 시작..."
+                f"Best Calmar: {_best_score_from_study(study1):.4f} → Phase 2 집중 탐색 시작..."
             )
 
             # ── Phase 2 ──
@@ -449,7 +443,7 @@ if run:
             improvement = ""
             if results1 and results2:
                 diff = ((results2[0].score - results1[0].score) / abs(results1[0].score)) * 100
-                improvement = f" | Score 변화: {diff:+.1f}%"
+                improvement = f" | Calmar 변화: {diff:+.1f}%"
             status_msg = f"완료: Phase 1 ({completed1}개) + Phase 2 ({completed2}개){improvement}"
             status_text.text(status_msg)
 
@@ -465,7 +459,7 @@ if run:
             progress_bar.progress(1.0)
             status_msg = (
                 f"완료: {completed1}개 완료, {pruned1}개 pruned, "
-                f"Best Score: {_best_score_from_study(study1):.4f}"
+                f"Best Calmar: {_best_score_from_study(study1):.4f}"
             )
             status_text.text(status_msg)
             final_results = results1
@@ -523,7 +517,7 @@ if "optuna_results" in st.session_state and st.session_state["optuna_results"]:
 
     selected_res = final_results[save_rank - 1]
     st.caption(
-        f"#{save_rank} — Score: {selected_res.score:.4f} | "
+        f"#{save_rank} — Calmar: {selected_res.score:.4f} | "
         f"CAGR: {selected_res.combined_metrics.get('CAGR', 0) * 100:.2f}% | "
         f"MDD: {selected_res.combined_metrics.get('Max Drawdown', 0) * 100:.2f}%"
     )
