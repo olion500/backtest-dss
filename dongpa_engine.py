@@ -150,8 +150,8 @@ class StrategyParams:
     rsi_period: int = 14
     enable_netting: bool = True
     allow_fractional_shares: bool = False
-    defense: ModeParams = None
-    offense: ModeParams = None
+    defense: ModeParams | None = None
+    offense: ModeParams | None = None
     # Mode switching strategy: "rsi" or "ma_cross"
     mode_switch_strategy: str = "rsi"
     # RSI threshold parameters (for "rsi" strategy)
@@ -165,6 +165,10 @@ class StrategyParams:
     ma_long_period: int = 20          # Long MA period (weeks for weekly data)
     # Buy execution: use min(tranche_budget, cash) instead of skipping when cash < tranche_budget
     cash_limited_buy: bool = False
+
+    def __post_init__(self):
+        if self.defense is None or self.offense is None:
+            raise ValueError("StrategyParams requires both 'defense' and 'offense' ModeParams")
 
 # ---------------------- Engine ----------------------
 

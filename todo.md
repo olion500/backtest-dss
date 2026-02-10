@@ -40,5 +40,5 @@
 
 ## Type Safety
 
-- [ ] **TYPE-1**: `StrategyParams.defense`/`offense` 기본값 None. None 검증 없이 속성 접근하면 AttributeError.
-- [ ] **TYPE-2**: `OptunaConfig.constraints` 타입 `list[...]`이지만 기본값 `None`. `list | None` 또는 `field(default_factory=list)`.
+- [x] **TYPE-1**: `StrategyParams.defense`/`offense` 기본값 None. None 검증 없이 속성 접근하면 AttributeError.
+- [x] **TYPE-2**: `OptunaConfig.constraints` 타입 `list[...]`이지만 기본값 `None`. `list | None` 또는 `field(default_factory=list)`.

@@ -172,7 +172,7 @@ class OptunaConfig:
     # e.g. [( ("2022-01-01","2022-12-31"), -0.30, 0.0 )] means
     #   in 2022: MDD must be > -30% AND CAGR must be >= 0%
     # Set max_mdd to None to skip MDD check, min_cagr to None to skip CAGR check
-    constraints: list[tuple[DateRange, float | None, float | None]] = None  # type: ignore[assignment]
+    constraints: list[tuple[DateRange, float | None, float | None]] | None = None
 
     # Progress callback: (trial_number, n_trials, best_score)
     progress_callback: object = None  # callable | None
