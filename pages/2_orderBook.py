@@ -827,6 +827,18 @@ if enable_netting:
 
         nettable_sell_qty = sum(float(order_sheet[i]["수량"]) for i in nettable_sell_indices)
 
+        # Save original sell info before netting for spread sell rows
+        pre_netting_sells = [
+            {
+                "구분": order_sheet[i]["구분"],
+                "주문가": float(order_sheet[i]["주문가"]),
+                "수량": float(order_sheet[i]["수량"]),
+                "변화율": order_sheet[i].get("변화율", "-"),
+                "비고": order_sheet[i].get("비고", ""),
+            }
+            for i in nettable_sell_indices
+        ]
+
         if nettable_sell_qty > 0 and total_buy_qty > 0:
             offset = min(nettable_sell_qty, total_buy_qty)
 
@@ -895,6 +907,79 @@ if enable_netting:
                     netting_msg += f" | 퉁치기 불가 매도 {fmt_qty(non_nettable_qty)}주 (매도가 > 매수가)"
 
             order_sheet = [r for r in order_sheet if r is not None]
+
+            # Price-range netting spread: cumulative sum approach
+            # Sort sells by price, accumulate qty, compute net at each boundary
+            from collections import defaultdict
+            sell_groups: dict[float, float] = defaultdict(float)
+            for orig in pre_netting_sells:
+                sell_groups[orig["주문가"]] += orig["수량"]
+            sorted_sells = sorted(sell_groups.items())  # [(price, qty), ...]
+
+            cum_sell = 0.0
+            ranges: list[dict] = []
+
+            # ① Below all sell prices: only buy executes
+            min_sell_price = sorted_sells[0][0]
+            ranges.append({
+                "구분": "매수 (전량)",
+                "주문가": buy_price,
+                "수량": total_buy_qty,
+                "비고": f"종가 < ${min_sell_price:.2f} 시 매도미체결 → 전량매수",
+            })
+
+            # ② Each sell price boundary: cumulative sells increase
+            for sp, sq in sorted_sells:
+                cum_sell += sq
+                net = total_buy_qty - cum_sell
+                # Skip the range that matches the netted result
+                # (all sells active + buy active = already shown in order_sheet)
+                if sp == sorted_sells[-1][0]:
+                    continue
+                net_qty = abs(net)
+                if not allow_fractional:
+                    net_qty = int(net_qty)
+                if net > 0:
+                    next_sp = next(s for s, _ in sorted_sells if s > sp)
+                    ranges.append({
+                        "구분": "순매수",
+                        "주문가": sp,
+                        "수량": net_qty,
+                        "비고": f"종가 ${sp:.2f}~${next_sp:.2f} 구간 (매도 {fmt_qty(cum_sell)}주 체결)",
+                    })
+                elif net < 0:
+                    next_sp = next(s for s, _ in sorted_sells if s > sp)
+                    ranges.append({
+                        "구분": "순매도",
+                        "주문가": sp,
+                        "수량": net_qty,
+                        "비고": f"종가 ${sp:.2f}~${next_sp:.2f} 구간 (매도 {fmt_qty(cum_sell)}주 체결)",
+                    })
+
+            # ③ Above buy price: buy doesn't execute, all sells go through
+            total_sell_qty = cum_sell
+            if not allow_fractional:
+                total_sell_qty = int(total_sell_qty)
+            ranges.append({
+                "구분": "매도 (전량)",
+                "주문가": buy_price + 0.01,
+                "수량": total_sell_qty,
+                "비고": f"종가 > ${buy_price:.2f} 시 매수미체결 → 전량매도",
+            })
+
+            # Add range rows to order sheet
+            for r in ranges:
+                qty = r["수량"]
+                if not allow_fractional:
+                    qty = int(qty)
+                pct = ((r["주문가"] / prev_close) - 1) * 100 if prev_close else 0
+                order_sheet.append({
+                    "구분": r["구분"],
+                    "주문가": r["주문가"],
+                    "수량": qty,
+                    "변화율": f"{pct:+.1f}%",
+                    "비고": r["비고"],
+                })
 
 # Display order sheet
 if order_sheet:
