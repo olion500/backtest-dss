@@ -153,6 +153,12 @@ def render_results(results, study, label=""):
         st.markdown("**ROC 설정**")
         st.write(f"- 기간: {best.roc_period['roc_period']}주")
 
+    if best.btc_params:
+        st.markdown("---")
+        st.markdown("**BTC Overnight 설정**")
+        st.write(f"- Lookback: {best.btc_params['btc_lookback_days']}일")
+        st.write(f"- Threshold: {best.btc_params['btc_threshold_pct']:.1f}%")
+
     return best
 
 
@@ -209,15 +215,17 @@ with st.sidebar:
     st.subheader("모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross", "ROC", "Both (탐색)"],
+        options=["RSI", "Golden Cross", "ROC", "BTC Overnight", "Both (탐색)"],
         index=0,
-        help="RSI: RSI 기반 | Golden Cross: MA 교차 기반 | ROC: N주 변화율 기반 | Both: 모두 탐색",
+        help="RSI: RSI 기반 | Golden Cross: MA 교차 기반 | ROC: N주 변화율 기반 | BTC Overnight: BTC 야간 수익률 기반 | Both: 모두 탐색",
         key="optuna_mode_strategy",
     )
 
     optimize_rsi_thresholds = False
     optimize_ma_periods = False
     optimize_roc_period = False
+    optimize_btc_params = False
+    btc_ticker = "BTC-USD"
 
     if mode_switch_strategy == "RSI":
         optimize_rsi_thresholds = st.checkbox("RSI 임계값 최적화", value=False, key="optuna_opt_rsi")
@@ -225,10 +233,15 @@ with st.sidebar:
         optimize_ma_periods = st.checkbox("MA 기간 최적화", value=False, key="optuna_opt_ma")
     elif mode_switch_strategy == "ROC":
         optimize_roc_period = st.checkbox("ROC 기간 최적화", value=False, key="optuna_opt_roc")
+    elif mode_switch_strategy == "BTC Overnight":
+        btc_ticker = st.text_input("BTC 티커", value="BTC-USD", key="optuna_btc_ticker")
+        optimize_btc_params = st.checkbox("BTC 파라미터 최적화", value=False, key="optuna_opt_btc",
+                                          help="lookback_days와 threshold를 Optuna가 탐색합니다.")
     elif mode_switch_strategy == "Both (탐색)":
         optimize_rsi_thresholds = st.checkbox("RSI 임계값 최적화", value=False, key="optuna_opt_rsi_both")
         optimize_ma_periods = st.checkbox("MA 기간 최적화", value=False, key="optuna_opt_ma_both")
         optimize_roc_period = st.checkbox("ROC 기간 최적화", value=False, key="optuna_opt_roc_both")
+        optimize_btc_params = st.checkbox("BTC 파라미터 최적화", value=False, key="optuna_opt_btc_both")
 
     optimize_cash_limited_buy = st.checkbox(
         "현금 한도 매수 최적화",
@@ -351,6 +364,8 @@ if run:
         mode_val = "ma_cross"
     elif mode_switch_strategy == "ROC":
         mode_val = "roc"
+    elif mode_switch_strategy == "BTC Overnight":
+        mode_val = "btc_overnight"
     else:
         mode_val = "both"
 
@@ -368,6 +383,8 @@ if run:
         optimize_rsi_thresholds=optimize_rsi_thresholds,
         optimize_ma_periods=optimize_ma_periods,
         optimize_roc_period=optimize_roc_period,
+        optimize_btc_params=optimize_btc_params,
+        btc_ticker=btc_ticker,
         optimize_cash_limited_buy=optimize_cash_limited_buy,
         def_buy_range=(def_buy_min, def_buy_max),
         def_tp_range=(def_tp_min, def_tp_max),

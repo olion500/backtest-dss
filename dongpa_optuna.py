@@ -110,6 +110,7 @@ class OptimizationResult:
     rsi_thresholds: dict | None = None
     ma_periods: dict | None = None
     roc_period: dict | None = None
+    btc_params: dict | None = None
     mode_switch_strategy: str = "rsi"
     cash_limited_buy: bool = False
 
@@ -168,10 +169,16 @@ class OptunaConfig:
     # ROC period range (for "roc" mode strategy)
     roc_period_range: tuple[int, int] = (2, 12)
 
+    # BTC overnight parameters (for "btc_overnight" mode strategy)
+    btc_ticker: str = "BTC-USD"
+    btc_lookback_range: tuple[int, int] = (1, 7)
+    btc_threshold_range: tuple[float, float] = (0.0, 3.0)
+
     # Feature toggles
     optimize_rsi_thresholds: bool = False
     optimize_ma_periods: bool = False
     optimize_roc_period: bool = False
+    optimize_btc_params: bool = False
     optimize_cash_limited_buy: bool = False
 
     # Constraints: list of (date_range, max_mdd, min_cagr) tuples
@@ -214,7 +221,12 @@ def _load_price_frames(cfg: OptunaConfig):
             ct = _slice_by_range(target_all, dr)
             constraint_frames.append((ct, momo_all, dr, max_mdd, min_cagr))
 
-    return train_target, momo_all, test_target, momo_all, combined_target, momo_all, constraint_frames
+    # Download BTC data if needed
+    btc_all = None
+    if cfg.mode_switch_strategy in ("btc_overnight", "both"):
+        btc_all = _download_price_history(cfg.btc_ticker, global_start, global_end)
+
+    return train_target, momo_all, test_target, momo_all, combined_target, momo_all, constraint_frames, btc_all
 
 
 # --------------------------- Objective ---------------------------
@@ -226,6 +238,7 @@ def create_objective(
     test_momo: pd.DataFrame,
     cfg: OptunaConfig,
     constraint_frames: list | None = None,
+    btc_data: pd.DataFrame | None = None,
 ):
     """Create an Optuna objective function for the Dongpa strategy."""
 
@@ -261,7 +274,7 @@ def create_objective(
         # --- Mode switching strategy ---
         mode_strategy = cfg.mode_switch_strategy
         if mode_strategy == "both":
-            mode_strategy = trial.suggest_categorical("mode_strategy", ["rsi", "ma_cross", "roc"])
+            mode_strategy = trial.suggest_categorical("mode_strategy", ["rsi", "ma_cross", "roc", "btc_overnight"])
 
         # --- Cash-limited buy ---
         if cfg.optimize_cash_limited_buy:
@@ -313,11 +326,22 @@ def create_objective(
             roc_period = trial.suggest_int("roc_period", *cfg.roc_period_range)
             params_dict["roc_period"] = roc_period
 
+        # --- BTC overnight parameter optimization ---
+        if mode_strategy == "btc_overnight":
+            if cfg.optimize_btc_params:
+                btc_lookback = trial.suggest_int("btc_lookback_days", *cfg.btc_lookback_range)
+                btc_threshold = trial.suggest_float("btc_threshold_pct", *cfg.btc_threshold_range)
+            else:
+                btc_lookback = cfg.btc_lookback_range[0]
+                btc_threshold = cfg.btc_threshold_range[0]
+            params_dict["btc_lookback_days"] = btc_lookback
+            params_dict["btc_threshold_pct"] = btc_threshold
+
         params = StrategyParams(**params_dict)
 
         # --- Run backtests ---
         try:
-            train_bt = DongpaBacktester(train_target, train_momo, params, capital)
+            train_bt = DongpaBacktester(train_target, train_momo, params, capital, btc_data=btc_data)
             train_res = train_bt.run()
             train_metrics = summarize(train_res["equity"])
 
@@ -326,7 +350,7 @@ def create_objective(
             if train_cagr < -0.5:
                 raise optuna.TrialPruned()
 
-            test_bt = DongpaBacktester(test_target, test_momo, params, capital)
+            test_bt = DongpaBacktester(test_target, test_momo, params, capital, btc_data=btc_data)
             test_res = test_bt.run()
             test_metrics = summarize(test_res["equity"])
 
@@ -334,7 +358,7 @@ def create_objective(
             if constraint_frames:
                 constraint_results = {}
                 for c_target, c_momo, c_range, max_mdd, min_cagr in constraint_frames:
-                    c_bt = DongpaBacktester(c_target, c_momo, params, capital)
+                    c_bt = DongpaBacktester(c_target, c_momo, params, capital, btc_data=btc_data)
                     c_res = c_bt.run()
                     c_metrics = summarize(c_res["equity"])
                     c_label = f"{c_range[0]}~{c_range[1]}"
@@ -389,13 +413,14 @@ def run_optuna(cfg: OptunaConfig) -> tuple[optuna.Study, tuple]:
     re-downloading data from Yahoo Finance.
     """
     frames = _load_price_frames(cfg)
-    train_target, train_momo, test_target, test_momo, _, _, constraint_frames = frames
+    train_target, train_momo, test_target, test_momo, _, _, constraint_frames, btc_all = frames
 
     objective = create_objective(
         train_target, train_momo,
         test_target, test_momo,
         cfg,
         constraint_frames=constraint_frames or None,
+        btc_data=btc_all,
     )
 
     sampler = optuna.samplers.TPESampler(seed=42)
@@ -456,7 +481,7 @@ def extract_results(
     # Reuse pre-loaded frames or download fresh
     if price_frames is None:
         price_frames = _load_price_frames(cfg)
-    _, _, _, _, combined_target, combined_momo, _ = price_frames
+    _, _, _, _, combined_target, combined_momo, _, btc_all = price_frames
 
     results: list[OptimizationResult] = []
     for trial in top_trials:
@@ -518,6 +543,14 @@ def extract_results(
             roc_period_dict = {"roc_period": trial.params["roc_period"]}
             params_dict["roc_period"] = trial.params["roc_period"]
 
+        btc_params_dict = None
+        if mode_strategy == "btc_overnight":
+            btc_lookback = trial.params.get("btc_lookback_days", cfg.btc_lookback_range[0])
+            btc_threshold = trial.params.get("btc_threshold_pct", cfg.btc_threshold_range[0])
+            btc_params_dict = {"btc_lookback_days": btc_lookback, "btc_threshold_pct": btc_threshold}
+            params_dict["btc_lookback_days"] = btc_lookback
+            params_dict["btc_threshold_pct"] = btc_threshold
+
         # Cash-limited buy
         trial_cash_limited = trial.params.get("cash_limited_buy", False)
         params_dict["cash_limited_buy"] = trial_cash_limited
@@ -525,7 +558,7 @@ def extract_results(
         # Run combined backtest
         try:
             params = StrategyParams(**params_dict)
-            combined_bt = DongpaBacktester(combined_target, combined_momo, params, capital)
+            combined_bt = DongpaBacktester(combined_target, combined_momo, params, capital, btc_data=btc_all)
             combined_res = combined_bt.run()
             combined_metrics = summarize(combined_res["equity"])
         except Exception:
@@ -542,6 +575,7 @@ def extract_results(
             rsi_thresholds=rsi_thresholds,
             ma_periods=ma_periods,
             roc_period=roc_period_dict,
+            btc_params=btc_params_dict,
             mode_switch_strategy=mode_strategy,
             cash_limited_buy=trial_cash_limited,
         ))
@@ -593,6 +627,11 @@ def format_results_df(results: list[OptimizationResult]) -> pd.DataFrame:
             )
         if res.roc_period:
             row["ROC Period"] = f"{res.roc_period['roc_period']}주"
+        if res.btc_params:
+            row["BTC Params"] = (
+                f"Lookback {res.btc_params['btc_lookback_days']}일 / "
+                f"Threshold {res.btc_params['btc_threshold_pct']:.1f}%"
+            )
         if res.cash_limited_buy:
             row["현금한도매수"] = "ON"
 
@@ -669,6 +708,8 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         optimize_rsi_thresholds=(dominant_mode == "rsi"),
         optimize_ma_periods=(dominant_mode == "ma_cross"),
         optimize_roc_period=(dominant_mode == "roc"),
+        optimize_btc_params=(dominant_mode == "btc_overnight"),
+        btc_ticker=cfg.btc_ticker,
         optimize_cash_limited_buy=cfg.optimize_cash_limited_buy,
         constraints=cfg.constraints,
         progress_callback=cfg.progress_callback,
@@ -708,6 +749,13 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         if roc_results:
             narrowed.roc_period_range = _range_int([r.roc_period["roc_period"] for r in roc_results], clamp_min=2)
 
+    # Narrow BTC overnight params
+    if dominant_mode == "btc_overnight":
+        btc_results = [r for r in top5 if r.btc_params]
+        if btc_results:
+            narrowed.btc_lookback_range = _range_int([r.btc_params["btc_lookback_days"] for r in btc_results], clamp_min=1)
+            narrowed.btc_threshold_range = _range_float([r.btc_params["btc_threshold_pct"] for r in btc_results])
+
     return narrowed
 
 
@@ -726,7 +774,7 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
         "offense_tp": round(res.offense.tp_pct, 2),
         "offense_sl": round(res.offense.stop_loss_pct, 1) if res.offense.stop_loss_pct else 0.0,
         "offense_hold": res.offense.max_hold_days,
-        "mode_switch_strategy_index": {"rsi": 0, "ma_cross": 1, "roc": 2}.get(res.mode_switch_strategy, 0),
+        "mode_switch_strategy_index": {"rsi": 0, "ma_cross": 1, "roc": 2, "btc_overnight": 3}.get(res.mode_switch_strategy, 0),
         "cash_limited_buy": res.cash_limited_buy,
     }
     if res.rsi_thresholds:
@@ -744,6 +792,10 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
         })
     if res.roc_period:
         config["roc_period"] = res.roc_period.get("roc_period", 4)
+    if res.btc_params:
+        config["btc_ticker"] = "BTC-USD"
+        config["btc_lookback_days"] = res.btc_params.get("btc_lookback_days", 1)
+        config["btc_threshold_pct"] = res.btc_params.get("btc_threshold_pct", 0.0)
     return config
 
 

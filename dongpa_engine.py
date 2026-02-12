@@ -171,6 +171,9 @@ class StrategyParams:
     ma_long_period: int = 20          # Long MA period (weeks for weekly data)
     # ROC parameters (for "roc" strategy)
     roc_period: int = 4               # N-week Rate of Change period
+    # BTC overnight parameters (for "btc_overnight" strategy)
+    btc_lookback_days: int = 1        # N calendar days for BTC return
+    btc_threshold_pct: float = 0.0    # Min % return to trigger mode (0 = any positive)
     # Buy execution: use min(tranche_budget, cash) instead of skipping when cash < tranche_budget
     cash_limited_buy: bool = False
 
@@ -181,11 +184,12 @@ class StrategyParams:
 # ---------------------- Engine ----------------------
 
 class DongpaBacktester:
-    def __init__(self, daily_target: pd.DataFrame, daily_momo: pd.DataFrame, params: StrategyParams, cap: CapitalParams):
+    def __init__(self, daily_target: pd.DataFrame, daily_momo: pd.DataFrame, params: StrategyParams, cap: CapitalParams, btc_data: pd.DataFrame | None = None):
         self.df = daily_target.copy()
         self.momo = daily_momo.copy()
         self.p = params
         self.c = cap
+        self.btc_data = btc_data
         self._prep()
         self.results = None
 
@@ -215,6 +219,16 @@ class DongpaBacktester:
         elif self.p.mode_switch_strategy == "roc":
             # ROC-based mode switching (calculate with full data)
             self.weekly_roc_series = weekly_roc(w_close, self.p.roc_period)
+        elif self.p.mode_switch_strategy == "btc_overnight":
+            if self.btc_data is None:
+                raise ValueError("btc_data required for btc_overnight strategy")
+            btc_close = self.btc_data['Close']
+            # yfinance MultiIndex columns → df['Close'] is DataFrame, not Series
+            if isinstance(btc_close, pd.DataFrame):
+                btc_close = btc_close.iloc[:, 0]
+            btc_close = btc_close.sort_index()
+            # Will compute daily_btc_signal after df is aligned below
+            self._btc_close = btc_close
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
@@ -235,6 +249,22 @@ class DongpaBacktester:
             self.daily_death = self.weekly_death.reindex(self.df.index, method='ffill', fill_value=False)
         elif self.p.mode_switch_strategy == "roc":
             self.daily_roc = self.weekly_roc_series.reindex(self.df.index, method='ffill')
+        elif self.p.mode_switch_strategy == "btc_overnight":
+            # Compute BTC signal aligned to target trading dates
+            target_dates = self.df.index
+            lookback = self.p.btc_lookback_days
+            btc_close = self._btc_close
+            # BTC close on calendar day before each SOXL day
+            d1_dates = target_dates - pd.Timedelta(days=1)
+            btc_d1 = btc_close.reindex(d1_dates, method='ffill')
+            # BTC close N+1 calendar days before each SOXL day
+            dn_dates = target_dates - pd.Timedelta(days=1 + lookback)
+            btc_dn = btc_close.reindex(dn_dates, method='ffill')
+            # Compute signal: N-day BTC return ending day before SOXL day
+            self.daily_btc_signal = pd.Series(
+                (btc_d1.values / btc_dn.values) - 1,
+                index=target_dates
+            )
 
     def _decide_mode(self, idx, prev_mode) -> str:
         if self.p.mode_switch_strategy == "rsi":
@@ -243,6 +273,8 @@ class DongpaBacktester:
             return self._decide_mode_ma_cross(idx, prev_mode)
         elif self.p.mode_switch_strategy == "roc":
             return self._decide_mode_roc(idx, prev_mode)
+        elif self.p.mode_switch_strategy == "btc_overnight":
+            return self._decide_mode_btc(idx, prev_mode)
         else:
             raise ValueError(f"Unknown mode_switch_strategy: {self.p.mode_switch_strategy}")
 
@@ -321,6 +353,19 @@ class DongpaBacktester:
             return "defense"
         return prev_mode or "defense"
 
+    def _decide_mode_btc(self, idx, prev_mode) -> str:
+        """BTC overnight mode: positive BTC return = offense, negative = defense."""
+        sig = _scalar(self.daily_btc_signal.loc[idx])
+        if pd.isna(sig):
+            return prev_mode or "defense"
+        threshold = self.p.btc_threshold_pct / 100.0
+        sig_val = float(sig)
+        if sig_val > threshold:
+            return "offense"
+        elif sig_val < -threshold:
+            return "defense"
+        return prev_mode or "defense"
+
     def _determine_initial_mode(self) -> str:
         """Determine initial mode by replaying weekly indicator data before backtest start.
 
@@ -388,6 +433,19 @@ class DongpaBacktester:
                 return "defense"
 
             return "offense" if float(last_roc) > 0 else "defense"
+
+        elif self.p.mode_switch_strategy == "btc_overnight":
+            # BTC signal is daily and aligned to target dates; use first day's signal
+            if hasattr(self, 'daily_btc_signal') and not self.daily_btc_signal.empty:
+                first_sig = _scalar(self.daily_btc_signal.iloc[0])
+                if not pd.isna(first_sig):
+                    threshold = self.p.btc_threshold_pct / 100.0
+                    sig_val = float(first_sig)
+                    if sig_val > threshold:
+                        return "offense"
+                    elif sig_val < -threshold:
+                        return "defense"
+            return "defense"
 
         return "defense"
 

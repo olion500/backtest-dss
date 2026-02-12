@@ -115,9 +115,9 @@ with st.sidebar:
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross", "ROC"],
+        options=["RSI", "Golden Cross", "ROC", "BTC Overnight"],
         index=int(defaults.get("mode_switch_strategy_index", 0)),
-        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 (양수=공세, 음수=안전)"
+        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 | BTC Overnight: BTC 야간 수익률 기반 (일일 시그널)"
     )
 
     rsi_high_threshold = defaults["rsi_high_threshold"]
@@ -181,6 +181,34 @@ with st.sidebar:
             value=int(defaults.get("roc_period", 4)),
             step=1,
             help="N주 변화율 기간. 양수면 공세, 음수면 안전 모드"
+        )
+
+    btc_ticker = defaults.get("btc_ticker", "BTC-USD")
+    btc_lookback_days = int(defaults.get("btc_lookback_days", 1))
+    btc_threshold_pct = float(defaults.get("btc_threshold_pct", 0.0))
+    if mode_switch_strategy == "BTC Overnight":
+        btc_ticker = st.text_input(
+            "BTC 티커",
+            value=defaults.get("btc_ticker", "BTC-USD"),
+            help="비트코인 가격 데이터 티커 (기본: BTC-USD)"
+        )
+        col_btc1, col_btc2 = st.columns(2)
+        btc_lookback_days = col_btc1.number_input(
+            "BTC Lookback (일)",
+            min_value=1,
+            max_value=7,
+            value=int(defaults.get("btc_lookback_days", 1)),
+            step=1,
+            help="BTC 수익률 계산 기간 (캘린더 일수). 1=전일 대비"
+        )
+        btc_threshold_pct = col_btc2.number_input(
+            "임계값 (%)",
+            min_value=0.0,
+            max_value=5.0,
+            value=float(defaults.get("btc_threshold_pct", 0.0)),
+            step=0.1,
+            format="%.1f",
+            help="BTC 수익률이 이 값 초과시 공세, -이 값 미만시 안전. 0=양수면 공세"
         )
 
     st.divider()
@@ -314,7 +342,7 @@ with st.sidebar:
                 "offense_tp": float(tp2),
                 "offense_sl": float(sl2),
                 "offense_hold": int(hold2),
-                "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2}[mode_switch_strategy],
+                "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2, "BTC Overnight": 3}[mode_switch_strategy],
                 "rsi_high_threshold": float(rsi_high_threshold),
                 "rsi_mid_high": float(rsi_mid_high),
                 "rsi_neutral": float(rsi_neutral),
@@ -327,6 +355,10 @@ with st.sidebar:
                 save_payload["ma_long"] = int(ma_long)
             elif mode_switch_strategy == "ROC":
                 save_payload["roc_period"] = int(roc_period)
+            elif mode_switch_strategy == "BTC Overnight":
+                save_payload["btc_ticker"] = btc_ticker
+                save_payload["btc_lookback_days"] = int(btc_lookback_days)
+                save_payload["btc_threshold_pct"] = float(btc_threshold_pct)
 
             save_filename = save_config_name.strip()
             if not save_filename.endswith(".json"):
@@ -349,6 +381,15 @@ if run:
     # Download extra data for RSI/MA warm-up
     momo_start = start - timedelta(days=LOOKBACK_DAYS)
     df_m = yf.download(momentum, start=momo_start, end=end, progress=False, auto_adjust=False)
+
+    # Download BTC data if needed
+    df_btc = None
+    if mode_switch_strategy == "BTC Overnight":
+        btc_start = start - timedelta(days=LOOKBACK_DAYS)
+        df_btc = yf.download(btc_ticker, start=btc_start, end=end, progress=False, auto_adjust=False)
+        if df_btc.empty:
+            st.error(f"BTC 데이터가 비어 있습니다. 티커({btc_ticker})를 확인하세요.")
+            st.stop()
 
     if df_t.empty or df_m.empty:
         st.error("데이터가 비어 있습니다. 티커/기간을 확인하세요.")
@@ -408,6 +449,19 @@ if run:
                 defense=defense,
                 offense=offense,
             )
+        elif mode_switch_strategy == "BTC Overnight":
+            params = StrategyParams(
+                target_ticker=target,
+                momentum_ticker=momentum,
+                mode_switch_strategy="btc_overnight",
+                btc_lookback_days=int(btc_lookback_days),
+                btc_threshold_pct=float(btc_threshold_pct),
+                enable_netting=enable_netting,
+                allow_fractional_shares=allow_fractional,
+                cash_limited_buy=cash_limited_buy,
+                defense=defense,
+                offense=offense,
+            )
         else:
             # RSI mode (default)
             params = StrategyParams(
@@ -427,7 +481,7 @@ if run:
                 offense=offense,
             )
 
-    bt = DongpaBacktester(df_t, df_m, params, cap)
+    bt = DongpaBacktester(df_t, df_m, params, cap, btc_data=df_btc)
     res = bt.run()
     eq = res['equity']
     journal = res['journal']

@@ -122,6 +122,9 @@ def _prepare_defaults(saved: dict) -> dict:
         "rsi_mid_low": float(saved.get("rsi_mid_low", 40.0)),
         "rsi_low_threshold": float(saved.get("rsi_low_threshold", 35.0)),
         "roc_period": int(saved.get("roc_period", 4)),
+        "btc_ticker": saved.get("btc_ticker", "BTC-USD"),
+        "btc_lookback_days": int(saved.get("btc_lookback_days", 1)),
+        "btc_threshold_pct": float(saved.get("btc_threshold_pct", 0.0)),
     }
 
 
@@ -163,6 +166,12 @@ def _collect_params(ui_values: dict) -> tuple[StrategyParams, CapitalParams]:
         strategy_dict.update({
             "mode_switch_strategy": "roc",
             "roc_period": int(ui_values.get("roc_period", 4)),
+        })
+    elif ui_values.get("mode_switch_strategy") == "BTC Overnight":
+        strategy_dict.update({
+            "mode_switch_strategy": "btc_overnight",
+            "btc_lookback_days": int(ui_values.get("btc_lookback_days", 1)),
+            "btc_threshold_pct": float(ui_values.get("btc_threshold_pct", 0.0)),
         })
     else:
         strategy_dict.update({
@@ -229,9 +238,9 @@ with st.sidebar:
     st.subheader("📊 모드 전환 전략")
     mode_switch_strategy = st.radio(
         "모드 전환 방식",
-        options=["RSI", "Golden Cross", "ROC"],
+        options=["RSI", "Golden Cross", "ROC", "BTC Overnight"],
         index=saved_values.get("mode_switch_strategy_index", 0),
-        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 (양수=공세, 음수=안전)"
+        help="RSI: RSI 기반 모드 전환 | Golden Cross: 이동평균 교차 기반 | ROC: N주 변화율 기반 | BTC Overnight: BTC 야간 수익률 기반 (일일 시그널)"
     )
 
     rsi_high_threshold = defaults["rsi_high_threshold"]
@@ -301,6 +310,37 @@ with st.sidebar:
             value=int(defaults.get("roc_period", 4)),
             step=1,
             help="N주 변화율 기간. 양수면 공세, 음수면 안전 모드"
+        )
+
+    btc_ticker = defaults.get("btc_ticker", "BTC-USD")
+    btc_lookback_days = int(defaults.get("btc_lookback_days", 1))
+    btc_threshold_pct = float(defaults.get("btc_threshold_pct", 0.0))
+    if mode_switch_strategy == "BTC Overnight":
+        btc_ticker = st.text_input(
+            "BTC 티커",
+            value=defaults.get("btc_ticker", "BTC-USD"),
+            help="비트코인 가격 데이터 티커 (기본: BTC-USD)",
+            key="ob_btc_ticker",
+        )
+        col_btc1, col_btc2 = st.columns(2)
+        btc_lookback_days = col_btc1.number_input(
+            "BTC Lookback (일)",
+            min_value=1,
+            max_value=7,
+            value=int(defaults.get("btc_lookback_days", 1)),
+            step=1,
+            help="BTC 수익률 계산 기간 (캘린더 일수). 1=전일 대비",
+            key="ob_btc_lookback",
+        )
+        btc_threshold_pct = col_btc2.number_input(
+            "임계값 (%)",
+            min_value=0.0,
+            max_value=5.0,
+            value=float(defaults.get("btc_threshold_pct", 0.0)),
+            step=0.1,
+            format="%.1f",
+            help="BTC 수익률이 이 값 초과시 공세, -이 값 미만시 안전. 0=양수면 공세",
+            key="ob_btc_threshold",
         )
 
     st.divider()
@@ -383,7 +423,7 @@ with st.sidebar:
             "offense_hold": off_hold,
             "spread_buy_levels": spread_buy_levels,
             "spread_buy_step": spread_buy_step,
-            "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2}[mode_switch_strategy],
+            "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2, "BTC Overnight": 3}[mode_switch_strategy],
             "rsi_high_threshold": float(rsi_high_threshold),
             "rsi_mid_high": float(rsi_mid_high),
             "rsi_neutral": float(rsi_neutral),
@@ -395,6 +435,10 @@ with st.sidebar:
             settings_payload["ma_long"] = ma_long
         elif mode_switch_strategy == "ROC":
             settings_payload["roc_period"] = roc_period
+        elif mode_switch_strategy == "BTC Overnight":
+            settings_payload["btc_ticker"] = btc_ticker
+            settings_payload["btc_lookback_days"] = int(btc_lookback_days)
+            settings_payload["btc_threshold_pct"] = float(btc_threshold_pct)
         save_settings(settings_payload)
         st.success("설정을 저장했습니다.")
 
@@ -425,6 +469,9 @@ ui_values = {
     "rsi_neutral": rsi_neutral,
     "rsi_mid_low": rsi_mid_low,
     "rsi_low_threshold": rsi_low_threshold,
+    "btc_ticker": btc_ticker,
+    "btc_lookback_days": btc_lookback_days,
+    "btc_threshold_pct": btc_threshold_pct,
 }
 
 # Add strategy-specific parameters
@@ -464,9 +511,16 @@ def _download_prices(ticker: str, start, end):
 with st.spinner(f"{start_date}부터 {backtest_end_date}까지 백테스트 실행 중..."):
     df_target = _download_prices(ui_values["target"], data_fetch_start, end_fetch)
     df_momo = _download_prices(ui_values["momentum"], data_fetch_start, end_fetch)
+    df_btc = None
+    if mode_switch_strategy == "BTC Overnight":
+        df_btc = _download_prices(ui_values.get("btc_ticker", "BTC-USD"), data_fetch_start, end_fetch)
 
 if df_target.empty or df_momo.empty:
     st.error("데이터가 비어 있습니다. 티커를 확인하거나 거래 가능일을 기다려 주세요.")
+    st.stop()
+
+if mode_switch_strategy == "BTC Overnight" and (df_btc is None or df_btc.empty):
+    st.error(f"BTC 데이터가 비어 있습니다. 티커({ui_values.get('btc_ticker', 'BTC-USD')})를 확인하세요.")
     st.stop()
 
 # Filter data to start from start_date and end at backtest_end_date
@@ -485,7 +539,7 @@ if df_target_filtered.empty:
 
 strategy, capital = _collect_params(ui_values)
 # Pass full df_momo for proper RSI/MA warm-up; df_target_filtered defines backtest period
-backtester = DongpaBacktester(df_target_filtered, df_momo, strategy, capital)
+backtester = DongpaBacktester(df_target_filtered, df_momo, strategy, capital, btc_data=df_btc)
 result = backtester.run()
 journal = result.get("journal", pd.DataFrame())
 trade_log = result.get("trade_log", pd.DataFrame())
@@ -539,6 +593,16 @@ elif ui_values.get("mode_switch_strategy") == "ROC":
         mode_line += f" (ROC {roc_val:.4f}, {ui_values.get('roc_period', 4)}주)"
     else:
         mode_line += f" (ROC {ui_values.get('roc_period', 4)}주)"
+elif ui_values.get("mode_switch_strategy") == "BTC Overnight":
+    btc_sig_val = None
+    if hasattr(backtester, "daily_btc_signal") and last_timestamp in backtester.daily_btc_signal.index:
+        btc_sig_raw = _scalar(backtester.daily_btc_signal.loc[last_timestamp])
+        if btc_sig_raw is not None and not pd.isna(btc_sig_raw):
+            btc_sig_val = float(btc_sig_raw)
+    if btc_sig_val is not None:
+        mode_line += f" (BTC signal {btc_sig_val:+.4f}, lookback {ui_values.get('btc_lookback_days', 1)}일)"
+    else:
+        mode_line += f" (BTC Overnight, lookback {ui_values.get('btc_lookback_days', 1)}일)"
 elif rsi_value is not None:
     mode_line += f" (주봉 RSI {rsi_value:.2f})"
 
