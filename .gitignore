@@ -8,4 +8,5 @@ outputs/
 
 
 config/*.json
+!config/*.example.json
 

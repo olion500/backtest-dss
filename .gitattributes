@@ -1,0 +1,3 @@
+# Config files: keep local version during merge (no conflicts)
+# Fork users: run `git config merge.ours.driver true` once to activate
+config/*.json merge=ours
