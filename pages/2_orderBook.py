@@ -984,6 +984,7 @@ if enable_netting:
 # Display order sheet
 if order_sheet:
     order_df = pd.DataFrame(order_sheet)
+    order_df = order_df.sort_values("주문가", ascending=False).reset_index(drop=True)
     order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
     st.dataframe(order_df, width="stretch", hide_index=True)
     if netting_msg:
