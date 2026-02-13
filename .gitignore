@@ -6,7 +6,3 @@ market_data/
 outputs/
 *.log
 
-
-config/*.json
-!config/*.example.json
-

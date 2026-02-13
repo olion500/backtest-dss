@@ -1,0 +1,9 @@
+{
+  "start_date": "",
+  "init_cash": 10000,
+  "log_scale": true,
+  "spread_buy_levels": 5,
+  "spread_buy_step": 1,
+  "enable_netting": true,
+  "allow_fractional": false
+}

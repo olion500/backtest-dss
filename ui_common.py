@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -21,12 +20,10 @@ NAV_LINKS = [
 
 SETTINGS_PATH = Path("config") / "order_book_settings.json"
 LOCAL_SETTINGS_PATH = Path("config") / "local_settings.json"
-SETTINGS_EXAMPLE = Path("config") / "order_book_settings.example.json"
-LOCAL_EXAMPLE = Path("config") / "local_settings.example.json"
 CONFIG_DIR = Path("config")
 LOOKBACK_DAYS = 1000  # Extra days for weekly RSI EMA warm-up convergence
 
-LOCAL_KEYS = {"start_date", "init_cash", "log_scale"}
+LOCAL_KEYS = {"start_date", "init_cash", "log_scale", "spread_buy_levels", "spread_buy_step", "enable_netting", "allow_fractional"}
 
 DEFAULT_PARAMS = {
     "target": "SOXL",
@@ -101,40 +98,18 @@ def _write_json(path: Path, data: dict) -> None:
         json.dump(data, fh, ensure_ascii=False, indent=2)
 
 
-def _example_for(path: Path) -> Path | None:
-    """Return the corresponding .example.json for a given config path."""
-    if path == SETTINGS_PATH:
-        return SETTINGS_EXAMPLE
-    if path == LOCAL_SETTINGS_PATH:
-        return LOCAL_EXAMPLE
-    return None
-
-
 def load_settings(config_path: Path | None = None) -> dict:
     """Load settings from config JSON file(s).
 
     When loading the default settings path, strategy settings and local
-    (personal) settings are merged from two separate files.  If a file
-    doesn't exist, the corresponding .example.json is copied as fallback.
+    (personal) settings are merged from two separate files.
     """
     path = config_path if config_path else SETTINGS_PATH
-
-    # Fallback: copy from example if the file doesn't exist
-    if not path.exists():
-        example = _example_for(path)
-        if example and example.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(example, path)
-
     result = _read_json(path)
 
     # For the default path, also merge local settings
     if path == SETTINGS_PATH:
-        local_path = LOCAL_SETTINGS_PATH
-        if not local_path.exists() and LOCAL_EXAMPLE.exists():
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(LOCAL_EXAMPLE, local_path)
-        result.update(_read_json(local_path))
+        result.update(_read_json(LOCAL_SETTINGS_PATH))
 
     return result
 
@@ -160,14 +135,14 @@ def save_settings(payload: dict, config_path: Path | None = None) -> None:
 def get_available_config_files() -> list[Path]:
     """Get all JSON config files in the config directory.
 
-    Excludes local_settings.json and *.example.json from the listing.
+    Excludes local_settings.json from the listing.
     """
     if not CONFIG_DIR.exists():
         return []
     excluded = {"local_settings.json"}
     json_files = [
         p for p in CONFIG_DIR.glob("*.json")
-        if p.name not in excluded and not p.name.endswith(".example.json")
+        if p.name not in excluded
     ]
     json_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return json_files
