@@ -18,7 +18,6 @@ from ui_common import (
     DEFAULT_PARAMS,
     LOOKBACK_DAYS,
     compute_trade_metrics,
-    get_available_config_files,
     load_settings,
     render_navigation,
 )
@@ -213,59 +212,45 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("📁 설정 파일 선택")
-    available_configs = get_available_config_files()
+    # Classify config files: start_date 키가 있으면 개인(제외), 없으면 전략
+    strategy_files: list[Path] = []
+    if CONFIG_DIR.exists():
+        for p in sorted(CONFIG_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if p.name == "personal_settings.json":
+                continue
+            try:
+                with p.open("r", encoding="utf-8") as fh:
+                    keys = set(json.load(fh).keys())
+            except Exception:
+                keys = set()
+            if "start_date" not in keys:
+                strategy_files.append(p)
 
-    if available_configs:
-        config_options = {str(p.name): p for p in available_configs}
-        config_names = ["기본 설정 (default)"] + list(config_options.keys())
+    st.subheader("📁 전략 설정")
+    if strategy_files:
+        strat_options = {p.name: p for p in strategy_files}
+        strat_names = list(strat_options.keys())
+        default_strat_idx = strat_names.index("strategy.json") if "strategy.json" in strat_names else 0
 
         selected_config_name = st.selectbox(
-            "설정 파일",
-            options=config_names,
-            help="config/ 폴더의 JSON 파일을 선택하세요"
+            "전략 설정 파일",
+            options=strat_names,
+            index=default_strat_idx,
+            help="전략 파라미터(슬라이스, 매수조건, 익절 등)가 담긴 파일",
         )
 
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            load_button = st.button(
-                "🔄 선택한 설정 불러오기",
-                type="primary",
-                width="stretch",
-                help="선택한 파일의 설정을 불러옵니다 (시작일, 초기현금 제외)"
-            )
-        with col2:
-            if st.button("ℹ️", help="파일 정보 보기"):
-                if selected_config_name != "기본 설정 (default)":
-                    selected_path = config_options[selected_config_name]
-                    file_size = selected_path.stat().st_size
-                    from datetime import datetime
-                    mod_time = datetime.fromtimestamp(selected_path.stat().st_mtime)
-                    st.info(f"**파일**: {selected_path.name}\n\n**크기**: {file_size} bytes\n\n**수정일**: {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
-
-        if load_button:
-            if selected_config_name == "기본 설정 (default)":
-                st.session_state.loaded_defaults = None
-                st.session_state.config_loaded = False
-                st.success("기본 설정으로 초기화되었습니다!")
+        if st.button("🔄 전략 설정 불러오기", type="primary", width="stretch"):
+            selected_path = strat_options[selected_config_name]
+            saved_values = load_settings(selected_path)
+            if saved_values:
+                st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
+                st.session_state.config_loaded = True
+                st.success(f"✅ '{selected_path.name}' 설정을 불러왔습니다!")
                 st.rerun()
             else:
-                selected_path = config_options[selected_config_name]
-                saved_values = load_settings(selected_path)
-                if saved_values:
-                    st.session_state.loaded_defaults = _prepare_defaults(saved_values, year_start, today)
-                    st.session_state.config_loaded = True
-                    st.success(f"✅ '{selected_path.name}' 설정을 불러왔습니다!")
-                    st.rerun()
-                else:
-                    st.error(f"❌ '{selected_path.name}' 파일을 읽을 수 없습니다.")
+                st.error(f"❌ '{selected_path.name}' 파일을 읽을 수 없습니다.")
     else:
-        st.info("config/ 폴더에 설정 파일이 없습니다.")
-        if st.button("🔄 기본 설정으로 초기화", type="secondary"):
-            st.session_state.loaded_defaults = None
-            st.session_state.config_loaded = False
-            st.success("기본 설정으로 초기화되었습니다!")
-            st.rerun()
+        st.info("전략 설정 파일이 없습니다.")
 
     st.divider()
 
@@ -310,56 +295,55 @@ with st.sidebar:
     sl2 = st.number_input("손절(%) - 공세", value=float(defaults["offense_sl"]), step=0.1, format="%.2f")
     hold2 = st.number_input("최대 보유일(거래일) - 공세", value=int(defaults["offense_hold"]), step=1)
 
+    def _build_strategy_payload() -> dict:
+        payload = {
+            "target": target,
+            "momentum": momentum,
+            "bench": bench,
+            "cash_limited_buy": cash_limited_buy,
+            "defense_slices": int(s1),
+            "defense_buy": float(cond1),
+            "defense_tp": float(tp1),
+            "defense_sl": float(sl1),
+            "defense_hold": int(hold1),
+            "offense_slices": int(s2),
+            "offense_buy": float(cond2),
+            "offense_tp": float(tp2),
+            "offense_sl": float(sl2),
+            "offense_hold": int(hold2),
+            "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2, "BTC Overnight": 3}[mode_switch_strategy],
+            "rsi_high_threshold": float(rsi_high_threshold),
+            "rsi_mid_high": float(rsi_mid_high),
+            "rsi_neutral": float(rsi_neutral),
+            "rsi_mid_low": float(rsi_mid_low),
+            "rsi_low_threshold": float(rsi_low_threshold),
+        }
+        if mode_switch_strategy == "Golden Cross":
+            payload["ma_short"] = int(ma_short)
+            payload["ma_long"] = int(ma_long)
+        elif mode_switch_strategy == "ROC":
+            payload["roc_period"] = int(roc_period)
+        elif mode_switch_strategy == "BTC Overnight":
+            payload["btc_ticker"] = btc_ticker
+            payload["btc_lookback_days"] = int(btc_lookback_days)
+            payload["btc_threshold_pct"] = float(btc_threshold_pct)
+        return payload
+
     st.divider()
-    st.header("💾 설정 저장")
+    st.header("💾 전략 설정 저장")
     save_config_name = st.text_input(
-        "설정 파일 이름",
+        "전략 설정 파일 이름",
         placeholder="예: my_strategy",
-        help="설정을 저장할 파일 이름을 입력하세요 (config/ 폴더에 JSON 파일로 저장됩니다)"
+        help="전략 파라미터를 config/ 폴더에 JSON 파일로 저장합니다",
     )
 
-    if st.button("💾 설정 저장", type="secondary", width="stretch"):
+    if st.button("💾 전략 설정 저장", type="secondary", width="stretch"):
+        reserved = {"default", "strategy", "personal_settings"}
         if not save_config_name or save_config_name.strip() == "":
             st.error("❌ 파일 이름을 입력해주세요!")
-        elif save_config_name.lower() in ["default", "order_book_settings"]:
-            st.error("❌ 'default'와 'order_book_settings'는 예약된 이름입니다. 다른 이름을 사용해주세요!")
+        elif save_config_name.strip().lower().removesuffix(".json") in reserved:
+            st.error("❌ 예약된 이름입니다. 다른 이름을 사용해주세요!")
         else:
-            save_payload = {
-                "target": target,
-                "momentum": momentum,
-                "bench": bench,
-                "log_scale": log_scale_enabled,
-                "enable_netting": enable_netting,
-                "allow_fractional": allow_fractional,
-                "cash_limited_buy": cash_limited_buy,
-                "defense_slices": int(s1),
-                "defense_buy": float(cond1),
-                "defense_tp": float(tp1),
-                "defense_sl": float(sl1),
-                "defense_hold": int(hold1),
-                "offense_slices": int(s2),
-                "offense_buy": float(cond2),
-                "offense_tp": float(tp2),
-                "offense_sl": float(sl2),
-                "offense_hold": int(hold2),
-                "mode_switch_strategy_index": {"RSI": 0, "Golden Cross": 1, "ROC": 2, "BTC Overnight": 3}[mode_switch_strategy],
-                "rsi_high_threshold": float(rsi_high_threshold),
-                "rsi_mid_high": float(rsi_mid_high),
-                "rsi_neutral": float(rsi_neutral),
-                "rsi_mid_low": float(rsi_mid_low),
-                "rsi_low_threshold": float(rsi_low_threshold),
-            }
-
-            if mode_switch_strategy == "Golden Cross":
-                save_payload["ma_short"] = int(ma_short)
-                save_payload["ma_long"] = int(ma_long)
-            elif mode_switch_strategy == "ROC":
-                save_payload["roc_period"] = int(roc_period)
-            elif mode_switch_strategy == "BTC Overnight":
-                save_payload["btc_ticker"] = btc_ticker
-                save_payload["btc_lookback_days"] = int(btc_lookback_days)
-                save_payload["btc_threshold_pct"] = float(btc_threshold_pct)
-
             save_filename = save_config_name.strip()
             if not save_filename.endswith(".json"):
                 save_filename += ".json"
@@ -369,10 +353,11 @@ with st.sidebar:
 
             try:
                 with save_path.open("w", encoding="utf-8") as fh:
-                    json.dump(save_payload, fh, ensure_ascii=False, indent=2)
-                st.success(f"✅ 설정이 '{save_filename}'에 저장되었습니다!")
+                    json.dump(_build_strategy_payload(), fh, ensure_ascii=False, indent=2)
+                st.success(f"✅ 전략 설정이 '{save_filename}'에 저장되었습니다!")
             except Exception as e:
                 st.error(f"❌ 저장 실패: {e}")
+
 run = st.button("백테스트 실행")
 
 if run:

@@ -1,6 +1,6 @@
 {
-  "start_date": "",
-  "init_cash": 10000,
+  "start_date": "2026-02-09",
+  "init_cash": 28000.0,
   "log_scale": true,
   "spread_buy_levels": 5,
   "spread_buy_step": 1,

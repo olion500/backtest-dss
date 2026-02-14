@@ -34,7 +34,7 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 
 **`pages/2_orderBook.py`** - LOC order schedule generator
 - Real-time order planning based on latest market data
-- Persists settings to `config/order_book_settings.json`
+- Persists settings to `config/strategy.json` + `config/personal_settings.json`
 - Maintains order history in `config/order_book_history.csv`
 - Displays next-day LOC order schedule
 
@@ -146,7 +146,8 @@ backtest-dss/
 │   ├── 2_orderBook.py      # LOC order scheduler
 │   └── 3_Optuna.py         # Optuna optimizer UI
 ├── config/
-│   ├── order_book_settings.json    # Persisted order book config
+│   ├── strategy.json               # Strategy parameters config
+│   ├── personal_settings.json         # Personal settings (start_date, init_cash, etc.)
 │   └── order_book_history.csv      # Order history log
 ├── outputs/                 # Downloaded price data & results (gitignored)
 ├── requirements.txt         # Python dependencies

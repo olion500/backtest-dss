@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -24,8 +25,11 @@ from chart_utils import (
     build_equity_price_chart,
 )
 from ui_common import (
+    CONFIG_DIR,
+    LOCAL_KEYS,
     LOOKBACK_DAYS,
     compute_trade_metrics,
+    get_available_config_files,
     load_settings,
     render_navigation,
     save_settings,
@@ -96,6 +100,7 @@ def _is_market_closed_today() -> bool:
 
 def _prepare_defaults(saved: dict) -> dict:
     return {
+        "start_date": saved.get("start_date"),
         "target": saved.get("target", "SOXL"),
         "momentum": saved.get("momentum", "QQQ"),
         "bench": saved.get("bench", "SOXX"),
@@ -196,10 +201,21 @@ st.set_page_config(page_title="orderBook", layout="wide")
 
 render_navigation()
 
+# Initialize session state for config loading
+if "ob_config_loaded" not in st.session_state:
+    st.session_state.ob_config_loaded = False
+if "ob_loaded_defaults" not in st.session_state:
+    st.session_state.ob_loaded_defaults = None
 
 today = date.today()
-saved_values = load_settings()
-defaults = _prepare_defaults(saved_values)
+
+# Determine defaults: use session state if a config was loaded, otherwise default merge
+if st.session_state.ob_config_loaded and st.session_state.ob_loaded_defaults:
+    defaults = st.session_state.ob_loaded_defaults
+    saved_values = st.session_state.ob_loaded_defaults
+else:
+    saved_values = load_settings()
+    defaults = _prepare_defaults(saved_values)
 
 st.title("orderBook")
 st.caption("동파 LOC 주문 스케줄러. 오늘 기준 LOC 예약 주문과 누적 실적을 확인합니다.")
@@ -210,6 +226,93 @@ with st.sidebar:
         value=defaults.get("log_scale", True),
         key="orderbook_equity_scale_toggle",
     )
+
+    # Classify config files: start_date 키가 있으면 개인, 없으면 전략
+    import json as _json_classify
+    all_configs = sorted(
+        (p for p in CONFIG_DIR.glob("*.json") if p.name != "personal_settings.json"),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    ) if CONFIG_DIR.exists() else []
+    strategy_files: list[Path] = []
+    local_files: list[Path] = []
+    for p in all_configs:
+        try:
+            with p.open("r", encoding="utf-8") as fh:
+                keys = set(_json_classify.load(fh).keys())
+        except Exception:
+            keys = set()
+        if "start_date" in keys:
+            local_files.append(p)
+        else:
+            strategy_files.append(p)
+    # personal_settings.json은 항상 개인 설정 목록 맨 앞
+    ls_path = CONFIG_DIR / "personal_settings.json"
+    if ls_path.exists():
+        local_files.insert(0, ls_path)
+
+    st.subheader("📁 전략 설정")
+    if strategy_files:
+        strat_options = {p.name: p for p in strategy_files}
+        strat_names = list(strat_options.keys())
+        default_strat_idx = strat_names.index("strategy.json") if "strategy.json" in strat_names else 0
+
+        selected_config_name = st.selectbox(
+            "전략 설정 파일",
+            options=strat_names,
+            index=default_strat_idx,
+            help="전략 파라미터(슬라이스, 매수조건, 익절 등)가 담긴 파일",
+            key="ob_config_select",
+        )
+
+        if st.button("🔄 전략 설정 불러오기", type="primary", width="stretch", key="ob_load_config"):
+            selected_path = strat_options[selected_config_name]
+            loaded_values = load_settings(selected_path)
+            if loaded_values:
+                st.session_state.ob_loaded_defaults = _prepare_defaults(loaded_values)
+                st.session_state.ob_config_loaded = True
+                st.success(f"✅ '{selected_path.name}' 설정을 불러왔습니다!")
+                st.rerun()
+            else:
+                st.error(f"❌ '{selected_path.name}' 파일을 읽을 수 없습니다.")
+    else:
+        st.info("전략 설정 파일이 없습니다.")
+
+    st.subheader("📌 개인 설정")
+    if local_files:
+        local_options = {p.name: p for p in local_files}
+        local_names = list(local_options.keys())
+
+        selected_local_name = st.selectbox(
+            "개인 설정 파일",
+            options=local_names,
+            help="시작일 · 초기자금 · 종목 등 개인 설정이 담긴 파일",
+            key="ob_local_select",
+        )
+
+        if st.button("📌 개인 설정 불러오기", width="stretch", key="ob_load_local"):
+            local_path = local_options[selected_local_name]
+            try:
+                with local_path.open("r", encoding="utf-8") as fh:
+                    local_data = _json_classify.load(fh)
+            except (OSError, ValueError):
+                local_data = {}
+
+            if local_data:
+                current = dict(defaults)
+                local_apply_keys = LOCAL_KEYS | {"target", "momentum", "bench"}
+                for k in local_apply_keys:
+                    if k in local_data:
+                        current[k] = local_data[k]
+                st.session_state.ob_loaded_defaults = _prepare_defaults(current)
+                st.session_state.ob_config_loaded = True
+                st.success(f"✅ '{local_path.name}'에서 개인 설정을 불러왔습니다!")
+                st.rerun()
+            else:
+                st.error(f"❌ '{local_path.name}' 파일을 읽을 수 없습니다.")
+    else:
+        st.info("개인 설정 파일이 없습니다.")
+
+    st.divider()
     st.header("기본 설정")
 
     # Start date selection
@@ -400,8 +503,8 @@ with st.sidebar:
     off_sl = st.number_input("손절(%) - 공세", value=float(defaults["offense_sl"]), step=0.1, format="%.2f")
     off_hold = st.number_input("최대 보유일(거래일) - 공세", value=int(defaults["offense_hold"]), step=1)
 
-    if st.button("설정 저장"):
-        settings_payload = {
+    def _build_settings_payload() -> dict:
+        payload = {
             "start_date": start_date.isoformat(),
             "target": target,
             "momentum": momentum,
@@ -431,16 +534,96 @@ with st.sidebar:
             "rsi_low_threshold": float(rsi_low_threshold),
         }
         if mode_switch_strategy == "Golden Cross":
-            settings_payload["ma_short"] = ma_short
-            settings_payload["ma_long"] = ma_long
+            payload["ma_short"] = ma_short
+            payload["ma_long"] = ma_long
         elif mode_switch_strategy == "ROC":
-            settings_payload["roc_period"] = roc_period
+            payload["roc_period"] = roc_period
         elif mode_switch_strategy == "BTC Overnight":
-            settings_payload["btc_ticker"] = btc_ticker
-            settings_payload["btc_lookback_days"] = int(btc_lookback_days)
-            settings_payload["btc_threshold_pct"] = float(btc_threshold_pct)
-        save_settings(settings_payload)
+            payload["btc_ticker"] = btc_ticker
+            payload["btc_lookback_days"] = int(btc_lookback_days)
+            payload["btc_threshold_pct"] = float(btc_threshold_pct)
+        return payload
+
+    if st.button("설정 저장"):
+        save_settings(_build_settings_payload())
         st.success("설정을 저장했습니다.")
+
+    st.divider()
+    st.header("💾 다른 이름으로 저장")
+    save_config_name = st.text_input(
+        "설정 파일 이름",
+        placeholder="예: my_strategy",
+        help="설정을 저장할 파일 이름을 입력하세요 (config/ 폴더에 JSON 파일로 저장됩니다)",
+        key="ob_save_config_name",
+    )
+
+    if st.button("💾 설정 저장", type="secondary", width="stretch", key="ob_save_as"):
+        reserved = {"default", "strategy", "personal_settings"}
+        if not save_config_name or save_config_name.strip() == "":
+            st.error("❌ 파일 이름을 입력해주세요!")
+        elif save_config_name.strip().lower().removesuffix(".json") in reserved:
+            st.error("❌ 예약된 이름입니다. 다른 이름을 사용해주세요!")
+        else:
+            import json as _json
+
+            save_filename = save_config_name.strip()
+            if not save_filename.endswith(".json"):
+                save_filename += ".json"
+
+            save_path = CONFIG_DIR / save_filename
+            CONFIG_DIR.mkdir(exist_ok=True)
+
+            try:
+                with save_path.open("w", encoding="utf-8") as fh:
+                    _json.dump(_build_settings_payload(), fh, ensure_ascii=False, indent=2)
+                st.success(f"✅ 설정이 '{save_filename}'에 저장되었습니다!")
+            except Exception as e:
+                st.error(f"❌ 저장 실패: {e}")
+
+    st.divider()
+    st.header("📌 개인 설정 저장")
+    save_local_name = st.text_input(
+        "개인 설정 파일 이름",
+        placeholder="예: my_local",
+        help="시작일 · 초기자금 · 종목 등 개인 설정만 별도 파일로 저장합니다",
+        key="ob_save_local_name",
+    )
+
+    if st.button("📌 개인 설정 저장", type="secondary", width="stretch", key="ob_save_local"):
+        reserved = {"default", "strategy"}
+        if not save_local_name or save_local_name.strip() == "":
+            st.error("❌ 파일 이름을 입력해주세요!")
+        elif save_local_name.strip().lower().removesuffix(".json") in reserved:
+            st.error("❌ 예약된 이름입니다. 다른 이름을 사용해주세요!")
+        else:
+            import json as _json_local
+
+            local_payload = {
+                "start_date": start_date.isoformat(),
+                "init_cash": init_cash,
+                "target": target,
+                "momentum": momentum,
+                "bench": bench,
+                "log_scale": log_scale_enabled,
+                "allow_fractional": allow_fractional,
+                "enable_netting": enable_netting,
+                "spread_buy_levels": spread_buy_levels,
+                "spread_buy_step": spread_buy_step,
+            }
+
+            local_filename = save_local_name.strip()
+            if not local_filename.endswith(".json"):
+                local_filename += ".json"
+
+            local_save_path = CONFIG_DIR / local_filename
+            CONFIG_DIR.mkdir(exist_ok=True)
+
+            try:
+                with local_save_path.open("w", encoding="utf-8") as fh:
+                    _json_local.dump(local_payload, fh, ensure_ascii=False, indent=2)
+                st.success(f"✅ 개인 설정이 '{local_filename}'에 저장되었습니다!")
+            except Exception as e:
+                st.error(f"❌ 저장 실패: {e}")
 
 
 ui_values = {

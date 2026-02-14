@@ -18,8 +18,8 @@ NAV_LINKS = [
     ("pages/3_Optuna.py", "Optuna"),
 ]
 
-SETTINGS_PATH = Path("config") / "order_book_settings.json"
-LOCAL_SETTINGS_PATH = Path("config") / "local_settings.json"
+SETTINGS_PATH = Path("config") / "strategy.json"
+LOCAL_SETTINGS_PATH = Path("config") / "personal_settings.json"
 CONFIG_DIR = Path("config")
 LOOKBACK_DAYS = 1000  # Extra days for weekly RSI EMA warm-up convergence
 
@@ -118,8 +118,8 @@ def save_settings(payload: dict, config_path: Path | None = None) -> None:
     """Save settings to config JSON file(s).
 
     When saving to the default path, personal keys (start_date, init_cash,
-    log_scale) are split into local_settings.json while strategy keys go
-    to order_book_settings.json.
+    log_scale) are split into personal_settings.json while strategy keys go
+    to strategy.json.
     """
     path = config_path if config_path else SETTINGS_PATH
 
@@ -135,11 +135,11 @@ def save_settings(payload: dict, config_path: Path | None = None) -> None:
 def get_available_config_files() -> list[Path]:
     """Get all JSON config files in the config directory.
 
-    Excludes local_settings.json from the listing.
+    Excludes personal_settings.json from the listing.
     """
     if not CONFIG_DIR.exists():
         return []
-    excluded = {"local_settings.json"}
+    excluded = {"personal_settings.json"}
     json_files = [
         p for p in CONFIG_DIR.glob("*.json")
         if p.name not in excluded

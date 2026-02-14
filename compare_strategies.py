@@ -44,7 +44,7 @@ def main():
     target_df = download_data("SOXL", start_date, end_date)
     momo_df = download_data("QQQ", start_date, end_date)
 
-    # CURRENT CONFIG PARAMETERS (from config/order_book_settings.json)
+    # CURRENT CONFIG PARAMETERS (from config/strategy.json)
     old_defense = ModeParams(
         buy_cond_pct=1.7,
         tp_pct=1.4,
@@ -61,7 +61,7 @@ def main():
     )
     old_capital = CapitalParams(initial_cash=10000.0)
 
-    # OPTIMIZED PARAMETERS (from config/order_book_settings.json - Rank #1)
+    # OPTIMIZED PARAMETERS (from config/strategy.json - Rank #1)
     new_defense = ModeParams(
         buy_cond_pct=2.6,
         tp_pct=1.1,
@@ -106,7 +106,7 @@ def main():
     print("COMPARISON RESULTS (2025-01-01 to today)")
     print("=" * 70)
 
-    print("\n📊 CURRENT CONFIG (config/order_book_settings.json):")
+    print("\n📊 CURRENT CONFIG (config/strategy.json):")
     old_def_sl = f"{old_defense.stop_loss_pct}%" if old_defense.stop_loss_pct else "없음"
     old_off_sl = f"{old_offense.stop_loss_pct}%" if old_offense.stop_loss_pct else "없음"
     print(f"  Defense: buy={old_defense.buy_cond_pct}%, tp={old_defense.tp_pct}%, hold={old_defense.max_hold_days}d, N={old_defense.slices}, SL={old_def_sl}")

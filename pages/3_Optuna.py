@@ -553,14 +553,14 @@ if "optuna_results" in st.session_state and st.session_state["optuna_results"]:
             if not name:
                 ts = datetime.now().strftime("%m%d_%H%M")
                 name = f"optuna_rank_{save_rank}_{ts}"
-            if name.lower() in ["order_book_settings", "default"]:
+            if name.lower() in ["strategy", "default"]:
                 st.error("예약된 이름입니다. 다른 이름을 사용해주세요!")
             else:
                 saved_path = save_result_as_config(selected_res, name)
                 st.success(f"'{saved_path.name}'에 저장 완료! backtest 페이지에서 불러올 수 있습니다.")
     with col_apply:
-        if st.button("⚡ order_book_settings에 적용", key="apply_config"):
+        if st.button("⚡ strategy에 적용", key="apply_config"):
             apply_to_config(selected_res)
-            st.success(f"#{save_rank} 결과를 order_book_settings.json에 적용 완료!")
+            st.success(f"#{save_rank} 결과를 strategy.json에 적용 완료!")
 elif not run:
     st.info("왼쪽 사이드바에서 파라미터를 설정하고 'Optuna 최적화 실행' 버튼을 눌러주세요.")

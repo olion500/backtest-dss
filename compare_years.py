@@ -42,7 +42,7 @@ def main():
     print("YEAR-BY-YEAR COMPARISON: CURRENT CONFIG vs OPTIMIZED")
     print("=" * 80)
 
-    # CURRENT CONFIG PARAMETERS (from config/order_book_settings.json)
+    # CURRENT CONFIG PARAMETERS (from config/strategy.json)
     current_defense = ModeParams(
         buy_cond_pct=1.7,
         tp_pct=1.4,

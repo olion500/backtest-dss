@@ -806,8 +806,8 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
     return config
 
 
-def apply_to_config(res: OptimizationResult, config_path: str = "config/order_book_settings.json") -> None:
-    """Apply best result to order_book_settings.json."""
+def apply_to_config(res: OptimizationResult, config_path: str = "config/strategy.json") -> None:
+    """Apply best result to strategy.json."""
     path = Path(config_path)
     if path.exists():
         current = json.loads(path.read_text(encoding="utf-8"))
