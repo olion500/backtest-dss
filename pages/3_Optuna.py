@@ -280,6 +280,12 @@ with st.sidebar:
         key="optuna_top_n",
     )
     enable_netting = st.checkbox("퉁치기(순매수/순매도 상쇄)", value=True, key="optuna_netting")
+    allow_fractional = st.checkbox(
+        "소수점 거래 허용",
+        value=False,
+        help="BTC와 같은 자산의 소수점 매수를 허용합니다 (예: 0.00123 BTC). 기본적으로는 정수 주식만 거래합니다.",
+        key="optuna_fractional",
+    )
     rsi_period = st.number_input("RSI 기간(주봉)", value=14, step=1, min_value=2, key="optuna_rsi_period")
 
     st.divider()
@@ -377,6 +383,7 @@ if run:
         test_range=test_range,
         rsi_period=int(rsi_period),
         enable_netting=enable_netting,
+        allow_fractional=allow_fractional,
         n_trials=int(n_trials),
         top_n=int(top_n),
         mode_switch_strategy=mode_val,

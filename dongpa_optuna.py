@@ -113,6 +113,7 @@ class OptimizationResult:
     btc_params: dict | None = None
     mode_switch_strategy: str = "rsi"
     cash_limited_buy: bool = False
+    allow_fractional: bool = False
 
 # Suppress Optuna's verbose logging by default
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -135,6 +136,7 @@ class OptunaConfig:
     test_range: DateRange = ("2023-01-01", "2024-12-31")
     rsi_period: int = 14
     enable_netting: bool = True
+    allow_fractional: bool = False
     n_trials: int = 300
     top_n: int = 20
 
@@ -287,6 +289,7 @@ def create_objective(
             "momentum_ticker": cfg.momentum_ticker,
             "rsi_period": cfg.rsi_period,
             "enable_netting": cfg.enable_netting,
+            "allow_fractional_shares": cfg.allow_fractional,
             "cash_limited_buy": cash_limited_buy,
             "defense": defense,
             "offense": offense,
@@ -500,6 +503,7 @@ def extract_results(
             "momentum_ticker": cfg.momentum_ticker,
             "rsi_period": cfg.rsi_period,
             "enable_netting": cfg.enable_netting,
+            "allow_fractional_shares": cfg.allow_fractional,
             "defense": defense,
             "offense": offense,
             "mode_switch_strategy": mode_strategy,
@@ -578,6 +582,7 @@ def extract_results(
             btc_params=btc_params_dict,
             mode_switch_strategy=mode_strategy,
             cash_limited_buy=trial_cash_limited,
+            allow_fractional=cfg.allow_fractional,
         ))
 
     return results
@@ -702,6 +707,7 @@ def narrow_config(cfg: OptunaConfig, results: list[OptimizationResult], phase2_t
         test_range=cfg.test_range,
         rsi_period=cfg.rsi_period,
         enable_netting=cfg.enable_netting,
+        allow_fractional=cfg.allow_fractional,
         n_trials=phase2_trials if phase2_trials else cfg.n_trials * 3,
         top_n=cfg.top_n,
         mode_switch_strategy=dominant_mode,
@@ -776,6 +782,7 @@ def result_to_config_dict(res: OptimizationResult) -> dict:
         "offense_hold": res.offense.max_hold_days,
         "mode_switch_strategy_index": {"rsi": 0, "ma_cross": 1, "roc": 2, "btc_overnight": 3}.get(res.mode_switch_strategy, 0),
         "cash_limited_buy": res.cash_limited_buy,
+        "allow_fractional": res.allow_fractional,
     }
     if res.rsi_thresholds:
         config.update({
