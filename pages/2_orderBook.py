@@ -1049,6 +1049,8 @@ if enable_netting:
                     order_sheet[i] = None
                 if net_buy > 0:
                     order_sheet[buy_index]["수량"] = net_buy
+                    max_sell_p = max(s["주문가"] for s in pre_netting_sells)
+                    order_sheet[buy_index]["비고"] = f"퉁치기 후 순매수 (종가 ${max_sell_p:.2f}~${buy_price:.2f})"
                 else:
                     order_sheet[buy_index] = None
                 if net_buy > 0:
@@ -1080,6 +1082,11 @@ if enable_netting:
                         order_sheet[i] = None
                     if remaining <= 0:
                         break
+                # Update 비고 for remaining sell rows to show netting context
+                for i in nettable_sell_indices:
+                    if order_sheet[i] is not None:
+                        sp = float(order_sheet[i]["주문가"])
+                        order_sheet[i]["비고"] = f"퉁치기 후 순매도 (종가 ${sp:.2f}~${buy_price:.2f})"
                 net_sell = nettable_sell_qty - offset
                 netting_msg = f"퉁치기 적용: 매수 {fmt_qty(total_buy_qty)}주 상쇄 → 순매도 {fmt_qty(net_sell)}주 ({cash_str})"
 
@@ -1106,7 +1113,7 @@ if enable_netting:
             min_sell_price = sorted_sells[0][0]
             ranges.append({
                 "구분": "매수 (전량)",
-                "주문가": buy_price,
+                "주문가": min_sell_price - 0.01,
                 "수량": total_buy_qty,
                 "비고": f"종가 < ${min_sell_price:.2f} 시 매도미체결 → 전량매수",
             })
@@ -1200,51 +1207,30 @@ if netting_details:
         )
 
         st.divider()
-        st.markdown("#### Case 1 — 매도가 < 매수가 (퉁치기 발생)")
+        st.markdown("#### 주문 시트 읽는 법")
         st.markdown(
+            "주문 시트의 각 행은 **종가 구간별 순결과**를 보여줍니다.\n\n"
+            "예시: 매수 \\$100 500주, 매도(TP) \\$98 300주일 때\n"
             "```\n"
-            "매수 $100 500주 / 매도 $98 300주\n"
-            "→ $98~$100 구간에서 둘 다 체결 가능\n"
-            "→ 순매수 200주\n"
-            "```"
-        )
-
-        st.divider()
-        st.markdown("#### Case 2 — 매도가 > 매수가 (퉁치기 없음)")
-        st.markdown(
-            "```\n"
-            "매수 $100 500주 / 매도 $105 300주\n"
-            "→ 겹치는 구간 없음 (종가가 둘 다 체결시키는 가격이 존재하지 않음)\n"
-            "→ 각각 독립 체결, 퉁치기 불가\n"
-            "```"
-        )
-
-        st.divider()
-        st.markdown("#### Case 3 — 매도가 = 매수가")
-        st.markdown(
-            "```\n"
-            "매수 $100 500주 / 매도 $100 300주\n"
-            "→ 종가가 정확히 $100일 때만 둘 다 체결\n"
-            "→ 순매수 200주\n"
-            "```"
-        )
-
-        st.divider()
-        st.markdown("#### Case 4 — 여러 주문 혼합")
-        st.markdown(
-            "```\n"
-            "매수 $100 500주, $95 300주\n"
-            "매도 $98 200주, $102 400주\n"
-            "\n"
-            "매도 $98 vs 매수 $100: $98 ≤ $100 → 퉁치기 O\n"
-            "매도 $102 vs 매수 $100: $102 > $100 → 퉁치기 X\n"
-            "```"
+            "매도 (전량)  $100.01  300주  종가 > $100 시 매수미체결 → 전량매도\n"
+            "매수         $100.00  200주  퉁치기 후 순매수 (종가 $98~$100)\n"
+            "매수 (전량)   $97.99  500주  종가 < $98 시 매도미체결 → 전량매수\n"
+            "```\n\n"
+            "| 종가 구간 | 결과 |\n"
+            "|-----------|------|\n"
+            "| < \\$98 | 매도 미체결 → **500주 전량매수** |\n"
+            "| \\$98 ~ \\$100 | 둘 다 체결 → **순매수 200주** (퉁치기) |\n"
+            "| > \\$100 | 매수 미체결 → **300주 전량매도** |\n\n"
+            "**주문가 = 시나리오 가격 경계**\n"
+            "- 매수 (전량): `최소매도가 - \\$0.01` — 이 가격 이하면 매도 미체결\n"
+            "- 매도 (전량): `매수가 + \\$0.01` — 이 가격 이상이면 매수 미체결\n\n"
+            "**퉁치기 불가**: 매도가 > 매수가이면 겹치는 구간이 없어 각각 독립 체결"
         )
 
         st.divider()
         st.markdown("#### 스프레드 행 제외")
         st.markdown(
-            "스프레드 행(`매수 (-3%)` 등)은 \"더 떨어졌을 때\" 시나리오입니다.\n"
+            "스프레드 행(`매수 (+N주)` 등)은 \"더 떨어졌을 때\" 시나리오입니다.\n"
             "기본 매수와 동시에 체결되지 않으므로 퉁치기 대상에서 제외됩니다."
         )
 

@@ -127,7 +127,7 @@ def netting_ranges(buy_price, buy_qty, sell_orders):
 
     # ① Below all sell prices: only buy executes
     min_sell = sorted_sells[0][0]
-    ranges.append(("매수 (전량)", buy_price, buy_qty,
+    ranges.append(("매수 (전량)", min_sell - 0.01, buy_qty,
                     f"종가 < ${min_sell} 시 매도미체결"))
 
     # ② Each sell price boundary: cumulative sell increases
@@ -188,9 +188,9 @@ Order Sheet after netting:
 ┌──────────────┬──────────┬──────┬──────────────────────────────────────┐
 │ 구분         │ 주문가   │ 수량 │ 비고                                 │
 ├──────────────┼──────────┼──────┼──────────────────────────────────────┤
-│ 매도 (TP)    │ $63.73   │  1주 │ 퉁치기 후 순매도 (종가 $63.73~$65.11)│
-│ 매수 (전량)  │ $65.11   │ 28주 │ 종가 < $63.73 시 매도미체결 → 전량매수│
 │ 매도 (전량)  │ $65.12   │ 29주 │ 종가 > $65.11 시 매수미체결 → 전량매도│
+│ 매도 (TP)    │ $63.73   │  1주 │ 퉁치기 후 순매도 (종가 $63.73~$65.11)│
+│ 매수 (전량)  │ $63.72   │ 28주 │ 종가 < $63.73 시 매도미체결 → 전량매수│
 └──────────────┴──────────┴──────┴──────────────────────────────────────┘
 ```
 
@@ -207,11 +207,11 @@ Order Sheet after netting:
 ┌──────────────┬──────────┬───────┬──────────────────────────────────────────┐
 │ 구분         │ 주문가   │ 수량  │ 비고                                     │
 ├──────────────┼──────────┼───────┼──────────────────────────────────────────┤
-│ 매수         │ $100.00  │  50주 │ 퉁치기 후 순매수 (종가 $98~$100)         │
-│ 매수 (전량)  │ $100.00  │ 500주 │ 종가 < $95 시 매도미체결 → 전량매수       │
-│ 순매수       │  $95.00  │ 400주 │ 종가 $95~$97 구간 (매도 100주 체결)       │
-│ 순매수       │  $97.00  │ 250주 │ 종가 $97~$98 구간 (매도 250주 체결)       │
 │ 매도 (전량)  │ $100.01  │ 450주 │ 종가 > $100 시 매수미체결 → 전량매도      │
+│ 매수         │ $100.00  │  50주 │ 퉁치기 후 순매수 (종가 $98~$100)         │
+│ 순매수       │  $97.00  │ 250주 │ 종가 $97~$98 구간 (매도 250주 체결)       │
+│ 순매수       │  $95.00  │ 400주 │ 종가 $95~$97 구간 (매도 100주 체결)       │
+│ 매수 (전량)  │  $94.99  │ 500주 │ 종가 < $95 시 매도미체결 → 전량매수       │
 └──────────────┴──────────┴───────┴──────────────────────────────────────────┘
 ```
 
@@ -230,4 +230,4 @@ Order Sheet after netting:
 3. **SL orders** may have sell_price > buy_price (no netting) or sell_price < buy_price (netting possible)
 4. **TP orders** typically have sell_price > entry_price, but may still be ≤ today's buy limit price
 5. **Expiration sells** at prev_close will likely overlap with buy orders at `prev_close * (1 + X%)`
-6. **매도 (전량) 주문가** uses `buy_price + $0.01` to visually distinguish from 매수 (전량) at buy_price
+6. **매도 (전량) 주문가** uses `buy_price + $0.01` to represent "above buy price"; **매수 (전량) 주문가** uses `min_sell_price - $0.01` to represent "below all sells"
