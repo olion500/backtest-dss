@@ -1,9 +1,12 @@
 {
   "start_date": "2026-02-09",
-  "init_cash": 28000.0,
+  "init_cash": 40000.0,
+  "target": "SOXL",
+  "momentum": "QQQ",
+  "bench": "SOXX",
   "log_scale": true,
-  "spread_buy_levels": 5,
-  "spread_buy_step": 1,
+  "allow_fractional": false,
   "enable_netting": true,
-  "allow_fractional": false
+  "spread_buy_levels": 5,
+  "spread_buy_step": 1
 }
