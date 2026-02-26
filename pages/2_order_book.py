@@ -18,6 +18,7 @@ from engines.dongpa_engine import (
     compute_buy_and_hold_return,
     compute_equity_return,
     compute_trade_metrics,
+    explain_mode,
 )
 from ui.charts import (
     EquityPriceChartConfig,
@@ -671,7 +672,34 @@ elif ui_values.get("mode_switch_strategy") == "BTC Overnight":
 elif state.rsi_value is not None:
     mode_line += f" (주봉 RSI {state.rsi_value:.2f})"
 
-st.markdown(mode_line)
+_explanation = explain_mode(last_timestamp, _indicators, strategy)
+
+# Convert markdown bold to HTML
+def _md_to_html(md: str) -> str:
+    parts = md.split("**")
+    out = []
+    for i, p in enumerate(parts):
+        out.append(f"<b>{p}</b>" if i % 2 == 1 else p)
+    return "".join(out)
+
+_mode_html = _md_to_html(mode_line)
+_tip_html = _md_to_html(_explanation)
+
+st.markdown(
+    '<style>'
+    '.mode-hover{position:relative;display:inline-block;cursor:help;'
+    'border-bottom:1px dashed rgba(128,128,128,.5)}'
+    '.mode-hover .mode-tip{display:none;position:absolute;left:0;top:125%;'
+    'background:#262730;color:#fafafa;border:1px solid #4a4a5a;border-radius:8px;'
+    'padding:12px 16px;min-width:320px;max-width:480px;z-index:9999;'
+    'font-size:.85em;line-height:1.6;box-shadow:0 4px 12px rgba(0,0,0,.25);'
+    'white-space:pre-wrap}'
+    '.mode-hover:hover .mode-tip{display:block}'
+    '</style>'
+    f'<span class="mode-hover">{_mode_html}'
+    f'<span class="mode-tip">{_tip_html}</span></span>',
+    unsafe_allow_html=True,
+)
 if state.prev_close is not None:
     st.markdown(f"최근 종가 ({state.last_date}): **${state.prev_close:,.2f}**")
 st.markdown(f"잔여 현금: **${state.current_cash:,.2f}**, 보유 수량: **{state.current_position_qty}주**")
