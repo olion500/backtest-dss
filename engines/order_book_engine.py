@@ -454,8 +454,8 @@ def apply_netting(
     ranges.append({
         "구분": "매수",
         "주문가": netting_floor_price,
-        "수량": total_buy_qty,
-        "비고": f"종가 < ${min_sell_price:.2f} 시 매도미체결 → 전량매수",
+        "수량": offset,
+        "비고": f"종가 < ${min_sell_price:.2f} 시 매도미체결 → 매수",
     })
 
     for sp, sq in sorted_sells:
@@ -489,8 +489,8 @@ def apply_netting(
     ranges.append({
         "구분": "매도",
         "주문가": buy_price + 0.01,
-        "수량": total_sell_qty,
-        "비고": f"종가 > ${buy_price:.2f} 시 매수미체결 → 전량매도",
+        "수량": offset,
+        "비고": f"종가 > ${buy_price:.2f} 시 매수미체결 → 매도",
     })
 
     for r in ranges:
