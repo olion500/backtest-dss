@@ -120,6 +120,20 @@ class TestBuildHoldings:
         holdings = build_holdings(trades, 102.0)
         assert "만료" in holdings[0]["상태"]
 
+    def test_expiring_next_day(self):
+        """Position expiring on the next trading day (days_left=1) should show 만료."""
+        trades = _make_open_trades([{
+            "매수일자": "2024-01-02",
+            "매수체결가": 100.0,
+            "매수수량": 5,
+            "TP목표가": 110.0,
+            "SL목표가": None,
+            "최대보유일": 7,
+            "보유기간(일)": 6,
+        }])
+        holdings = build_holdings(trades, 102.0)
+        assert "만료" in holdings[0]["상태"]
+
 
 # --------------- build_order_sheet ---------------
 
@@ -190,6 +204,23 @@ class TestBuildOrderSheet:
             "SL목표가": None,
             "최대보유일": 5,
             "보유기간(일)": 5,
+        }])
+        sheet, _, _ = build_order_sheet(
+            trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
+        )
+        expiry_rows = [r for r in sheet if "만료" in r["구분"]]
+        assert len(expiry_rows) == 1
+
+    def test_expiring_next_day_sell(self):
+        """Position expiring on next trading day (days_left=1) generates a 만료 sell."""
+        trades = _make_open_trades([{
+            "매수일자": "2024-01-02",
+            "매수체결가": 100.0,
+            "매수수량": 10,
+            "TP목표가": 110.0,
+            "SL목표가": None,
+            "최대보유일": 7,
+            "보유기간(일)": 6,
         }])
         sheet, _, _ = build_order_sheet(
             trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,

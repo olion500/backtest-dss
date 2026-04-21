@@ -159,7 +159,7 @@ def build_holdings(
             status.append("TP도달")
         if sl_price and prev_close <= sl_price:
             status.append("SL도달")
-        if days_left is not None and days_left <= 0:
+        if days_left is not None and days_left <= 1:
             status.append("만료")
 
         holdings.append({
@@ -216,7 +216,11 @@ def build_order_sheet(
             is_expiring = False
             if max_hold > 0 and hold_period > 0:
                 days_left = max_hold - hold_period
-                is_expiring = days_left <= 0
+                # The order sheet is for the NEXT trading day, so the lot
+                # will have been held for hold_period+1 days.  The engine
+                # sells when days+1 >= max_hold, i.e. hold_period+1 >= max_hold,
+                # i.e. days_left <= 1.
+                is_expiring = days_left <= 1
 
             if tp_price and tp_price > 0:
                 tp_change = ((tp_price / buy_price) - 1) * 100 if buy_price else None

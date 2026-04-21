@@ -17,7 +17,6 @@ from engines.dongpa_engine import (
     compute_indicators,
     compute_buy_and_hold_return,
     compute_equity_return,
-    compute_trade_metrics,
     explain_mode,
 )
 from ui.charts import (
