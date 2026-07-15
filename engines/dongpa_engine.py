@@ -13,6 +13,25 @@ import pandas as pd
 
 # ---------------------- Indicators / Utils ----------------------
 
+def normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten yfinance MultiIndex columns (e.g. ('Close', 'SOXL')) to a
+    single level ('Close', ...).
+
+    Recent yfinance versions return MultiIndex columns even for a single
+    ticker. When that happens, ``df['Close']`` is a DataFrame rather than a
+    Series, so a mask like ``df[df['Close'].notna()]`` aligns on columns
+    instead of filtering rows — silently letting NaN-close rows (e.g. the
+    current, not-yet-closed trading day) slip through. Collapsing the ticker
+    level keeps all downstream ``df['Close']`` / ``df.loc[d, 'Close']`` access
+    scalar and correct.
+    """
+    if df is None:
+        return df
+    if isinstance(df.columns, pd.MultiIndex):
+        df = df.copy()
+        df.columns = df.columns.get_level_values(0)
+    return df
+
 def wilder_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
     up = delta.clip(lower=0)
@@ -221,8 +240,9 @@ def compute_indicators(
 ) -> tuple[pd.DataFrame, Indicators]:
     """Pure: compute all indicator series from raw data.
     Returns (aligned_target_df, indicators)."""
-    df = daily_target.copy().sort_index()
-    momo = daily_momo.copy().sort_index()
+    df = normalize_ohlcv(daily_target).copy().sort_index()
+    momo = normalize_ohlcv(daily_momo).copy().sort_index()
+    btc_data = normalize_ohlcv(btc_data)
 
     if 'Close' in df.columns:
         df = df[df['Close'].notna()].copy()
