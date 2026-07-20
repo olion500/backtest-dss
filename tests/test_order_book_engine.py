@@ -228,6 +228,27 @@ class TestBuildOrderSheet:
         expiry_rows = [r for r in sheet if "만료" in r["구분"]]
         assert len(expiry_rows) == 1
 
+    def test_expiring_lot_has_no_tp_or_sl(self):
+        """Expiring lot must not emit TP/SL rows — the 만료 sell already
+        covers those shares (both would double-count on the same close)."""
+        trades = _make_open_trades([{
+            "매수일자": "2024-01-02",
+            "매수체결가": 100.0,
+            "매수수량": 10,
+            "TP목표가": 110.0,
+            "SL목표가": 90.0,
+            "최대보유일": 7,
+            "보유기간(일)": 6,
+        }])
+        sheet, sl_sheet, _ = build_order_sheet(
+            trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
+        )
+        assert [r for r in sheet if "TP" in r["구분"]] == []
+        assert sl_sheet == []
+        expiry_rows = [r for r in sheet if "만료" in r["구분"]]
+        assert len(expiry_rows) == 1
+        assert expiry_rows[0]["수량"] == 10
+
     def test_no_cash_no_buy(self):
         """No cash → no buy order."""
         sheet, _, ctx = build_order_sheet(
@@ -298,6 +319,95 @@ class TestApplyNetting:
         # Should have floor price row (below sell price) and ceiling row (above buy price)
         assert result.netting_floor_price is not None
         assert result.netting_floor_price < 98.0
+
+
+def _net_fill(rows: list[dict], close: float) -> float:
+    """Simulate LOC fills at a given close: buys fill when close <= limit,
+    sells fill when close >= limit. Returns net share change."""
+    net = 0.0
+    for r in rows:
+        price = float(r["주문가"])
+        qty = float(r["수량"])
+        if r["구분"].startswith("매수"):
+            if close <= price + 1e-9:
+                net += qty
+        elif r["구분"].startswith("매도"):
+            if close >= price - 1e-9:
+                net -= qty
+    return net
+
+
+class TestNettingConsistency:
+    """The netted sheet must reproduce the original net outcome at every
+    close, and never list more sell shares than are actually held."""
+
+    # Real-world case: expiring lot + two TP lots + buy 20 @ 145.97
+    _SHEET = [
+        {"구분": "매도 (만료)", "주문가": 135.47, "수량": 23, "변화율": "-", "비고": "잔여일: 1일"},
+        {"구분": "매도 (TP)", "주문가": 144.28, "수량": 23, "변화율": "-", "비고": ""},
+        {"구분": "매도 (TP)", "주문가": 137.18, "수량": 22, "변화율": "-", "비고": ""},
+        {"구분": "매수", "주문가": 145.97, "수량": 20, "변화율": "-", "비고": ""},
+    ]
+
+    def _copy(self):
+        import copy
+        return copy.deepcopy(self._SHEET)
+
+    def test_net_outcome_preserved_at_every_close(self):
+        original = self._copy()
+        result = apply_netting(self._copy(), 135.47, False)
+        closes = [130.0, 135.46, 135.47, 136.0, 137.17, 137.18, 140.0,
+                  144.27, 144.28, 145.0, 145.97, 145.98, 150.0]
+        for close in closes:
+            assert _net_fill(result.order_sheet, close) == pytest.approx(
+                _net_fill(original, close)
+            ), f"net outcome mismatch at close={close}"
+
+    def test_total_sell_qty_not_exceed_holdings(self):
+        held = 23 + 23 + 22  # shares behind the sell rows
+        result = apply_netting(self._copy(), 135.47, False)
+        total_sell = sum(
+            r["수량"] for r in result.order_sheet if r["구분"].startswith("매도")
+        )
+        assert total_sell == held
+
+    def test_lowest_priced_sell_consumed_first(self):
+        result = apply_netting(self._copy(), 135.47, False)
+        assert len(result.netting_details) == 1
+        assert result.netting_details[0]["매도가"] == 135.47
+        assert result.netting_details[0]["상쇄 수량"] == 20
+
+    def test_multi_group_consumption_buy_larger(self):
+        """Buy larger than sells across two price groups → each consumed
+        group mirrors back as a buy at its own price - 0.01."""
+        import copy
+        sheet = [
+            {"구분": "매도 (TP)", "주문가": 95.0, "수량": 5, "변화율": "-", "비고": ""},
+            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 10, "변화율": "-", "비고": ""},
+            {"구분": "매수", "주문가": 100.0, "수량": 20, "변화율": "-", "비고": ""},
+        ]
+        original = copy.deepcopy(sheet)
+        result = apply_netting(sheet, 99.0, False)
+        for close in [90.0, 94.99, 95.0, 96.0, 97.99, 98.0, 99.0, 100.0, 100.01, 105.0]:
+            assert _net_fill(result.order_sheet, close) == pytest.approx(
+                _net_fill(original, close)
+            ), f"net outcome mismatch at close={close}"
+        mirror_prices = sorted(
+            r["주문가"] for r in result.order_sheet
+            if r["구분"] == "매수" and "미체결" in r.get("비고", "")
+        )
+        assert mirror_prices == [94.99, 97.99]
+
+    def test_scenario_rows_are_informational(self):
+        result = apply_netting(self._copy(), 135.47, False)
+        assert result.scenario_rows
+        # ranges: <135.47, 3 groups, >145.97 → 5 rows
+        assert len(result.scenario_rows) == 5
+        assert result.scenario_rows[0]["순결과"] == "순매수 20주"
+        assert result.scenario_rows[-1]["순결과"] == "순매도 68주"
+        # scenario rows must not leak into the order sheet
+        for r in result.order_sheet:
+            assert "구간" not in r.get("비고", "")
 
 
 # --------------- build_spread_orders ---------------

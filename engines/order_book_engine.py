@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 import pandas as pd
@@ -222,7 +222,10 @@ def build_order_sheet(
                 # i.e. days_left <= 1.
                 is_expiring = days_left <= 1
 
-            if tp_price and tp_price > 0:
+            # An expiring lot is force-closed at the close regardless of price,
+            # so a separate TP/SL order for the same shares would double-count
+            # them (both LOC orders could fill on the same close).
+            if tp_price and tp_price > 0 and not is_expiring:
                 tp_change = ((tp_price / buy_price) - 1) * 100 if buy_price else None
                 order_sheet.append({
                     "구분": "매도 (TP)",
@@ -232,7 +235,7 @@ def build_order_sheet(
                     "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else "",
                 })
 
-            if sl_price and sl_price > 0:
+            if sl_price and sl_price > 0 and not is_expiring:
                 sl_change = ((sl_price / buy_price) - 1) * 100 if buy_price else None
                 sl_order_sheet.append({
                     "구분": "매도 (SL)",
@@ -304,6 +307,7 @@ class NettingResult:
     netting_msg: str
     netting_details: list[dict]
     netting_floor_price: float | None
+    scenario_rows: list[dict] = field(default_factory=list)
 
 
 def apply_netting(
@@ -313,10 +317,24 @@ def apply_netting(
 ) -> NettingResult:
     """Offset matching sell/buy quantities in-place.
 
+    Netting consumes the lowest-priced sells first.  Each consumed sell
+    at price ``p`` comes back as a mirror buy at ``p - 0.01`` (if the
+    close lands below ``p`` that sell would not have filled, so the
+    netted-away buy must happen), and the consumed buy quantity comes
+    back as a mirror sell at ``buy_price + 0.01`` (if the close lands
+    above the buy limit the buy would not have filled, so the netted-away
+    sells must happen).  The resulting sheet reproduces the exact net
+    outcome of the original orders for every closing price, without ever
+    double-counting shares.
+
+    Per-closing-range outcomes are returned in ``scenario_rows`` — they
+    are informational only, NOT placeable orders.
+
     Returns a new ``NettingResult`` with the cleaned order sheet.
     """
     netting_msg = ""
     netting_details: list[dict] = []
+    scenario_rows: list[dict] = []
     netting_floor_price: float | None = None
 
     sell_indices = [i for i, r in enumerate(order_sheet) if r["구분"].startswith("매도")]
@@ -341,96 +359,80 @@ def apply_netting(
 
     nettable_sell_qty = sum(float(order_sheet[i]["수량"]) for i in nettable_sell_indices)
 
-    pre_netting_sells = [
-        {
-            "구분": order_sheet[i]["구분"],
-            "주문가": float(order_sheet[i]["주문가"]),
-            "수량": float(order_sheet[i]["수량"]),
-            "변화율": order_sheet[i].get("변화율", "-"),
-            "비고": order_sheet[i].get("비고", ""),
-        }
-        for i in nettable_sell_indices
-    ]
-
     if nettable_sell_qty <= 0 or total_buy_qty <= 0:
         return NettingResult(order_sheet, netting_msg, netting_details, netting_floor_price)
 
     offset = min(nettable_sell_qty, total_buy_qty)
 
-    sell_amt = sum(
-        float(order_sheet[i]["주문가"]) * float(order_sheet[i]["수량"])
-        for i in nettable_sell_indices
-    )
-    buy_amt = buy_price * min(total_buy_qty, nettable_sell_qty)
-    cash_impact = sell_amt - buy_amt
+    # Pre-netting sell groups (price → qty) for the scenario table.
+    sell_groups: dict[float, float] = defaultdict(float)
+    for i in nettable_sell_indices:
+        sell_groups[float(order_sheet[i]["주문가"])] += float(order_sheet[i]["수량"])
+    sorted_sells = sorted(sell_groups.items())
+
+    # --- consume the cheapest sells first ---
+    # Bottom-up consumption is required for the mirror rows below to
+    # reproduce the correct net outcome in every closing-price range.
+    consumed_by_price: dict[float, float] = defaultdict(float)
+    consumed_amt = 0.0
+    remaining = offset
+    for i in sorted(nettable_sell_indices, key=lambda idx: float(order_sheet[idx]["주문가"])):
+        if remaining <= 0:
+            break
+        row = order_sheet[i]
+        row_qty = float(row["수량"])
+        row_price = float(row["주문가"])
+        reduction = min(row_qty, remaining)
+        remaining -= reduction
+        consumed_by_price[row_price] += reduction
+        consumed_amt += reduction * row_price
+        netting_details.append({
+            "매도": row["구분"],
+            "매도가": row_price,
+            "매수가": buy_price,
+            "상쇄 수량": reduction,
+            "사유": f"매도가 ${row_price:.2f} ≤ 매수가 ${buy_price:.2f}",
+        })
+        new_qty = row_qty - reduction
+        if not allow_fractional:
+            new_qty = int(new_qty)
+        if new_qty > 0:
+            row["수량"] = new_qty
+            prior_note = row.get("비고", "")
+            note = f"퉁치기 {fmt_qty(reduction)}주 상쇄"
+            row["비고"] = f"{prior_note} | {note}" if prior_note else note
+        else:
+            order_sheet[i] = None  # type: ignore[assignment]
+
+    # --- reduce the buy row ---
+    net_buy = total_buy_qty - offset
+    if not allow_fractional:
+        net_buy = int(net_buy)
+    if net_buy > 0:
+        order_sheet[buy_index]["수량"] = net_buy
+        order_sheet[buy_index]["비고"] = f"퉁치기 후 순매수 ({fmt_qty(offset)}주 상쇄)"
+    else:
+        order_sheet[buy_index] = None  # type: ignore[assignment]
+
+    cash_impact = consumed_amt - buy_price * offset
     cash_str = (
         f"순 유입 ${cash_impact:,.2f}" if cash_impact >= 0 else f"순 유출 ${-cash_impact:,.2f}"
     )
 
-    if total_buy_qty >= nettable_sell_qty:
-        net_buy = total_buy_qty - offset
-        if not allow_fractional:
-            net_buy = int(net_buy)
-        for i in nettable_sell_indices:
-            row = order_sheet[i]
-            qty = float(row["수량"])
-            netting_details.append({
-                "매도": row["구분"],
-                "매도가": float(row["주문가"]),
-                "매수가": buy_price,
-                "상쇄 수량": qty,
-                "사유": f"매도가 ${float(row['주문가']):.2f} ≤ 매수가 ${buy_price:.2f}",
-            })
-            order_sheet[i] = None  # type: ignore[assignment]
-        if net_buy > 0:
-            order_sheet[buy_index]["수량"] = net_buy
-            max_sell_p = max(s["주문가"] for s in pre_netting_sells)
-            order_sheet[buy_index]["비고"] = (
-                f"퉁치기 후 순매수 (종가 ${max_sell_p:.2f}~${buy_price:.2f})"
-            )
-        else:
-            order_sheet[buy_index] = None  # type: ignore[assignment]
-        if net_buy > 0:
-            netting_msg = (
-                f"퉁치기 적용: 매도 {fmt_qty(nettable_sell_qty)}주 상쇄 → "
-                f"순매수 {fmt_qty(net_buy)}주 ({cash_str})"
-            )
-        else:
-            netting_msg = (
-                f"퉁치기 적용: 매수·매도 {fmt_qty(total_buy_qty)}주 완전상쇄 ({cash_str})"
-            )
-    else:
-        order_sheet[buy_index] = None  # type: ignore[assignment]
-        remaining = total_buy_qty
-        for i in nettable_sell_indices:
-            row_qty = float(order_sheet[i]["수량"])
-            reduction = min(row_qty, remaining)
-            new_qty = row_qty - reduction
-            remaining -= reduction
-            if not allow_fractional:
-                new_qty = int(new_qty)
-            if reduction > 0:
-                netting_details.append({
-                    "매도": order_sheet[i]["구분"],
-                    "매도가": float(order_sheet[i]["주문가"]),
-                    "매수가": buy_price,
-                    "상쇄 수량": reduction,
-                    "사유": f"매도가 ${float(order_sheet[i]['주문가']):.2f} ≤ 매수가 ${buy_price:.2f}",
-                })
-            if new_qty > 0:
-                order_sheet[i]["수량"] = new_qty
-            else:
-                order_sheet[i] = None  # type: ignore[assignment]
-            if remaining <= 0:
-                break
-        for i in nettable_sell_indices:
-            if order_sheet[i] is not None:
-                sp = float(order_sheet[i]["주문가"])
-                order_sheet[i]["비고"] = f"퉁치기 후 순매도 (종가 ${sp:.2f}~${buy_price:.2f})"
-        net_sell = nettable_sell_qty - offset
+    net_sell = nettable_sell_qty - offset
+    if net_buy > 0:
+        netting_msg = (
+            f"퉁치기 적용: 매도 {fmt_qty(offset)}주 상쇄 → "
+            f"순매수 {fmt_qty(net_buy)}주 ({cash_str})"
+        )
+    elif net_sell > 0:
         netting_msg = (
             f"퉁치기 적용: 매수 {fmt_qty(total_buy_qty)}주 상쇄 → "
             f"순매도 {fmt_qty(net_sell)}주 ({cash_str})"
+        )
+    else:
+        netting_msg = (
+            f"퉁치기 적용: 매수·매도 {fmt_qty(total_buy_qty)}주 완전상쇄 ({cash_str})"
         )
 
     if non_nettable_sell_indices:
@@ -444,73 +446,71 @@ def apply_netting(
 
     order_sheet = [r for r in order_sheet if r is not None]
 
-    # Price-range netting spread
-    sell_groups: dict[float, float] = defaultdict(float)
-    for orig in pre_netting_sells:
-        sell_groups[orig["주문가"]] += orig["수량"]
-    sorted_sells = sorted(sell_groups.items())
-
-    cum_sell = 0.0
-    ranges: list[dict] = []
-
-    min_sell_price = sorted_sells[0][0]
-    netting_floor_price = min_sell_price - 0.01
-    ranges.append({
-        "구분": "매수",
-        "주문가": netting_floor_price,
-        "수량": offset,
-        "비고": f"종가 < ${min_sell_price:.2f} 시 매도미체결 → 매수",
-    })
-
-    for sp, sq in sorted_sells:
-        cum_sell += sq
-        net = total_buy_qty - cum_sell
-        if sp == sorted_sells[-1][0]:
-            continue
-        net_qty = abs(net)
+    # --- mirror rows ---
+    # Consumed sell at price p → buy back just below p (sell would not fill).
+    for price in sorted(consumed_by_price):
+        qty = consumed_by_price[price]
         if not allow_fractional:
-            net_qty = int(net_qty)
-        if net > 0:
-            next_sp = next(s for s, _ in sorted_sells if s > sp)
-            ranges.append({
-                "구분": "매수",
-                "주문가": sp,
-                "수량": net_qty,
-                "비고": f"종가 ${sp:.2f}~${next_sp:.2f} 구간 (매도 {fmt_qty(cum_sell)}주 체결)",
-            })
-        elif net < 0:
-            next_sp = next(s for s, _ in sorted_sells if s > sp)
-            ranges.append({
-                "구분": "매도",
-                "주문가": sp,
-                "수량": net_qty,
-                "비고": f"종가 ${sp:.2f}~${next_sp:.2f} 구간 (매도 {fmt_qty(cum_sell)}주 체결)",
-            })
+            qty = int(qty)
+        if qty <= 0:
+            continue
+        mirror_price = price - 0.01
+        pct = ((mirror_price / prev_close) - 1) * 100 if prev_close else 0
+        order_sheet.append({
+            "구분": "매수",
+            "주문가": mirror_price,
+            "수량": qty,
+            "변화율": f"{pct:+.1f}%",
+            "비고": f"종가 < ${price:.2f} 시 매도미체결 → 매수",
+        })
+    if consumed_by_price:
+        netting_floor_price = min(consumed_by_price) - 0.01
 
-    total_sell_qty = cum_sell
-    if not allow_fractional:
-        total_sell_qty = int(total_sell_qty)
-    ranges.append({
+    # Consumed buy quantity → sell back just above the buy limit (buy would not fill).
+    ceiling_qty = offset if allow_fractional else int(offset)
+    ceiling_price = buy_price + 0.01
+    pct = ((ceiling_price / prev_close) - 1) * 100 if prev_close else 0
+    order_sheet.append({
         "구분": "매도",
-        "주문가": buy_price + 0.01,
-        "수량": offset,
+        "주문가": ceiling_price,
+        "수량": ceiling_qty,
+        "변화율": f"{pct:+.1f}%",
         "비고": f"종가 > ${buy_price:.2f} 시 매수미체결 → 매도",
     })
 
-    for r in ranges:
-        qty = r["수량"]
-        if not allow_fractional:
-            qty = int(qty)
-        pct = ((r["주문가"] / prev_close) - 1) * 100 if prev_close else 0
-        order_sheet.append({
-            "구분": r["구분"],
-            "주문가": r["주문가"],
-            "수량": qty,
-            "변화율": f"{pct:+.1f}%",
-            "비고": r["비고"],
-        })
+    # --- per-closing-range outcome table (informational only) ---
+    def _outcome(net: float) -> str:
+        qty = abs(net)
+        if net > 0:
+            return f"순매수 {fmt_qty(qty)}주"
+        if net < 0:
+            return f"순매도 {fmt_qty(qty)}주"
+        return "±0주"
 
-    return NettingResult(order_sheet, netting_msg, netting_details, netting_floor_price)
+    first_price = sorted_sells[0][0]
+    scenario_rows.append({
+        "종가 구간": f"< ${first_price:.2f}",
+        "순결과": _outcome(total_buy_qty),
+        "설명": "매도 전량 미체결, 매수만 체결",
+    })
+    cum_sell = 0.0
+    for idx, (sp, sq) in enumerate(sorted_sells):
+        cum_sell += sq
+        upper = sorted_sells[idx + 1][0] if idx + 1 < len(sorted_sells) else buy_price
+        scenario_rows.append({
+            "종가 구간": f"${sp:.2f} ~ ${upper:.2f}",
+            "순결과": _outcome(total_buy_qty - cum_sell),
+            "설명": f"매도 {fmt_qty(cum_sell)}주 + 매수 {fmt_qty(total_buy_qty)}주 체결",
+        })
+    scenario_rows.append({
+        "종가 구간": f"> ${buy_price:.2f}",
+        "순결과": _outcome(-nettable_sell_qty),
+        "설명": "매수 미체결, 매도 전량 체결",
+    })
+
+    return NettingResult(
+        order_sheet, netting_msg, netting_details, netting_floor_price, scenario_rows,
+    )
 
 
 # --------------- spread buy orders ---------------

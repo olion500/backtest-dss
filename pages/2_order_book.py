@@ -743,6 +743,7 @@ order_sheet, sl_order_sheet, spread_ctx = build_order_sheet(
 netting_msg = ""
 netting_details: list[dict] = []
 netting_floor_price = None
+netting_scenario_rows: list[dict] = []
 
 if enable_netting:
     netting_result = apply_netting(order_sheet, state.prev_close, allow_fractional)
@@ -750,6 +751,7 @@ if enable_netting:
     netting_msg = netting_result.netting_msg
     netting_details = netting_result.netting_details
     netting_floor_price = netting_result.netting_floor_price
+    netting_scenario_rows = netting_result.scenario_rows
 
 # Generate spread buy orders
 if spread_ctx is not None:
@@ -782,6 +784,15 @@ if netting_details:
         net_df["상쇄 수량"] = net_df["상쇄 수량"].apply(fmt)
         st.dataframe(net_df, width="stretch", hide_index=True)
 
+        if netting_scenario_rows:
+            st.divider()
+            st.markdown("#### 종가 구간별 순결과 (참고용)")
+            st.caption(
+                "실제 주문이 아닌 시나리오 요약입니다. "
+                "위 주문 시트를 전부 예약하면 각 종가 구간에서 아래 순결과가 재현됩니다."
+            )
+            st.dataframe(pd.DataFrame(netting_scenario_rows), width="stretch", hide_index=True)
+
         st.divider()
         st.markdown("#### 퉁치기 동작 원리")
         st.markdown(
@@ -796,21 +807,22 @@ if netting_details:
         st.divider()
         st.markdown("#### 주문 시트 읽는 법")
         st.markdown(
-            "주문 시트의 각 행은 **종가 구간별 순결과**를 보여줍니다.\n\n"
+            "주문 시트의 모든 행은 **실제 예약할 LOC 주문**입니다. "
+            "전부 예약하면 어떤 종가에서도 원래 주문과 동일한 순결과가 나옵니다.\n\n"
             "예시: 매수 \\$100 500주, 매도(TP) \\$98 300주일 때\n"
             "```\n"
-            "매도   $100.01  300주  종가 > $100 시 매수미체결 → 전량매도\n"
-            "매수   $100.00  200주  퉁치기 후 순매수 (종가 $98~$100)\n"
-            "매수    $97.99  500주  종가 < $98 시 매도미체결 → 전량매수\n"
+            "매도   $100.01  300주  종가 > $100 시 매수미체결 → 매도\n"
+            "매수   $100.00  200주  퉁치기 후 순매수 (300주 상쇄)\n"
+            "매수    $97.99  300주  종가 < $98 시 매도미체결 → 매수\n"
             "```\n\n"
-            "| 종가 구간 | 결과 |\n"
-            "|-----------|------|\n"
-            "| < \\$98 | 매도 미체결 → **500주 전량매수** |\n"
-            "| \\$98 ~ \\$100 | 둘 다 체결 → **순매수 200주** (퉁치기) |\n"
-            "| > \\$100 | 매수 미체결 → **300주 전량매도** |\n\n"
-            "**주문가 = 시나리오 가격 경계**\n"
-            "- 매수 (하단): `최소매도가 - \\$0.01` — 이 가격 이하면 매도 미체결\n"
-            "- 매도 (상단): `매수가 + \\$0.01` — 이 가격 이상이면 매수 미체결\n\n"
+            "| 종가 구간 | 체결되는 행 | 순결과 |\n"
+            "|-----------|------|------|\n"
+            "| < \\$98 | 매수 200 + 매수 300 | **매수 500주** |\n"
+            "| \\$98 ~ \\$100 | 매수 200 | **순매수 200주** (퉁치기) |\n"
+            "| > \\$100 | 매도 300 | **매도 300주** |\n\n"
+            "**미러 주문 규칙**\n"
+            "- 매수 (하단): 상쇄된 매도가 `- \\$0.01` — 종가가 그 아래면 매도 미체결이므로 원래 매수를 되살림\n"
+            "- 매도 (상단): `매수가 + \\$0.01` — 종가가 그 위면 매수 미체결이므로 원래 매도를 되살림\n\n"
             "**퉁치기 불가**: 매도가 > 매수가이면 겹치는 구간이 없어 각각 독립 체결"
         )
 
