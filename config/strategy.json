@@ -1,4 +1,8 @@
 {
+  "target": "SOXL",
+  "momentum": "QQQ",
+  "bench": "SOXX",
+  "cash_limited_buy": false,
   "defense_slices": 11,
   "defense_buy": 7.75,
   "defense_tp": 1.26,
@@ -10,8 +14,6 @@
   "offense_sl": 18.1,
   "offense_hold": 47,
   "mode_switch_strategy_index": 0,
-  "cash_limited_buy": false,
-  "allow_fractional": false,
   "rsi_high_threshold": 69.8,
   "rsi_mid_high": 57.7,
   "rsi_neutral": 46.9,
