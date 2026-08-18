@@ -109,7 +109,13 @@ if "ob_config_loaded" not in st.session_state:
 if "ob_loaded_defaults" not in st.session_state:
     st.session_state.ob_loaded_defaults = None
 
-today = date.today()
+# Use the New York trading date, not the local (KST) date: between local
+# midnight and the NY close, date.today() is already one day ahead of the
+# NY session, which would pull the live in-progress bar in as a final close.
+try:
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+except Exception:
+    today = date.today()
 
 # Determine defaults: use session state if a config was loaded, otherwise default merge
 if st.session_state.ob_config_loaded and st.session_state.ob_loaded_defaults:
@@ -588,8 +594,27 @@ else:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _download_prices(ticker: str, start, end):
-    """Cached yfinance download (TTL 10 min)."""
-    return yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
+    """Cached yfinance download (TTL 10 min).
+
+    repair=True reconstructs daily bars that Yahoo occasionally returns
+    with null OHLC (using intraday data), adding a "Repaired?" column.
+    NOTE: repair requires scipy; without it yf.download swallows the
+    ImportError and silently returns an empty DataFrame.
+    """
+    return yf.download(
+        ticker, start=start, end=end, progress=False, auto_adjust=False, repair=True
+    )
+
+
+def _repaired_dates(df: pd.DataFrame) -> list:
+    """Dates whose daily bar was reconstructed by yfinance repair."""
+    if df is None or "Repaired?" not in df.columns.get_level_values(0):
+        return []
+    rep = df["Repaired?"]
+    if isinstance(rep, pd.DataFrame):
+        rep = rep.iloc[:, 0]
+    mask = rep.fillna(False).astype(bool)
+    return [ts.date() for ts in rep.index[mask]]
 
 with st.spinner(f"{start_date}부터 {backtest_end_date}까지 백테스트 실행 중..."):
     df_target = _download_prices(ui_values["target"], data_fetch_start, end_fetch)
@@ -619,6 +644,14 @@ df_momo_filtered = df_momo[
 if df_target_filtered.empty:
     st.error(f"{start_date}부터 {backtest_end_date}까지 데이터가 없습니다. 시작일을 확인해주세요.")
     st.stop()
+
+_repaired = sorted(set(_repaired_dates(df_target_filtered)) | set(_repaired_dates(df_momo_filtered)))
+if _repaired:
+    _rep_str = ", ".join(d.isoformat() for d in _repaired)
+    st.warning(
+        f"⚠️ Yahoo 일봉 결손 복구: {_rep_str} 종가는 인트라데이 데이터로 재구성한 근사치입니다. "
+        "실제 공식 종가와 소폭 차이가 날 수 있습니다."
+    )
 
 strategy, capital = build_strategy_params(ui_values)
 bt_result = run_backtest(df_target_filtered, df_momo, strategy, capital, btc_data=df_btc)

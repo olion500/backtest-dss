@@ -335,16 +335,16 @@ run = st.button("백테스트 실행")
 
 if run:
     st.info("데이터 로딩 중...")
-    df_t = yf.download(target, start=start, end=end, progress=False, auto_adjust=False)
+    df_t = yf.download(target, start=start, end=end, progress=False, auto_adjust=False, repair=True)
     # Download extra data for RSI/MA warm-up
     momo_start = start - timedelta(days=LOOKBACK_DAYS)
-    df_m = yf.download(momentum, start=momo_start, end=end, progress=False, auto_adjust=False)
+    df_m = yf.download(momentum, start=momo_start, end=end, progress=False, auto_adjust=False, repair=True)
 
     # Download BTC data if needed
     df_btc = None
     if mode_switch_strategy == "BTC Overnight":
         btc_start = start - timedelta(days=LOOKBACK_DAYS)
-        df_btc = yf.download(btc_ticker, start=btc_start, end=end, progress=False, auto_adjust=False)
+        df_btc = yf.download(btc_ticker, start=btc_start, end=end, progress=False, auto_adjust=False, repair=True)
         if df_btc.empty:
             st.error(f"BTC 데이터가 비어 있습니다. 티커({btc_ticker})를 확인하세요.")
             st.stop()

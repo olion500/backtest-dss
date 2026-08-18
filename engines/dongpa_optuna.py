@@ -79,7 +79,7 @@ def _slice_by_range(df: pd.DataFrame, date_range: DateRange) -> pd.DataFrame:
 
 
 def _download_price_history(ticker: str, start: DateLike, end: DateLike) -> pd.DataFrame:
-    data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
+    data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False, repair=True)
     if data.empty:
         raise ValueError(f"No data returned for {ticker} between {start} and {end}")
     return _normalize(data)

@@ -9,6 +9,7 @@ dependencies = [
     "pandas",
     "numpy",
     "optuna",
+    "scipy>=1.18.0",
 ]
 
 [dependency-groups]
