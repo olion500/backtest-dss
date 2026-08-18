@@ -10,3 +10,8 @@ docs/
 *.md
 .coverage
 .ruff_cache/
+.venv/
+outputs/
+web/frontend/node_modules/
+.pytest_cache/
+.stitch/

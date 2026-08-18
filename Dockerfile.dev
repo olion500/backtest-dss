@@ -1,10 +1,21 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
+
+COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /bin/uv
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir streamlit yfinance pandas numpy optuna
+# The venv lives in /opt/venv (not /app/.venv) because `make dev` bind-mounts
+# the host source tree over /app, which would otherwise hide it.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 CMD ["streamlit", "run", "main.py", "--server.address=0.0.0.0", "--server.port=8501"]
