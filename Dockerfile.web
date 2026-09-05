@@ -1,0 +1,34 @@
+FROM node:22-alpine AS frontend
+
+WORKDIR /build/web/frontend
+COPY web/frontend/package.json web/frontend/package-lock.json ./
+RUN npm ci
+COPY web/frontend ./
+RUN npm run build
+
+
+FROM python:3.13-slim AS runtime
+
+COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /bin/uv
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
+
+COPY config/strategy.json ./config/strategy.json
+COPY engines ./engines
+COPY web ./web
+COPY --from=frontend /build/web/frontend/dist ./web/frontend/dist
+
+EXPOSE 8000
+
+CMD ["uvicorn", "web.api.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

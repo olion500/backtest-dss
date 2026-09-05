@@ -5,7 +5,7 @@ PORT ?= 8501
 DEV_IMAGE := $(APP_NAME)-dev
 DOCKER_RUN := docker run --rm -p $(PORT):8501 $(APP_NAME):latest
 
-.PHONY: help install run-local test build build-dev run shell dev clean
+.PHONY: help install run-local test build build-dev run shell dev clean web-install web-api web-frontend web-build web-run
 
 help:
 	@echo "Dongpa backtest helpers"
@@ -18,6 +18,11 @@ help:
 	@echo "make build-dev  Force rebuild the live-reload dev image ($(DEV_IMAGE):latest)"
 	@echo "make dev        Run dev container (auto-builds image if missing)"
 	@echo "make test       Run pytest suite"
+	@echo "make web-install Install viewer frontend dependencies"
+	@echo "make web-api    Run the FastAPI viewer API on port 8000"
+	@echo "make web-frontend Run the Vite viewer on port 5173"
+	@echo "make web-build  Build the production viewer image"
+	@echo "make web    Build and run the viewer on port 8000"
 	@echo "make clean      Remove built Docker images"
 
 install:
@@ -28,6 +33,21 @@ run-local:
 
 test:
 	uv run --group dev python -m pytest tests/ -v
+
+web-install:
+	npm --prefix web/frontend install
+
+web-api:
+	uv run uvicorn web.api.app.main:app --host 0.0.0.0 --port 8000 --reload
+
+web-frontend:
+	npm --prefix web/frontend run dev
+
+web-build:
+	docker build --file Dockerfile.web --tag $(APP_NAME)-viewer:latest .
+
+web: web-build
+	docker run --rm -p 8000:8000 $(APP_NAME)-viewer:latest
 
 build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .
@@ -51,4 +71,4 @@ dev:
 	@docker run --rm -it -p $(PORT):8501 -v "$(CURDIR)":/app $(DEV_IMAGE):latest
 
 clean:
-	- docker rmi $(APP_NAME):latest $(DEV_IMAGE):latest
+	- docker rmi $(APP_NAME):latest $(DEV_IMAGE):latest $(APP_NAME)-viewer:latest
