@@ -7,6 +7,9 @@ outputs/
 *.log
 .coverage
 .ruff_cache/
+web/frontend/dist/
+web/frontend/node_modules/
+*.tsbuildinfo
 
 
 .env
