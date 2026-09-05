@@ -24,7 +24,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install --quiet yfinance pandas
+        run: pip install --quiet "yfinance[nospam]" pandas
 
       - name: Fetch missing bars
         id: fetch
