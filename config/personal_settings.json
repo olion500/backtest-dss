@@ -5,5 +5,5 @@
   "enable_netting": true,
   "init_cash": 50000.0,
   "spread_buy_levels": 5,
-  "spread_buy_step": 1
+  "spread_buy_step": 3
 }
