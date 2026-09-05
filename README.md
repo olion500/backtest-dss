@@ -22,6 +22,12 @@ The React/FastAPI viewer keeps the existing Python engines as its single source 
 
 The API exposes `/api/v1/config/defaults`, `/api/v1/backtests/run`, `/api/v1/order-book/preview`, and `/api/docs`. Market data is cached for 10 minutes. `DONGPA_RATE_LIMIT` controls the per-IP calculation limit per minute and defaults to `12`.
 
+## Market Data Pipeline
+
+Daily OHLCV bars for the tickers in `data/tickers.txt` are committed to `data/*.csv` by a scheduled GitHub Actions workflow (`.github/workflows/update-data.yml`, weekdays after the US close). It downloads only the missing bars (with a small overlap so post-close corrections are absorbed) via `scripts/update_market_data.py`.
+
+The viewer reads these CSVs first — from the local `data/` directory when present, otherwise from raw GitHub (`DONGPA_DATA_URL` overrides the source) — and only falls back to live Yahoo Finance for untracked tickers or a stale dataset. This keeps deployed instances off Yahoo's rate-limited endpoints.
+
 ## Project Layout
 
 - `pages/` — Streamlit UI for backtests, order books, and Optuna.
