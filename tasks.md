@@ -1,6 +1,10 @@
 # Tasks
 
 ## In Progress
+- [ ] 데이터 자동 갱신 방법 결정: GitHub Actions 러너(Azure IP)가 Yahoo에 차단됨
+  - 후보 A: 집 PC 스케줄러(Windows Task Scheduler → WSL)에서 fetch + push
+  - 후보 B: Tiingo 무료 API 키 발급 후 Actions에서 Tiingo로 fetch
+  - 워크플로 cron은 임시 비활성화 (workflow_dispatch만 유지)
 - [ ] 무료 호스팅 배포 (후보: 집 PC + Cloudflare Tunnel / Render free)
 
 ## Done

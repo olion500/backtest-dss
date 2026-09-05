@@ -1,9 +1,12 @@
 name: Update market data
 
 on:
-  schedule:
-    # Weekdays 22:30 UTC — after the US close in both EST and EDT.
-    - cron: "30 22 * * 1-5"
+  # Schedule disabled for now: Yahoo hard-blocks GitHub-hosted (Azure) runner
+  # IPs — every fetch returns empty even with yfinance[nospam]. Re-enable once
+  # the fetch runs somewhere Yahoo allows (self-hosted runner or an API key
+  # based source such as Tiingo).
+  # schedule:
+  #   - cron: "30 22 * * 1-5"  # weekdays after the US close (EST and EDT)
   workflow_dispatch:
 
 permissions:
