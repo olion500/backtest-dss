@@ -46,8 +46,10 @@ web-frontend:
 web-build:
 	docker build --file Dockerfile.web --tag $(APP_NAME)-viewer:latest .
 
+# data/ is bind-mounted so the startup updater's fetches land in the repo:
+# each boot only fetches the increment, and the dataset can be committed.
 web: web-build
-	docker run --rm -p 8000:8000 $(APP_NAME)-viewer:latest
+	docker run --rm -p 8000:8000 -v "$(CURDIR)/data":/app/data $(APP_NAME)-viewer:latest
 
 build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .

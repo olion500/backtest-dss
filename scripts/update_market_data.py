@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
@@ -34,6 +35,15 @@ def load_existing(path: Path) -> pd.DataFrame | None:
     return frame
 
 
+def drop_live_bar(frame: pd.DataFrame) -> pd.DataFrame:
+    """Drop today's in-progress bar while the US session is open — running
+    mid-session must not store a provisional price as an official close."""
+    now_ny = datetime.now(ZoneInfo("America/New_York"))
+    if now_ny.hour >= 16:
+        return frame
+    return frame[frame.index < pd.Timestamp(now_ny.date())]
+
+
 def fetch(ticker: str, start: date | None) -> pd.DataFrame:
     last_error: Exception | None = None
     for attempt in range(1, RETRIES + 1):
@@ -49,7 +59,7 @@ def fetch(ticker: str, start: date | None) -> pd.DataFrame:
             frame = frame[[col for col in COLUMNS if col in frame.columns]]
             frame.index = pd.to_datetime(frame.index).tz_localize(None).normalize()
             frame.index.name = "Date"
-            return frame[frame["Close"].notna()]
+            return drop_live_bar(frame[frame["Close"].notna()])
         except Exception as exc:  # noqa: BLE001 - retry any yfinance failure
             last_error = exc
             if attempt < RETRIES:
@@ -66,6 +76,9 @@ def update_ticker(ticker: str) -> bool:
         start = (existing.index.max() - timedelta(days=OVERLAP_DAYS)).date()
 
     fresh = fetch(ticker, start)
+    if fresh.empty:  # e.g. run mid-session when only today's live bar is new
+        print(f"{ticker}: no new closed bars, last {existing.index.max().date() if existing is not None else 'n/a'}")
+        return False
     if existing is not None:
         merged = pd.concat([existing[existing.index < fresh.index.min()], fresh])
     else:
