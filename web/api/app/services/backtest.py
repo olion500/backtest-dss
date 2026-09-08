@@ -270,20 +270,31 @@ def run_order_book_view(
     return payload
 
 
+def _load_config(filename: str) -> dict:
+    path = REPO_ROOT / "config" / filename
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def default_request() -> BacktestRequest:
     today = date.today()
-    raw: dict = {}
-    config_path = REPO_ROOT / "config" / "strategy.json"
+    raw = _load_config("strategy.json")
+    personal = _load_config("personal_settings.json")
+
+    start_date = date(today.year - 4, 1, 1)
     try:
-        loaded = json.loads(config_path.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            raw = loaded
-    except (OSError, json.JSONDecodeError):
+        start_date = date.fromisoformat(personal["start_date"])
+    except (KeyError, TypeError, ValueError):
         pass
 
     strategy = StrategySettings(
         target_ticker=raw.get("target", "SOXL"),
         momentum_ticker=raw.get("momentum", "QQQ"),
+        enable_netting=personal.get("enable_netting", True),
+        allow_fractional_shares=personal.get("allow_fractional", False),
         cash_limited_buy=raw.get("cash_limited_buy", False),
         rsi_high_threshold=raw.get("rsi_high_threshold", 65),
         rsi_mid_high=raw.get("rsi_mid_high", 60),
@@ -306,8 +317,11 @@ def default_request() -> BacktestRequest:
         ),
     )
     return BacktestRequest(
-        start_date=date(today.year - 4, 1, 1),
+        start_date=start_date,
         end_date=today,
-        initial_cash=10_000,
+        initial_cash=float(personal.get("init_cash", 10_000)),
+        log_scale=personal.get("log_scale", True),
+        spread_buy_levels=int(personal.get("spread_buy_levels", 5)),
+        spread_buy_step=int(personal.get("spread_buy_step", 1)),
         strategy=strategy,
     )

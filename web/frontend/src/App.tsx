@@ -10,7 +10,9 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { StrategyStrip } from "./components/StrategyStrip";
 import type { BacktestRequest, RunView, ViewerResult, ViewName } from "./types";
 
-const STORAGE_KEY = "dongpa-viewer-settings-v1";
+// v2: server defaults now merge config/personal_settings.json; the version
+// bump discards v1 blobs saved with the old defaults (2022 start, 10k cash).
+const STORAGE_KEY = "dongpa-viewer-settings-v2";
 
 function loadLocalSettings(defaults: BacktestRequest) {
   try {
@@ -20,6 +22,9 @@ function loadLocalSettings(defaults: BacktestRequest) {
     return {
       ...defaults,
       ...parsed,
+      // A stored end_date freezes the backtest at the day the settings were
+      // saved; always follow the server's "today" instead.
+      end_date: defaults.end_date,
       strategy: {
         ...defaults.strategy,
         ...parsed.strategy,
