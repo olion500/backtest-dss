@@ -1,9 +1,17 @@
+@font-face {
+  font-family: 'Juache';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_one@1.0/BMJUA.woff') format('woff');
+  font-weight: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
-  font-family: Helvetica, Arial, system-ui, sans-serif;
+  font-family: 'Juache', Helvetica, Arial, system-ui, sans-serif;
   color: #f5f5f5;
   background: #0a0a0a;
-  font-synthesis: none;
+  /* 주아체는 단일 굵기라 굵기 합성을 허용해야 bold 스타일이 살아난다 */
+  font-synthesis: weight;
   --bg: #0a0a0a;
   --surface: #121212;
   --raised: #161616;
@@ -16,7 +24,7 @@
   --magenta: #ff2e92;
   --red: #ff4747;
   --blue: #4a8fff;
-  --mono: "Courier New", Courier, monospace;
+  --mono: 'Juache', "Courier New", Courier, monospace;
 }
 
 * { box-sizing: border-box; }
