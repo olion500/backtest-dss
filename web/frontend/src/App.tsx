@@ -73,7 +73,7 @@ function BacktestResult({ result }: { result: ViewerResult }) {
 export default function App() {
   const [view, setView] = useState<ViewName>(() => {
     const requested = window.location.hash.replace("#", "");
-    return requested === "settings" || requested === "order-book" ? requested : "backtest";
+    return requested === "settings" || requested === "backtest" ? requested : "order-book";
   });
   const [defaults, setDefaults] = useState<BacktestRequest | null>(null);
   const [request, setRequest] = useState<BacktestRequest | null>(null);
@@ -117,9 +117,9 @@ export default function App() {
   }, [view, ready]);
 
   const navItems: Array<[ViewName, string]> = [
-    ["backtest", "백테스트"],
-    ["order-book", "오더북"],
-    ["settings", "설정"],
+    ["order-book", "ORDER BOOK"],
+    ["backtest", "BACKTEST"],
+    ["settings", "SETTINGS"],
   ];
 
   if (!request) return <div className="boot-state">BOOTING VIEWER...</div>;
@@ -132,11 +132,11 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" type="button" onClick={() => setView("backtest")}>DONGPA<span>//</span></button>
+        <button className="brand" type="button" onClick={() => setView("order-book")}>DONGPA<span>//</span></button>
         <nav aria-label="주요 화면">
           {navItems.slice(0, 2).map(([name, label]) => <button key={name} className={view === name ? "active" : ""} type="button" onClick={() => setView(name)}>{label}</button>)}
-          <button type="button" className="disabled" disabled>파라미터 최적화</button>
-          <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>설정</button>
+          <button type="button" className="disabled" disabled>OPTIMIZER</button>
+          <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>SETTINGS</button>
         </nav>
         <div className="top-status"><span><i />API READY // VIEWER</span><b>browser_local.json</b><em>v0.4</em></div>
       </header>
