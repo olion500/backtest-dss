@@ -5,7 +5,14 @@ PORT ?= 8501
 DEV_IMAGE := $(APP_NAME)-dev
 DOCKER_RUN := docker run --rm -p $(PORT):8501 $(APP_NAME):latest
 
-.PHONY: help install run-local test build build-dev run shell dev clean web-install web-api web-frontend web-build web-run
+# Deploy settings live in .env (gitignored); see .env.example.
+-include .env
+GCP_REGION ?= asia-northeast1
+CLOUD_RUN_SERVICE ?= dongpa-viewer
+DONGPA_RATE_LIMIT ?= 12
+DEPLOY_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-viewer:latest
+
+.PHONY: help install run-local test build build-dev run shell dev clean web-install web-api web-frontend web-build web-run deploy
 
 help:
 	@echo "Dongpa backtest helpers"
@@ -23,6 +30,7 @@ help:
 	@echo "make web-frontend Run the Vite viewer on port 5173"
 	@echo "make web-build  Build the production viewer image"
 	@echo "make web    Build and run the viewer on port 8000"
+	@echo "make deploy     Build, push, and deploy the viewer to Cloud Run"
 	@echo "make clean      Remove built Docker images"
 
 install:
@@ -50,6 +58,21 @@ web-build:
 # each boot only fetches the increment, and the dataset can be committed.
 web: web-build
 	docker run --rm -p 8000:8000 -v "$(CURDIR)/data":/app/data $(APP_NAME)-viewer:latest
+
+deploy: web-build
+	@test -n "$(GCP_PROJECT)" || { echo "GCP_PROJECT is not set — copy .env.example to .env first"; exit 1; }
+	docker tag $(APP_NAME)-viewer:latest $(DEPLOY_IMAGE)
+	docker push $(DEPLOY_IMAGE)
+	gcloud run deploy $(CLOUD_RUN_SERVICE) \
+		--project $(GCP_PROJECT) \
+		--image $(DEPLOY_IMAGE) \
+		--region $(GCP_REGION) \
+		--allow-unauthenticated \
+		--memory 1Gi --cpu 1 \
+		--min-instances 0 --max-instances 1 \
+		--timeout 120 \
+		--iap \
+		--set-env-vars DONGPA_RATE_LIMIT=$(DONGPA_RATE_LIMIT)
 
 build:
 	docker build --file Dockerfile --tag $(APP_NAME):latest .

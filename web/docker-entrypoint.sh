@@ -8,4 +8,5 @@
     || echo "market data update failed; serving baseline + live gap-fill"
 ) &
 
-exec uvicorn web.api.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+# Cloud Run injects PORT; default to 8000 for local docker runs.
+exec uvicorn web.api.app.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips='*'
