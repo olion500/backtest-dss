@@ -3,9 +3,10 @@ import { DataTable } from "./DataTable";
 import { EquityChart } from "./EquityChart";
 import { MetricGrid } from "./MetricGrid";
 
-function valueText(value: CellValue) {
+function valueText(value: CellValue, column?: string) {
   if (value == null || value === "") return "—";
-  if (typeof value === "number") return value.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  if (column === "주문가" && typeof value === "number") return value.toFixed(2);
+  if (typeof value === "number") return value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
   return String(value);
 }
 
@@ -24,7 +25,7 @@ function OrderColumn({ title, tone, table }: { title: string; tone: "sell" | "bu
           <table className="order-table">
             <thead><tr>{columns.map((column) => <th key={column}>{column === "비고" ? "근거" : column}</th>)}</tr></thead>
             <tbody>{table.rows.map((row, index) => (
-              <tr key={index}>{columns.map((column) => <td key={column} className={column === "구분" ? tone : ""}>{valueText(row[column])}</td>)}</tr>
+              <tr key={index}>{columns.map((column) => <td key={column} className={column === "구분" ? tone : ""}>{valueText(row[column], column)}</td>)}</tr>
             ))}</tbody>
           </table>
         ) : <div className="compact-empty">예정된 주문이 없습니다.</div>}

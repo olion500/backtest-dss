@@ -11,7 +11,7 @@ interface DataTableProps {
 
 function cellText(value: CellValue) {
   if (value == null || value === "") return "—";
-  if (typeof value === "number") return value.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  if (typeof value === "number") return value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
   if (typeof value === "boolean") return value ? "ON" : "OFF";
   return String(value);
 }
