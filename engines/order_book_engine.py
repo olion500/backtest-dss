@@ -278,6 +278,12 @@ def build_order_sheet(
             else:
                 base_qty = int(effective_budget // buy_limit_price)
 
+            # The backtest skips the whole buy when the fill value exceeds cash
+            # (buys run before the day's sells, so sell proceeds never fund it).
+            # An order the cash can't cover even at its own limit is left out.
+            if base_qty > 0 and base_qty * buy_limit_price > current_cash:
+                base_qty = 0
+
             if base_qty > 0:
                 new_tp = buy_limit_price * (1 + tp_pct / 100)
                 new_sl = buy_limit_price * (1 - sl_pct / 100) if sl_pct > 0 else None
@@ -300,6 +306,7 @@ def build_order_sheet(
                     "buy_limit_price": buy_limit_price,
                     "effective_budget": effective_budget,
                     "base_qty": base_qty,
+                    "cash": current_cash,
                     "tp_pct": tp_pct,
                     "sl_pct": sl_pct,
                 }
@@ -541,10 +548,15 @@ def build_spread_orders(
 
     # Same ladder the backtest fills against (engines.dongpa_engine.spread_ladder).
     ladder = spread_ladder(eff_budget, ref_price, max_spread, s_step, allow_fractional)
+    cash = spread_ctx.get("cash")
     rows: list[dict] = []
     for n, (step_price, _step_qty) in enumerate(ladder, start=1):
         incr = n * s_step
         sp_price = float(step_price)
+        # A close at this step fills base + every step above it in one buy;
+        # the backtest skips that buy when it costs more than the cash.
+        if cash is not None and (spread_ctx["base_qty"] + incr) * sp_price > cash:
+            continue
 
         sp_tp = sp_price * (1 + s_tp_pct / 100)
         sp_sl = sp_price * (1 - s_sl_pct / 100) if s_sl_pct > 0 else None

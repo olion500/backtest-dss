@@ -160,11 +160,33 @@ class TestBuildOrderSheet:
 
     def test_not_cash_limited_uses_full_tranche_and_warns(self):
         ui = {**_DEFAULT_UI, "cash_limited_buy": False}
-        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
+        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 950.0, 1000.0, "defense", ui, False)
         buy = next(r for r in sheet if r["구분"] == "매수")
         assert ctx["effective_budget"] == 1000.0
-        assert buy["수량"] == 9  # 1000 // 103
+        assert buy["수량"] == 9  # 1000 // 103 → 927 <= 950 cash
         assert "현금 부족" in buy["비고"]
+
+    def test_not_cash_limited_skips_buy_cash_cannot_cover(self):
+        """9 × 103 = 927 > 500 cash: the backtest would skip the buy, so no order."""
+        ui = {**_DEFAULT_UI, "cash_limited_buy": False}
+        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
+        assert not any(r["구분"] == "매수" for r in sheet)
+        assert ctx is None
+
+    def test_skipped_buy_leaves_sells_unnetted(self):
+        trades = _make_open_trades([{
+            "매수일자": "2024-01-02",
+            "매수체결가": 98.0,
+            "매수수량": 10,
+            "TP목표가": 101.0,
+            "SL목표가": None,
+            "최대보유일": 30,
+            "보유기간(일)": 3,
+        }])
+        sheet, _, ctx = build_order_sheet(trades, 100.0, 50.0, 1000.0, "defense", _DEFAULT_UI, False)
+        result = apply_netting(sheet, 100.0, False)
+        assert ctx is None
+        assert [(r["구분"], r["수량"]) for r in result.order_sheet] == [("매도 (TP)", 10)]
 
     def test_buy_only_no_positions(self):
         """No open positions, only a buy order is generated."""
@@ -456,6 +478,22 @@ class TestBuildSpreadOrders:
         assert len(rows) == 3
         for r in rows:
             assert r["주문가"] < 97.99
+
+    def test_ladder_drops_steps_cash_cannot_cover(self):
+        ctx = {
+            "buy_limit_price": 100.0,
+            "effective_budget": 1000.0,
+            "base_qty": 10,
+            "cash": 1000.0,
+            "tp_pct": 2.0,
+            "sl_pct": 0.0,
+        }
+        rows = build_spread_orders(ctx, None, 100.0, {"spread_buy_levels": 3, "spread_buy_step": 1}, False)
+        full = build_spread_orders({**ctx, "cash": 10_000.0}, None, 100.0, {"spread_buy_levels": 3, "spread_buy_step": 1}, False)
+        assert len(full) == 3
+        kept = [r for n, r in enumerate(full, start=1) if (10 + n) * r["주문가"] <= 1000.0]
+        assert rows == kept
+        assert [r["주문가"] for r in rows] == [83.33, 76.92]  # 11 × 90.91 = 1000.01 > cash
 
     def test_zero_levels(self):
         ctx = {
