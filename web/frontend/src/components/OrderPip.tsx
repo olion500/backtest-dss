@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { drawCard, VIDEO_CARD_SIZE } from "../pip/drawCard";
-import { buildSteps, ladderLabel, orderCount, priceText, qtyText, stepSide, type PipStep } from "../pip/steps";
+import { buildSteps, ladderLabel, orderCount, orderPriceText, priceText, qtyText, stepSide, type PipStep } from "../pip/steps";
 import type { OrderBookPayload } from "../types";
 
 // 주문을 한 건씩 띄워 MTS에 보고 따라 입력하는 창. 브라우저가 가진 기능에 따라 방식을 고른다.
@@ -113,7 +113,7 @@ function PipStepper({
 
       {step.kind === "single" ? (
         <div className="opip-main">
-          <span className={`opip-price ${step.order.side}`}>{priceText(step.order.price)}</span>
+          <span className={`opip-price ${step.order.side}`}>{orderPriceText(step.order)}</span>
           <span className="opip-qty">{qtyText(step.order.qty)}<small>주</small></span>
           {/* 설명이 없어도 줄을 남겨 매수·매도의 숫자 위치를 맞춘다 */}
           <span className="opip-note">{step.order.note || " "}</span>

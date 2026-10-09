@@ -50,10 +50,6 @@ export function OrderBookView({
           <header className="panel-header"><span className="eyebrow">퉁치기 상세 // NETTING</span><small>{orderBook.netting_scenarios.rows.length} 구간</small></header>
           {orderBook.netting_scenarios.rows.length ? <DataTable title="종가 구간별 순결과" eyebrow="SCENARIOS" table={orderBook.netting_scenarios} filename={`dongpa_netting_${result.meta.target_ticker}.csv`} limit={0} embedded /> : <div className="compact-empty">상쇄 대상이 없습니다.</div>}
         </div>
-        <div className="detail-card">
-          <header className="panel-header"><span className="eyebrow">손절 주문 // STOP LOSS</span><small>{orderBook.stop_loss_orders.rows.length}건</small></header>
-          {orderBook.stop_loss_orders.rows.length ? <DataTable title="손절 주문" eyebrow="SL" table={orderBook.stop_loss_orders} filename={`dongpa_stop_loss_${result.meta.target_ticker}.csv`} limit={0} embedded copyColumn="주문가" /> : <div className="disabled-state"><strong>손절 비활성 // SL = 0.0%</strong><p>손절값을 설정하면 트랜치별 손절가가 여기에 표시됩니다.</p></div>}
-        </div>
       </section>
 
       {result.equity.length ? (

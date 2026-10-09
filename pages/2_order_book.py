@@ -41,6 +41,7 @@ from engines.order_book_engine import (
     extract_state,
     build_holdings,
     build_order_sheet,
+    build_stop_loss_orders,
     apply_netting,
     build_spread_orders,
 )
@@ -703,7 +704,7 @@ else:
     st.subheader("다음 거래일 LOC 주문 시트")
 
 # Build order sheet via order_book_engine
-order_sheet, sl_order_sheet, spread_ctx = build_order_sheet(
+order_sheet, spread_ctx = build_order_sheet(
     open_trades,
     state.prev_close,
     state.current_cash,
@@ -733,6 +734,9 @@ if spread_ctx is not None:
         spread_ctx, netting_floor_price, state.prev_close, ui_values, allow_fractional,
     )
     order_sheet.extend(spread_rows)
+
+# Lots the backtest stop-lost on the last close: the account sells them by MOC.
+order_sheet.extend(build_stop_loss_orders(trade_log, state.last_date))
 
 # Display order sheet
 if order_sheet:
@@ -806,13 +810,6 @@ if netting_details:
             "스프레드 행(`매수 (+N주)` 등)은 \"더 떨어졌을 때\" 시나리오입니다.\n"
             "기본 매수와 동시에 체결되지 않으므로 퉁치기 대상에서 제외됩니다."
         )
-
-# Show SL orders in a collapsible table to keep the main sheet compact
-if sl_order_sheet:
-    with st.expander("매도 SL 주문 보기", expanded=False):
-        sl_df = pd.DataFrame(sl_order_sheet)
-        sl_df["주문가"] = sl_df["주문가"].apply(lambda x: f"${x:.2f}")
-        st.dataframe(sl_df, width="stretch", hide_index=True)
 
 st.markdown("---")
 

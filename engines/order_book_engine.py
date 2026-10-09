@@ -182,6 +182,24 @@ def build_holdings(
 
 # --------------- order sheet ---------------
 
+# Expiry sell: placed as MOC (market on close), not LOC — it fills at any close.
+MOC_SELL = "매도 (MOC)"
+# Stop loss: the backtest sells when close <= SL, which no LOC order can express
+# (a LOC sell fills when close >= its price) and the close is unknown when orders
+# go in. So the sheet lists the lots the backtest stop-lost on the last close,
+# and the account sells them by MOC one session late.
+SL_MOC_SELL = "매도 (손절)"
+
+
+def is_moc(row: dict) -> bool:
+    return row.get("구분") == MOC_SELL
+
+
+def _netting_price(row: dict) -> float:
+    """Price a sell row fills from: an MOC sell fills at every close."""
+    return 0.0 if is_moc(row) else float(row["주문가"])
+
+
 def build_order_sheet(
     open_trades: pd.DataFrame,
     prev_close: float | None,
@@ -190,15 +208,14 @@ def build_order_sheet(
     current_mode: str,
     ui_values: dict,
     allow_fractional: bool,
-) -> tuple[list[dict], list[dict], dict | None]:
-    """Build sell (TP/SL/expiry) + buy orders.
+) -> tuple[list[dict], dict | None]:
+    """Build sell (TP/expiry) + buy orders.
 
-    Returns (order_sheet, sl_order_sheet, spread_ctx).
+    Returns (order_sheet, spread_ctx).
     ``spread_ctx`` is passed to :func:`build_spread_orders` later
     (after netting decides the reference price).
     """
     order_sheet: list[dict] = []
-    sl_order_sheet: list[dict] = []
 
     # --- sell orders ---
     if not open_trades.empty and prev_close:
@@ -207,7 +224,6 @@ def build_order_sheet(
             buy_price = safe_float(trade.get("매수체결가"))
             buy_qty = safe_int(trade.get("매수수량", 0))
             tp_price = safe_float(trade.get("TP목표가"))
-            sl_price = safe_float(trade.get("SL목표가"))
             max_hold = safe_int(trade.get("최대보유일", 0))
 
             if buy_qty <= 0:
@@ -230,30 +246,22 @@ def build_order_sheet(
             if tp_price and tp_price > 0 and not is_expiring:
                 tp_change = ((tp_price / buy_price) - 1) * 100 if buy_price else None
                 order_sheet.append({
-                    "구분": "매도 (TP)",
+                    "구분": "매도 (익절)",
                     "주문가": tp_price,
                     "수량": buy_qty,
                     "변화율": f"{tp_change:+.1f}%" if tp_change is not None else "-",
                     "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else "",
                 })
 
-            if sl_price and sl_price > 0 and not is_expiring:
-                sl_change = ((sl_price / buy_price) - 1) * 100 if buy_price else None
-                sl_order_sheet.append({
-                    "구분": "매도 (SL)",
-                    "주문가": sl_price,
-                    "수량": buy_qty,
-                    "변화율": f"{sl_change:+.1f}%" if sl_change is not None else "-",
-                    "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else "",
-                })
-
             if is_expiring:
+                # The backtest force-closes at the close whatever the price, so this
+                # is a market-on-close order; the prior close is only a reference.
                 order_sheet.append({
-                    "구분": "매도 (만료)",
+                    "구분": MOC_SELL,
                     "주문가": prev_close,
                     "수량": buy_qty,
                     "변화율": f"{((prev_close / buy_price) - 1) * 100:+.1f}%" if buy_price else "-",
-                    "비고": f"잔여일: {days_left}일",
+                    "비고": f"보유기간 만료 → 가격 무관 종가 매도 (잔여일: {days_left}일)",
                 })
 
     # --- buy order ---
@@ -288,7 +296,7 @@ def build_order_sheet(
                 new_tp = buy_limit_price * (1 + tp_pct / 100)
                 new_sl = buy_limit_price * (1 - sl_pct / 100) if sl_pct > 0 else None
 
-                note = f"→ TP: ${new_tp:.2f}, SL: ${new_sl:.2f}" if new_sl else f"→ TP: ${new_tp:.2f}"
+                note = f"→ 익절: ${new_tp:.2f}, 손절: ${new_sl:.2f}" if new_sl else f"→ 익절: ${new_tp:.2f}"
                 if not cash_limited and tranche_budget > current_cash:
                     note += (
                         f" | 현금 부족: 현금 ${current_cash:,.2f} < 예산 ${tranche_budget:,.2f}"
@@ -311,7 +319,38 @@ def build_order_sheet(
                     "sl_pct": sl_pct,
                 }
 
-    return order_sheet, sl_order_sheet, spread_ctx
+    return order_sheet, spread_ctx
+
+
+def build_stop_loss_orders(trade_log: pd.DataFrame, last_date) -> list[dict]:
+    """MOC sells for the lots the backtest stop-lost at ``last_date``'s close.
+
+    The order book already treats them as sold; the account still holds them
+    and sells at the next close. Kept out of netting.
+    """
+    if trade_log.empty or "청산사유" not in trade_log:
+        return []
+    sold = trade_log[
+        (trade_log["청산사유"] == "SL") & (trade_log["매도일자"] == str(last_date))
+    ]
+    rows: list[dict] = []
+    for _, trade in sold.iterrows():
+        qty = safe_float(trade.get("매도수량"))
+        sell_price = safe_float(trade.get("매도평균"))
+        sl_price = safe_float(trade.get("SL목표가"))
+        if not qty or not sell_price:
+            continue
+        rows.append({
+            "구분": SL_MOC_SELL,
+            "주문가": sell_price,
+            "수량": qty if qty != int(qty) else int(qty),
+            "변화율": "-",
+            "비고": (
+                f"{last_date} 종가 ${sell_price:.2f} ≤ 손절가 ${sl_price:.2f} → 백테스트는 매도 완료, 계좌는 MOC 매도"
+                if sl_price else f"{last_date} 손절 → 백테스트는 매도 완료, 계좌는 MOC 매도"
+            ) + f" | 매수일: {trade.get('매수일자', '')}",
+        })
+    return rows
 
 
 # --------------- netting ---------------
@@ -366,7 +405,7 @@ def apply_netting(
     nettable_sell_indices: list[int] = []
     non_nettable_sell_indices: list[int] = []
     for i in sell_indices:
-        sell_price = float(order_sheet[i]["주문가"])
+        sell_price = _netting_price(order_sheet[i])
         if sell_price <= buy_price:
             nettable_sell_indices.append(i)
         else:
@@ -382,7 +421,7 @@ def apply_netting(
     # Pre-netting sell groups (price → qty) for the scenario table.
     sell_groups: dict[float, float] = defaultdict(float)
     for i in nettable_sell_indices:
-        sell_groups[float(order_sheet[i]["주문가"])] += float(order_sheet[i]["수량"])
+        sell_groups[_netting_price(order_sheet[i])] += float(order_sheet[i]["수량"])
     sorted_sells = sorted(sell_groups.items())
 
     # --- consume the cheapest sells first ---
@@ -391,7 +430,7 @@ def apply_netting(
     consumed_by_price: dict[float, float] = defaultdict(float)
     consumed_amt = 0.0
     remaining = offset
-    for i in sorted(nettable_sell_indices, key=lambda idx: float(order_sheet[idx]["주문가"])):
+    for i in sorted(nettable_sell_indices, key=lambda idx: _netting_price(order_sheet[idx])):
         if remaining <= 0:
             break
         row = order_sheet[i]
@@ -399,14 +438,17 @@ def apply_netting(
         row_price = float(row["주문가"])
         reduction = min(row_qty, remaining)
         remaining -= reduction
-        consumed_by_price[row_price] += reduction
+        consumed_by_price[_netting_price(row)] += reduction
         consumed_amt += reduction * row_price
         netting_details.append({
             "매도": row["구분"],
             "매도가": row_price,
             "매수가": buy_price,
             "상쇄 수량": reduction,
-            "사유": f"매도가 ${row_price:.2f} ≤ 매수가 ${buy_price:.2f}",
+            "사유": (
+                "MOC 매도는 항상 체결" if is_moc(row)
+                else f"매도가 ${row_price:.2f} ≤ 매수가 ${buy_price:.2f}"
+            ),
         })
         new_qty = row_qty - reduction
         if not allow_fractional:
@@ -463,7 +505,9 @@ def apply_netting(
 
     # --- mirror rows ---
     # Consumed sell at price p → buy back just below p (sell would not fill).
-    for price in sorted(consumed_by_price):
+    # An MOC sell (p = 0) fills at every close, so it needs no mirror.
+    mirrored = sorted(p for p in consumed_by_price if p > 0)
+    for price in mirrored:
         qty = consumed_by_price[price]
         if not allow_fractional:
             qty = int(qty)
@@ -472,21 +516,21 @@ def apply_netting(
         mirror_price = price - 0.01
         pct = ((mirror_price / prev_close) - 1) * 100 if prev_close else 0
         order_sheet.append({
-            "구분": "매수",
+            "구분": "매수 (퉁치기)",
             "주문가": mirror_price,
             "수량": qty,
             "변화율": f"{pct:+.1f}%",
             "비고": f"종가 < ${price:.2f} 시 매도미체결 → 매수",
         })
-    if consumed_by_price:
-        netting_floor_price = min(consumed_by_price) - 0.01
+    if mirrored:
+        netting_floor_price = mirrored[0] - 0.01
 
     # Consumed buy quantity → sell back just above the buy limit (buy would not fill).
     ceiling_qty = offset if allow_fractional else int(offset)
     ceiling_price = buy_price + 0.01
     pct = ((ceiling_price / prev_close) - 1) * 100 if prev_close else 0
     order_sheet.append({
-        "구분": "매도",
+        "구분": "매도 (퉁치기)",
         "주문가": ceiling_price,
         "수량": ceiling_qty,
         "변화율": f"{pct:+.1f}%",
@@ -503,17 +547,18 @@ def apply_netting(
         return "±0주"
 
     first_price = sorted_sells[0][0]
-    scenario_rows.append({
-        "종가 구간": f"< ${first_price:.2f}",
-        "순결과": _outcome(total_buy_qty),
-        "설명": "매도 전량 미체결, 매수만 체결",
-    })
+    if first_price > 0:
+        scenario_rows.append({
+            "종가 구간": f"< ${first_price:.2f}",
+            "순결과": _outcome(total_buy_qty),
+            "설명": "매도 전량 미체결, 매수만 체결",
+        })
     cum_sell = 0.0
     for idx, (sp, sq) in enumerate(sorted_sells):
         cum_sell += sq
         upper = sorted_sells[idx + 1][0] if idx + 1 < len(sorted_sells) else buy_price
         scenario_rows.append({
-            "종가 구간": f"${sp:.2f} ~ ${upper:.2f}",
+            "종가 구간": f"${sp:.2f} ~ ${upper:.2f}" if sp > 0 else f"< ${upper:.2f}",
             "순결과": _outcome(total_buy_qty - cum_sell),
             "설명": f"매도 {fmt_qty(cum_sell)}주 + 매수 {fmt_qty(total_buy_qty)}주 체결",
         })
@@ -562,9 +607,9 @@ def build_spread_orders(
         sp_sl = sp_price * (1 - s_sl_pct / 100) if s_sl_pct > 0 else None
         pct = ((sp_price / prev_close) - 1) * 100 if prev_close else 0
 
-        note = f"TP: ${sp_tp:.2f}"
+        note = f"익절: ${sp_tp:.2f}"
         if sp_sl:
-            note += f", SL: ${sp_sl:.2f}"
+            note += f", 손절: ${sp_sl:.2f}"
 
         rows.append({
             "구분": f"매수 (+{incr}주)",

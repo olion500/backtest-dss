@@ -78,7 +78,6 @@ export interface OrderBookPayload {
   };
   holdings: TablePayload;
   orders: TablePayload;
-  stop_loss_orders: TablePayload;
   netting_message: string;
   netting_details: TablePayload;
   netting_scenarios: TablePayload;

@@ -271,19 +271,18 @@ def spread_fill_qty(budget, ref_price, close, step: int, allow_fractional: bool 
     return Decimal(n * step)
 
 
-def netting_floor_price(lots: list[dict], buy_limit: Decimal, prev_close: Decimal) -> Decimal | None:
+def netting_floor_price(lots: list[dict], buy_limit: Decimal) -> Decimal | None:
     """Order-book netting floor: cheapest sell order at or below the buy limit, minus a cent.
 
-    Mirrors ``apply_netting``: the sell sheet holds each lot's TP, or the prior
-    close for a lot that expires today. When any of those sit at or below the buy
-    limit the order book anchors its spread ladder one cent under the cheapest.
+    Mirrors ``apply_netting``: the sell sheet holds each lot's TP at or below the
+    buy limit, and the order book anchors its spread ladder one cent under the
+    cheapest. A lot that expires today is an MOC sell, which needs no mirror buy.
     """
     prices = []
     for lot in lots:
         expiring = lot['max_hold'] > 0 and lot['days'] + 1 >= lot['max_hold']
-        price = prev_close if expiring else lot['tp']
-        if price <= buy_limit:
-            prices.append(price)
+        if not expiring and lot['tp'] <= buy_limit:
+            prices.append(lot['tp'])
     if not prices:
         return None
     return money(min(prices) - Decimal("0.01"))
@@ -828,7 +827,7 @@ def run_backtest(
                 if share_qty > Decimal("0"):
                     ref_price = buy_limit
                     if params.enable_netting:
-                        ref_price = netting_floor_price(lots, buy_limit, prev_close) or buy_limit
+                        ref_price = netting_floor_price(lots, buy_limit) or buy_limit
                     share_qty += spread_fill_qty(
                         exec_budget,
                         ref_price,

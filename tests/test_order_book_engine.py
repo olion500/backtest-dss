@@ -1,5 +1,7 @@
 """Tests for order_book_engine pure functions."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
@@ -9,6 +11,7 @@ from engines.order_book_engine import (
     apply_netting,
     build_holdings,
     build_order_sheet,
+    build_stop_loss_orders,
     build_spread_orders,
     normalize_mode,
     safe_float,
@@ -135,6 +138,24 @@ class TestBuildHoldings:
         assert "만료" in holdings[0]["상태"]
 
 
+# --------------- build_stop_loss_orders ---------------
+
+class TestBuildStopLossOrders:
+    _LOG = pd.DataFrame([
+        {"매수일자": "2024-01-02", "매도일자": "2024-01-10", "매도평균": 88.5, "매도수량": 10.0, "SL목표가": 90.0, "청산사유": "SL", "상태": "완료"},
+        {"매수일자": "2024-01-03", "매도일자": "2024-01-10", "매도평균": 88.5, "매도수량": 7.0, "SL목표가": None, "청산사유": "TP", "상태": "완료"},
+        {"매수일자": "2024-01-04", "매도일자": "2024-01-09", "매도평균": 89.0, "매도수량": 5.0, "SL목표가": 92.0, "청산사유": "SL", "상태": "완료"},
+    ])
+
+    def test_lists_only_last_day_stop_losses_as_moc(self):
+        rows = build_stop_loss_orders(self._LOG, date(2024, 1, 10))
+        assert [(r["구분"], r["수량"], r["주문가"]) for r in rows] == [("매도 (손절)", 10, 88.5)]
+        assert "MOC" in rows[0]["비고"]
+
+    def test_empty_log(self):
+        assert build_stop_loss_orders(pd.DataFrame(), date(2024, 1, 10)) == []
+
+
 # --------------- build_order_sheet ---------------
 
 _DEFAULT_UI = {
@@ -152,7 +173,7 @@ _DEFAULT_UI = {
 class TestBuildOrderSheet:
     def test_cash_limited_caps_budget_at_cash(self):
         ui = {**_DEFAULT_UI, "cash_limited_buy": True}
-        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
+        sheet, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
         buy = next(r for r in sheet if r["구분"] == "매수")
         assert ctx["effective_budget"] == 500.0
         assert buy["수량"] == 4  # 500 // 103
@@ -160,7 +181,7 @@ class TestBuildOrderSheet:
 
     def test_not_cash_limited_uses_full_tranche_and_warns(self):
         ui = {**_DEFAULT_UI, "cash_limited_buy": False}
-        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 950.0, 1000.0, "defense", ui, False)
+        sheet, ctx = build_order_sheet(pd.DataFrame(), 100.0, 950.0, 1000.0, "defense", ui, False)
         buy = next(r for r in sheet if r["구분"] == "매수")
         assert ctx["effective_budget"] == 1000.0
         assert buy["수량"] == 9  # 1000 // 103 → 927 <= 950 cash
@@ -169,7 +190,7 @@ class TestBuildOrderSheet:
     def test_not_cash_limited_skips_buy_cash_cannot_cover(self):
         """9 × 103 = 927 > 500 cash: the backtest would skip the buy, so no order."""
         ui = {**_DEFAULT_UI, "cash_limited_buy": False}
-        sheet, _, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
+        sheet, ctx = build_order_sheet(pd.DataFrame(), 100.0, 500.0, 1000.0, "defense", ui, False)
         assert not any(r["구분"] == "매수" for r in sheet)
         assert ctx is None
 
@@ -183,19 +204,18 @@ class TestBuildOrderSheet:
             "최대보유일": 30,
             "보유기간(일)": 3,
         }])
-        sheet, _, ctx = build_order_sheet(trades, 100.0, 50.0, 1000.0, "defense", _DEFAULT_UI, False)
+        sheet, ctx = build_order_sheet(trades, 100.0, 50.0, 1000.0, "defense", _DEFAULT_UI, False)
         result = apply_netting(sheet, 100.0, False)
         assert ctx is None
-        assert [(r["구분"], r["수량"]) for r in result.order_sheet] == [("매도 (TP)", 10)]
+        assert [(r["구분"], r["수량"]) for r in result.order_sheet] == [("매도 (익절)", 10)]
 
     def test_buy_only_no_positions(self):
         """No open positions, only a buy order is generated."""
-        sheet, sl_sheet, ctx = build_order_sheet(
+        sheet, ctx = build_order_sheet(
             pd.DataFrame(), 100.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
         buy_rows = [r for r in sheet if r["구분"] == "매수"]
         assert len(buy_rows) == 1
-        assert sl_sheet == []
         assert ctx is not None
 
     def test_sell_tp_generated(self):
@@ -209,14 +229,14 @@ class TestBuildOrderSheet:
             "최대보유일": 30,
             "보유기간(일)": 3,
         }])
-        sheet, sl_sheet, ctx = build_order_sheet(
+        sheet, ctx = build_order_sheet(
             trades, 98.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
-        tp_rows = [r for r in sheet if "TP" in r["구분"]]
+        tp_rows = [r for r in sheet if "익절" in r["구분"]]
         assert len(tp_rows) == 1
 
-    def test_sell_sl_goes_to_sl_sheet(self):
-        """SL sell order goes to the separate sl sheet."""
+    def test_open_lot_gets_no_stop_loss_row(self):
+        """An open lot's SL is unknown until the close, so it is not on the sheet."""
         trades = _make_open_trades([{
             "매수일자": "2024-01-02",
             "매수체결가": 100.0,
@@ -226,11 +246,10 @@ class TestBuildOrderSheet:
             "최대보유일": 30,
             "보유기간(일)": 3,
         }])
-        sheet, sl_sheet, _ = build_order_sheet(
+        sheet, _ = build_order_sheet(
             trades, 98.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
-        assert len(sl_sheet) == 1
-        assert sl_sheet[0]["구분"] == "매도 (SL)"
+        assert not any("손절" in r["구분"] for r in sheet)
 
     def test_expiring_sell(self):
         """Position at max hold generates a 만료 sell."""
@@ -243,10 +262,10 @@ class TestBuildOrderSheet:
             "최대보유일": 5,
             "보유기간(일)": 5,
         }])
-        sheet, _, _ = build_order_sheet(
+        sheet, _ = build_order_sheet(
             trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
-        expiry_rows = [r for r in sheet if "만료" in r["구분"]]
+        expiry_rows = [r for r in sheet if r["구분"] == "매도 (MOC)"]
         assert len(expiry_rows) == 1
 
     def test_expiring_next_day_sell(self):
@@ -260,10 +279,10 @@ class TestBuildOrderSheet:
             "최대보유일": 7,
             "보유기간(일)": 6,
         }])
-        sheet, _, _ = build_order_sheet(
+        sheet, _ = build_order_sheet(
             trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
-        expiry_rows = [r for r in sheet if "만료" in r["구분"]]
+        expiry_rows = [r for r in sheet if r["구분"] == "매도 (MOC)"]
         assert len(expiry_rows) == 1
 
     def test_expiring_lot_has_no_tp_or_sl(self):
@@ -278,18 +297,17 @@ class TestBuildOrderSheet:
             "최대보유일": 7,
             "보유기간(일)": 6,
         }])
-        sheet, sl_sheet, _ = build_order_sheet(
+        sheet, _ = build_order_sheet(
             trades, 102.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False,
         )
-        assert [r for r in sheet if "TP" in r["구분"]] == []
-        assert sl_sheet == []
-        expiry_rows = [r for r in sheet if "만료" in r["구분"]]
+        assert [r for r in sheet if "익절" in r["구분"]] == []
+        expiry_rows = [r for r in sheet if r["구분"] == "매도 (MOC)"]
         assert len(expiry_rows) == 1
         assert expiry_rows[0]["수량"] == 10
 
     def test_no_cash_no_buy(self):
         """No cash → no buy order."""
-        sheet, _, ctx = build_order_sheet(
+        sheet, ctx = build_order_sheet(
             pd.DataFrame(), 100.0, 0.0, 0.0, "defense", _DEFAULT_UI, False,
         )
         buy_rows = [r for r in sheet if r["구분"] == "매수"]
@@ -303,7 +321,7 @@ class TestApplyNetting:
     def test_no_netting_without_overlap(self):
         """Sell price > buy price → no netting."""
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 110.0, "수량": 10, "변화율": "+10%", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 110.0, "수량": 10, "변화율": "+10%", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "-3%", "비고": ""},
         ]
         result = apply_netting(sheet, 105.0, False)
@@ -316,20 +334,20 @@ class TestApplyNetting:
     def test_full_netting(self):
         """Equal sell and buy qty → complete offset."""
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 10, "변화율": "+2%", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 98.0, "수량": 10, "변화율": "+2%", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "-3%", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, False)
         assert "완전상쇄" in result.netting_msg
-        # No plain 매수 or 매도 (TP) left — only scenario rows
-        tp_rows = [r for r in result.order_sheet if r["구분"] == "매도 (TP)"]
+        # No plain 매수 or 매도 (익절) left — only scenario rows
+        tp_rows = [r for r in result.order_sheet if r["구분"] == "매도 (익절)"]
         buy_plain = [r for r in result.order_sheet if r["구분"] == "매수" and "퉁치기" not in r.get("비고", "")]
         assert len(tp_rows) == 0
 
     def test_partial_netting_buy_larger(self):
         """Buy qty > sell qty → net buy remains."""
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 5, "변화율": "+2%", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 98.0, "수량": 5, "변화율": "+2%", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "-3%", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, False)
@@ -341,7 +359,7 @@ class TestApplyNetting:
     def test_partial_netting_sell_larger(self):
         """Sell qty > buy qty → net sell remains."""
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 15, "변화율": "+2%", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 98.0, "수량": 15, "변화율": "+2%", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "-3%", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, False)
@@ -350,7 +368,7 @@ class TestApplyNetting:
     def test_netting_produces_scenario_rows(self):
         """Netting should add floor (buy-only) and ceiling (sell-only) scenario rows."""
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 10, "변화율": "+2%", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 98.0, "수량": 10, "변화율": "+2%", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "-3%", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, False)
@@ -369,6 +387,8 @@ def _net_fill(rows: list[dict], close: float) -> float:
         if r["구분"].startswith("매수"):
             if close <= price + 1e-9:
                 net += qty
+        elif r["구분"] == "매도 (MOC)":
+            net -= qty  # market on close: fills at any close
         elif r["구분"].startswith("매도"):
             if close >= price - 1e-9:
                 net -= qty
@@ -379,11 +399,11 @@ class TestNettingConsistency:
     """The netted sheet must reproduce the original net outcome at every
     close, and never list more sell shares than are actually held."""
 
-    # Real-world case: expiring lot + two TP lots + buy 20 @ 145.97
+    # Real-world case: expiring (MOC) lot + two TP lots + buy 20 @ 145.97
     _SHEET = [
-        {"구분": "매도 (만료)", "주문가": 135.47, "수량": 23, "변화율": "-", "비고": "잔여일: 1일"},
-        {"구분": "매도 (TP)", "주문가": 144.28, "수량": 23, "변화율": "-", "비고": ""},
-        {"구분": "매도 (TP)", "주문가": 137.18, "수량": 22, "변화율": "-", "비고": ""},
+        {"구분": "매도 (MOC)", "주문가": 135.47, "수량": 23, "변화율": "-", "비고": "잔여일: 1일"},
+        {"구분": "매도 (익절)", "주문가": 144.28, "수량": 23, "변화율": "-", "비고": ""},
+        {"구분": "매도 (익절)", "주문가": 137.18, "수량": 22, "변화율": "-", "비고": ""},
         {"구분": "매수", "주문가": 145.97, "수량": 20, "변화율": "-", "비고": ""},
     ]
 
@@ -420,8 +440,8 @@ class TestNettingConsistency:
         group mirrors back as a buy at its own price - 0.01."""
         import copy
         sheet = [
-            {"구분": "매도 (TP)", "주문가": 95.0, "수량": 5, "변화율": "-", "비고": ""},
-            {"구분": "매도 (TP)", "주문가": 98.0, "수량": 10, "변화율": "-", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 95.0, "수량": 5, "변화율": "-", "비고": ""},
+            {"구분": "매도 (익절)", "주문가": 98.0, "수량": 10, "변화율": "-", "비고": ""},
             {"구분": "매수", "주문가": 100.0, "수량": 20, "변화율": "-", "비고": ""},
         ]
         original = copy.deepcopy(sheet)
@@ -432,16 +452,21 @@ class TestNettingConsistency:
             ), f"net outcome mismatch at close={close}"
         mirror_prices = sorted(
             r["주문가"] for r in result.order_sheet
-            if r["구분"] == "매수" and "미체결" in r.get("비고", "")
+            if r["구분"] == "매수 (퉁치기)"
         )
         assert mirror_prices == [94.99, 97.99]
+
+    def test_moc_sell_gets_no_mirror_buy(self):
+        result = apply_netting(self._copy(), 135.47, False)
+        assert not any(r["구분"] == "매수 (퉁치기)" for r in result.order_sheet)
+        assert result.netting_floor_price is None
 
     def test_scenario_rows_are_informational(self):
         result = apply_netting(self._copy(), 135.47, False)
         assert result.scenario_rows
-        # ranges: <135.47, 3 groups, >145.97 → 5 rows
-        assert len(result.scenario_rows) == 5
-        assert result.scenario_rows[0]["순결과"] == "순매수 20주"
+        # ranges: <137.18 (MOC always fills), 2 TP groups, >145.97 → 4 rows
+        assert len(result.scenario_rows) == 4
+        assert result.scenario_rows[0]["순결과"] == "순매도 3주"  # MOC 23 − buy 20
         assert result.scenario_rows[-1]["순결과"] == "순매도 68주"
         # scenario rows must not leak into the order sheet
         for r in result.order_sheet:
@@ -516,4 +541,4 @@ class TestBuildSpreadOrders:
         }
         rows = build_spread_orders(ctx, None, 100.0, {"spread_buy_levels": 1, "spread_buy_step": 1}, False)
         assert len(rows) == 1
-        assert "SL" in rows[0]["비고"]
+        assert "손절" in rows[0]["비고"]

@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 import { copyText } from "../clipboard";
+import { isMocKind } from "../pip/steps";
 import type { CellValue, OrderBookPayload, TablePayload } from "../types";
 
 type Side = "sell" | "buy";
@@ -17,6 +18,8 @@ interface LadderRow {
   total: number;
   distancePct: number | null;
   note: string;
+  /** 만료·손절 매도: 지정가 없이 MOC로 넣는다 (주문가는 참고용 직전 종가) */
+  moc: boolean;
 }
 
 function tagOf(kind: string, side: Side) {
@@ -46,6 +49,7 @@ function buildRows(table: TablePayload, prevClose: number | null) {
       total: 0,
       distancePct: prevClose ? ((price - prevClose) / prevClose) * 100 : null,
       note: String(row["비고"] ?? ""),
+      moc: isMocKind(kind),
     } satisfies LadderRow];
   });
   // 매도는 종가에서 위로, 매수는 종가에서 아래로 누적한다
@@ -87,14 +91,14 @@ function Row({
   return (
     <li
       className={`ladder-row ${row.side}${highlighted ? " highlighted" : ""}`}
-      title={`클릭하면 주문가 ${row.price.toFixed(2)} 복사${row.note ? `\n${row.note}` : ""}`}
+      title={row.moc ? `MOC 주문 — 지정가 없이 장마감 시장가로 넣으세요${row.note ? `\n${row.note}` : ""}` : `클릭하면 주문가 ${row.price.toFixed(2)} 복사${row.note ? `\n${row.note}` : ""}`}
       onPointerEnter={onEnter}
       onClick={onCopy}
     >
       {flashNonce != null && <i key={flashNonce} className="ladder-flash" aria-hidden />}
       <span className="ladder-tag"><b>{row.tag}</b></span>
-      <span className="ladder-price">{row.price.toFixed(2)}</span>
-      <span className="ladder-dist">{pctText(row.distancePct)}</span>
+      <span className="ladder-price">{row.moc ? "MOC" : row.price.toFixed(2)}</span>
+      <span className="ladder-dist">{row.moc ? "시장가" : pctText(row.distancePct)}</span>
       <span className="ladder-qty">{qtyText(row.qty)}</span>
       <span className="ladder-note">
         <i className="ladder-depth" style={{ width: `${(depth * 100).toFixed(2)}%` }} aria-hidden />
@@ -115,6 +119,7 @@ export function LocLadder({ orderBook, footer, action }: { orderBook: OrderBookP
   const buyQty = buys[buys.length - 1]?.total ?? 0;
 
   const copy = (row: LadderRow) => {
+    if (row.moc) return;
     copyText(row.price.toFixed(2));
     setFlash({ key: row.key, nonce: Date.now() });
   };
@@ -123,8 +128,8 @@ export function LocLadder({ orderBook, footer, action }: { orderBook: OrderBookP
   return (
     <section className="order-sheet-panel ladder-panel" onPointerLeave={() => setHovered(null)}>
       <header className="panel-header">
-        <span className="eyebrow lime">// 다음 거래일 LOC 주문 시트</span>
-        <small>주문 유형 전부 LOC · 장 마감 30분 전 제출</small>
+        <span className="eyebrow lime">// 다음 거래일 주문 시트</span>
+        <small>장 마감 30분 전 제출 · {[...sells, ...buys].some((r) => r.moc) ? "만료·손절은 MOC, 나머지 LOC" : "전부 LOC"}</small>
         <div className="ladder-summary">
           <span className="sell">매도 {sells.length}건 · {qtyText(sellQty)}주</span>
           <span className="buy">매수 {buys.length}건 · {qtyText(buyQty)}주</span>

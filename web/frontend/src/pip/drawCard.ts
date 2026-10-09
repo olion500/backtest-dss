@@ -1,4 +1,4 @@
-import { ladderLabel, orderCount, priceText, qtyText, stepSide, type PipOrder, type PipStep } from "./steps";
+import { ladderLabel, orderCount, orderPriceText, priceText, qtyText, stepSide, type PipOrder, type PipStep } from "./steps";
 
 // 영상 PiP용 주문 카드. 영상 PiP 창에는 HTML을 넣을 수 없어서 canvas에 그린 뒤
 // captureStream()으로 영상을 만든다. 넘기기 버튼은 PiP 창의 시스템 이전·다음 트랙 버튼이 맡는다.
@@ -37,7 +37,7 @@ function drawQty(ctx: CanvasRenderingContext2D, qty: string, size: number, x: nu
 }
 
 function drawSingle(ctx: CanvasRenderingContext2D, W: number, top: number, bottom: number, pad: number, order: PipOrder) {
-  const price = priceText(order.price);
+  const price = orderPriceText(order);
   const qty = qtyText(order.qty);
   const H = bottom - top;
   const noteSize = Math.max(10, Math.min(H * 0.1, W * 0.045));
