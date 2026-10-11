@@ -84,6 +84,10 @@ def build_engine_params(
         roc_period=settings.roc_period,
         btc_lookback_days=settings.btc_lookback_days,
         btc_threshold_pct=settings.btc_threshold_pct,
+        trend_sma_days=settings.trend_sma_days,
+        trend_band_pct=settings.trend_band_pct,
+        vix_low=settings.vix_low,
+        vix_high=settings.vix_high,
         defense=_mode_params(settings.defense),
         offense=_mode_params(settings.offense),
     )
@@ -104,6 +108,9 @@ def _execute(
     btc_raw = None
     if strategy.mode_switch_strategy == "btc_overnight":
         btc_raw = provider(strategy.btc_ticker, warmup_start, exclusive_end)
+    vix_raw = None
+    if strategy.mode_switch_strategy == "trend_vix":
+        vix_raw = provider(strategy.vix_ticker, warmup_start, exclusive_end)
 
     target = normalize_ohlcv(target_raw)
     target = target[
@@ -119,10 +126,10 @@ def _execute(
         request.initial_cash,
         spread_buy_step=request.spread_buy_step,
     )
-    result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw)
+    result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw, vix_data=vix_raw)
     indicators = None
     if include_indicators:
-        _, indicators = compute_indicators(target, momentum_raw, params, btc_data=btc_raw)
+        _, indicators = compute_indicators(target, momentum_raw, params, btc_data=btc_raw, vix_data=vix_raw)
     return Execution(target, normalize_ohlcv(momentum_raw), result, indicators)
 
 
@@ -336,6 +343,7 @@ def default_request() -> BacktestRequest:
     strategy = StrategySettings(
         target_ticker=raw.get("target", "SOXL"),
         momentum_ticker=raw.get("momentum", "QQQ"),
+        mode_switch_strategy=raw.get("mode_switch_strategy", "rsi"),
         enable_netting=raw.get("enable_netting", True),
         allow_fractional_shares=raw.get("allow_fractional", False),
         cash_limited_buy=raw.get("cash_limited_buy", False),
@@ -344,6 +352,11 @@ def default_request() -> BacktestRequest:
         rsi_neutral=raw.get("rsi_neutral", 50),
         rsi_mid_low=raw.get("rsi_mid_low", 40),
         rsi_low_threshold=raw.get("rsi_low_threshold", 35),
+        trend_sma_days=raw.get("trend_sma_days", 30),
+        trend_band_pct=raw.get("trend_band_pct", 4),
+        vix_ticker=raw.get("vix_ticker", "^VIX"),
+        vix_low=raw.get("vix_low", 26),
+        vix_high=raw.get("vix_high", 34),
         defense=ModeSettings(
             slices=raw.get("defense_slices", 7),
             buy_cond_pct=raw.get("defense_buy", 3),

@@ -112,6 +112,13 @@ PORT=9000 make run
 (usually Monday). The journal's `다음모드` column is the next session's mode; the order book trades it.
 `btc_overnight` is the exception (BTC's prior-day close is known before the US close).
 
+**Trend + VIX (`trend_vix`, alternative)**: daily signal on the momentum ticker's SMA band and VIX
+(`^VIX`, passed as `vix_data`). Momentum above `SMA × (1 + band)` and VIX below `vix_low` → **defense**;
+momentum below `SMA × (1 − band)` or VIX above `vix_high` → **offense**; inside either band the
+previous state holds. The labels are deliberately inverted vs RSI: "offense" buys weakness with few,
+large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Web only (not wired into the
+Streamlit pages or `dongpa_optuna.py`). Research and validation: `research/README.md`.
+
 ### LOC Order Execution Rules
 
 **Buy LOC**:

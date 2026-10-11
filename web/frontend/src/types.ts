@@ -1,6 +1,6 @@
 export type ViewName = "backtest" | "order-book" | "settings";
 export type RunView = Exclude<ViewName, "settings">;
-export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight";
+export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight" | "trend_vix";
 
 export interface ModeSettings {
   slices: number;
@@ -28,6 +28,11 @@ export interface StrategySettings {
   btc_ticker: string;
   btc_lookback_days: number;
   btc_threshold_pct: number;
+  trend_sma_days: number;
+  trend_band_pct: number;
+  vix_ticker: string;
+  vix_low: number;
+  vix_high: number;
   defense: ModeSettings;
   offense: ModeSettings;
 }

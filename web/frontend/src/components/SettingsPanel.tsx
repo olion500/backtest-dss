@@ -142,6 +142,7 @@ export function SettingsPanel({ request, onChange, onReset, onApply }: SettingsP
                 <option value="ma_cross">Golden Cross</option>
                 <option value="roc">Rate of Change</option>
                 <option value="btc_overnight">BTC Overnight</option>
+                <option value="trend_vix">추세 + VIX (일봉)</option>
               </select>
             </label>
             {strategy.mode_switch_strategy === "rsi" && (
@@ -165,6 +166,16 @@ export function SettingsPanel({ request, onChange, onReset, onApply }: SettingsP
                 <FieldRow label="BTC 티커" value={strategy.btc_ticker} type="text" onChange={(next) => updateStrategy("btc_ticker", String(next).toUpperCase())} />
                 <FieldRow label="Lookback (일)" value={strategy.btc_lookback_days} min={1} onChange={(next) => updateStrategy("btc_lookback_days", Number(next))} />
                 <FieldRow label="임계값 %" value={strategy.btc_threshold_pct} step={0.1} min={0} onChange={(next) => updateStrategy("btc_threshold_pct", Number(next))} />
+              </>
+            )}
+            {strategy.mode_switch_strategy === "trend_vix" && (
+              <>
+                <FieldRow label={<>이평 기간 <small>일</small></>} value={strategy.trend_sma_days} min={2} onChange={(next) => updateStrategy("trend_sma_days", Number(next))} />
+                <FieldRow label={<>추세 밴드 <small>%</small></>} value={strategy.trend_band_pct} step={0.5} min={0} onChange={(next) => updateStrategy("trend_band_pct", Number(next))} />
+                <FieldRow label="VIX 티커" value={strategy.vix_ticker} type="text" onChange={(next) => updateStrategy("vix_ticker", String(next).toUpperCase())} />
+                <FieldRow label={<>VIX 안정 <small>미만</small></>} value={strategy.vix_low} step={0.5} min={0} onChange={(next) => updateStrategy("vix_low", Number(next))} />
+                <FieldRow label={<>VIX 불안 <small>초과</small></>} value={strategy.vix_high} step={0.5} min={0} onChange={(next) => updateStrategy("vix_high", Number(next))} />
+                <p className="setting-help">모멘텀 종목이 이평 +밴드 위 &amp; VIX 안정 → 안전 모드, 아니면 공세 모드(약세장 저가매수). 범위 안에서는 직전 상태 유지.</p>
               </>
             )}
           </SettingCard>

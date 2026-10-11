@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -86,7 +87,7 @@ class MarketDataClient:
         key = ("dataset", source, ticker)
         frame = self._cached(key)
         if frame is None:
-            location = f"{source}/{ticker}.csv" if "://" in source else str(Path(source) / f"{ticker}.csv")
+            location = f"{source}/{quote(ticker)}.csv" if "://" in source else str(Path(source) / f"{ticker}.csv")
             try:
                 frame = pd.read_csv(location, index_col=0, parse_dates=True)
             except Exception:
