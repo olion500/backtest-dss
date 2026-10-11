@@ -21,7 +21,7 @@ class ModeSettings(BaseModel):
 class StrategySettings(BaseModel):
     target_ticker: str = "SOXL"
     momentum_ticker: str = "QQQ"
-    mode_switch_strategy: Literal["rsi", "ma_cross", "roc", "btc_overnight"] = "rsi"
+    mode_switch_strategy: Literal["rsi", "ma_cross", "roc", "btc_overnight", "trend_vix"] = "rsi"
     enable_netting: bool = True
     allow_fractional_shares: bool = False
     cash_limited_buy: bool = False
@@ -36,6 +36,11 @@ class StrategySettings(BaseModel):
     btc_ticker: str = "BTC-USD"
     btc_lookback_days: int = Field(default=1, ge=1, le=30)
     btc_threshold_pct: float = Field(default=0, ge=0, le=100)
+    trend_sma_days: int = Field(default=30, ge=2, le=400)
+    trend_band_pct: float = Field(default=4, ge=0, le=50)
+    vix_ticker: str = "^VIX"
+    vix_low: float = Field(default=26, ge=0, le=200)
+    vix_high: float = Field(default=34, ge=0, le=200)
     defense: ModeSettings = ModeSettings(
         slices=7,
         buy_cond_pct=3,
@@ -49,7 +54,7 @@ class StrategySettings(BaseModel):
         max_hold_days=7,
     )
 
-    @field_validator("target_ticker", "momentum_ticker", "btc_ticker")
+    @field_validator("target_ticker", "momentum_ticker", "btc_ticker", "vix_ticker")
     @classmethod
     def validate_ticker(cls, value: str) -> str:
         ticker = value.strip().upper()
@@ -61,6 +66,8 @@ class StrategySettings(BaseModel):
     def validate_strategy(self) -> StrategySettings:
         if self.mode_switch_strategy == "ma_cross" and self.ma_short_period >= self.ma_long_period:
             raise ValueError("ma_short_period는 ma_long_period보다 작아야 합니다.")
+        if self.mode_switch_strategy == "trend_vix" and self.vix_low > self.vix_high:
+            raise ValueError("vix_low는 vix_high보다 클 수 없습니다.")
         if not (
             self.rsi_low_threshold
             <= self.rsi_mid_low

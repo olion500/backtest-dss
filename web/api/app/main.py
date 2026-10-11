@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from web.api.app.schemas import BacktestRequest
 from web.api.app.services.accounts import load_accounts
-from web.api.app.services.backtest import default_request, run_backtest_view, run_order_book_view
+from web.api.app.services.backtest import default_request, list_presets, run_backtest_view, run_order_book_view
 from web.api.app.services.market_data import MarketDataError
 from web.api.app.services.vr import load_vr_account_models, run_vr_view
 
@@ -74,6 +74,11 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/config/defaults")
 def defaults() -> dict:
     return default_request().model_dump(mode="json")
+
+
+@app.get("/api/v1/presets")
+def presets() -> dict:
+    return {"presets": list_presets()}
 
 
 @app.get("/api/v1/accounts")

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Callable
 
 import pandas as pd
+from pydantic import ValidationError
 
 from engines.dongpa_engine import (
     BacktestResult,
@@ -30,7 +31,7 @@ from engines.order_book_engine import (
     build_spread_orders,
     extract_state,
 )
-from engines.config_store import load_strategy
+from engines.config_store import STRATEGY_PATH, load_strategy, strategy_files
 from web.api.app.schemas import BacktestRequest, ModeSettings, StrategySettings
 from web.api.app.serializers import dataframe_payload, json_value, records_payload
 from web.api.app.services.accounts import load_accounts
@@ -84,6 +85,10 @@ def build_engine_params(
         roc_period=settings.roc_period,
         btc_lookback_days=settings.btc_lookback_days,
         btc_threshold_pct=settings.btc_threshold_pct,
+        trend_sma_days=settings.trend_sma_days,
+        trend_band_pct=settings.trend_band_pct,
+        vix_low=settings.vix_low,
+        vix_high=settings.vix_high,
         defense=_mode_params(settings.defense),
         offense=_mode_params(settings.offense),
     )
@@ -104,6 +109,9 @@ def _execute(
     btc_raw = None
     if strategy.mode_switch_strategy == "btc_overnight":
         btc_raw = provider(strategy.btc_ticker, warmup_start, exclusive_end)
+    vix_raw = None
+    if strategy.mode_switch_strategy == "trend_vix":
+        vix_raw = provider(strategy.vix_ticker, warmup_start, exclusive_end)
 
     target = normalize_ohlcv(target_raw)
     target = target[
@@ -119,10 +127,10 @@ def _execute(
         request.initial_cash,
         spread_buy_step=request.spread_buy_step,
     )
-    result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw)
+    result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw, vix_data=vix_raw)
     indicators = None
     if include_indicators:
-        _, indicators = compute_indicators(target, momentum_raw, params, btc_data=btc_raw)
+        _, indicators = compute_indicators(target, momentum_raw, params, btc_data=btc_raw, vix_data=vix_raw)
     return Execution(target, normalize_ohlcv(momentum_raw), result, indicators)
 
 
@@ -325,17 +333,12 @@ def run_order_book_view(
     return payload
 
 
-def default_request() -> BacktestRequest:
-    """Shared strategy + the first account (the web viewer's starting settings)."""
-    today = market_today()
-    raw = load_strategy()
-    accounts = load_accounts()
-    account = accounts[0] if accounts else None
-    start_date = account.start_date if account else date(today.year - 4, 1, 1)
-
-    strategy = StrategySettings(
+def strategy_from_raw(raw: dict) -> StrategySettings:
+    """StrategySettings from a strategy.json / preset dict (flat Streamlit-era keys)."""
+    return StrategySettings(
         target_ticker=raw.get("target", "SOXL"),
         momentum_ticker=raw.get("momentum", "QQQ"),
+        mode_switch_strategy=raw.get("mode_switch_strategy", "rsi"),
         enable_netting=raw.get("enable_netting", True),
         allow_fractional_shares=raw.get("allow_fractional", False),
         cash_limited_buy=raw.get("cash_limited_buy", False),
@@ -344,6 +347,11 @@ def default_request() -> BacktestRequest:
         rsi_neutral=raw.get("rsi_neutral", 50),
         rsi_mid_low=raw.get("rsi_mid_low", 40),
         rsi_low_threshold=raw.get("rsi_low_threshold", 35),
+        trend_sma_days=raw.get("trend_sma_days", 30),
+        trend_band_pct=raw.get("trend_band_pct", 4),
+        vix_ticker=raw.get("vix_ticker", "^VIX"),
+        vix_low=raw.get("vix_low", 26),
+        vix_high=raw.get("vix_high", 34),
         defense=ModeSettings(
             slices=raw.get("defense_slices", 7),
             buy_cond_pct=raw.get("defense_buy", 3),
@@ -359,6 +367,36 @@ def default_request() -> BacktestRequest:
             max_hold_days=raw.get("offense_hold", 7),
         ),
     )
+
+
+def list_presets() -> list[dict]:
+    """The live strategy (config/strategy.json) first, then saved presets newest first.
+    Presets that no longer validate are skipped."""
+    out = []
+    for path in strategy_files():
+        live = path == STRATEGY_PATH
+        try:
+            strategy = strategy_from_raw(load_strategy(path))
+        except ValidationError:
+            continue
+        out.append({
+            "id": "strategy" if live else path.stem,
+            "name": "현행 운용 (strategy.json)" if live else path.stem,
+            "live": live,
+            "strategy": strategy.model_dump(mode="json"),
+        })
+    return out
+
+
+def default_request() -> BacktestRequest:
+    """Shared strategy + the first account (the web viewer's starting settings)."""
+    today = market_today()
+    raw = load_strategy()
+    accounts = load_accounts()
+    account = accounts[0] if accounts else None
+    start_date = account.start_date if account else date(today.year - 4, 1, 1)
+
+    strategy = strategy_from_raw(raw)
     return BacktestRequest(
         start_date=start_date,
         end_date=today,

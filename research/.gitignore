@@ -1,0 +1,5 @@
+# regenerate with fetch.py + synth.py
+data/
+# Optuna journals (10~20MB each); the *.robust.json summaries are kept
+studies/*.log*
+__pycache__/

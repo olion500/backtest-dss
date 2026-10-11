@@ -77,6 +77,12 @@ def weekly_roc(series: pd.Series, period: int = 4) -> pd.Series:
     return (series - shifted) / shifted.replace(0, np.nan)
 
 
+def hysteresis_state(enter: pd.Series, leave: pd.Series) -> pd.Series:
+    """1.0 from the first True in ``enter``, 0.0 from the first True in ``leave``; days where
+    neither fires hold the previous state (NaN before the first decisive day)."""
+    raw = pd.Series(np.where(enter, 1.0, np.where(leave, 0.0, np.nan)), index=enter.index)
+    return raw.ffill()
+
 def _scalar(value):
     if isinstance(value, pd.Series):
         if value.empty:
@@ -203,6 +209,13 @@ class StrategyParams:
     # BTC overnight parameters (for "btc_overnight" strategy)
     btc_lookback_days: int = 1        # N calendar days for BTC return
     btc_threshold_pct: float = 0.0    # Min % return to trigger mode (0 = any positive)
+    # Trend + VIX parameters (for "trend_vix" strategy). A strong market (momentum close above
+    # its SMA band AND VIX calm) trades the "defense" params; anything else trades "offense",
+    # i.e. buys weakness with bigger tranches. Both signals hold their state inside the band.
+    trend_sma_days: int = 30          # Daily SMA length on the momentum ticker
+    trend_band_pct: float = 4.0       # Up above SMA×(1+band), down below SMA×(1−band)
+    vix_low: float = 26.0             # VIX below this → calm
+    vix_high: float = 34.0            # VIX above this → stressed
     # Buy execution: use min(tranche_budget, cash) instead of skipping when cash < tranche_budget
     cash_limited_buy: bool = False
     # Step (spread) buy ladder, mirroring the order book's LOC orders.
@@ -293,7 +306,7 @@ def netting_floor_price(lots: list[dict], buy_limit: Decimal) -> Decimal | None:
 @dataclass(frozen=True)
 class Indicators:
     """Pre-computed indicator series from compute_indicators()."""
-    strategy: str  # "rsi" | "ma_cross" | "roc" | "btc_overnight"
+    strategy: str  # "rsi" | "ma_cross" | "roc" | "btc_overnight" | "trend_vix"
     weekly_rsi: pd.Series | None = None
     weekly_rsi_delta: pd.Series | None = None
     daily_rsi: pd.Series | None = None
@@ -307,6 +320,11 @@ class Indicators:
     daily_ma_long: pd.Series | None = None
     daily_roc: pd.Series | None = None
     daily_btc_signal: pd.Series | None = None
+    trend_vix_state: pd.Series | None = None   # full history: "defense" (strong) / "offense" (weak) / None
+    daily_trend_ratio: pd.Series | None = None  # momentum close / SMA
+    daily_trend_up: pd.Series | None = None     # 1.0 up / 0.0 down / NaN
+    daily_vix: pd.Series | None = None
+    daily_vix_calm: pd.Series | None = None     # 1.0 calm / 0.0 stressed / NaN
 
 # ---------------------- Backtest Result ----------------------
 
@@ -325,6 +343,7 @@ def compute_indicators(
     daily_momo: pd.DataFrame,
     params: StrategyParams,
     btc_data: pd.DataFrame | None = None,
+    vix_data: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, Indicators]:
     """Pure: compute all indicator series from raw data.
     Returns (aligned_target_df, indicators)."""
@@ -361,6 +380,20 @@ def compute_indicators(
         if isinstance(btc_close, pd.DataFrame):
             btc_close = btc_close.iloc[:, 0]
         _btc_close = btc_close.sort_index()
+    elif params.mode_switch_strategy == "trend_vix":
+        if vix_data is None:
+            raise ValueError("vix_data required for trend_vix strategy")
+        vix_close = normalize_ohlcv(vix_data)['Close'].dropna().sort_index()
+        m_close = momo['Close']
+        ratio = m_close / m_close.rolling(params.trend_sma_days).mean()
+        band = params.trend_band_pct / 100.0
+        trend_up = hysteresis_state(ratio > 1 + band, ratio < 1 - band)
+        vix_calm = hysteresis_state(vix_close < params.vix_low, vix_close > params.vix_high)
+        union = trend_up.index.union(vix_calm.index)
+        t_u, v_u = trend_up.reindex(union).ffill(), vix_calm.reindex(union).ffill()
+        state = pd.Series(np.where((t_u == 1) & (v_u == 1), "defense", "offense"), index=union, dtype=object)
+        state[t_u.isna() | v_u.isna()] = None
+        ind_kwargs.update(trend_vix_state=state, _ratio=ratio, _trend_up=trend_up, _vix=vix_close, _vix_calm=vix_calm)
     else:
         raise ValueError(f"Unknown mode_switch_strategy: {params.mode_switch_strategy}")
 
@@ -395,6 +428,13 @@ def compute_indicators(
             (btc_d1.values / btc_dn.values) - 1,
             index=target_dates
         )
+    elif params.mode_switch_strategy == "trend_vix":
+        def _align(series: pd.Series) -> pd.Series:
+            return series.reindex(series.index.union(df.index)).ffill().reindex(df.index)
+        ind_kwargs["daily_trend_ratio"] = _align(ind_kwargs.pop("_ratio"))
+        ind_kwargs["daily_trend_up"] = _align(ind_kwargs.pop("_trend_up"))
+        ind_kwargs["daily_vix"] = _align(ind_kwargs.pop("_vix"))
+        ind_kwargs["daily_vix_calm"] = _align(ind_kwargs.pop("_vix_calm"))
 
     return df, Indicators(**ind_kwargs)
 
@@ -481,6 +521,17 @@ def _decide_mode_btc(idx, prev_mode: str, indicators: Indicators, params: Strate
     return prev_mode or "defense"
 
 
+def _trend_vix_mode(trend_up, vix_calm) -> str | None:
+    if pd.isna(trend_up) or pd.isna(vix_calm):
+        return None
+    return "defense" if trend_up == 1 and vix_calm == 1 else "offense"
+
+
+def _decide_mode_trend_vix(idx, prev_mode: str, indicators: Indicators) -> str:
+    mode = _trend_vix_mode(_scalar(indicators.daily_trend_up.loc[idx]), _scalar(indicators.daily_vix_calm.loc[idx]))
+    return mode or prev_mode or "defense"
+
+
 def decide_mode(idx, prev_mode: str, indicators: Indicators, params: StrategyParams) -> str:
     """Decide trading mode for a given day. Pure function."""
     strategy = indicators.strategy
@@ -492,6 +543,8 @@ def decide_mode(idx, prev_mode: str, indicators: Indicators, params: StrategyPar
         return _decide_mode_roc(idx, prev_mode, indicators)
     elif strategy == "btc_overnight":
         return _decide_mode_btc(idx, prev_mode, indicators, params)
+    elif strategy == "trend_vix":
+        return _decide_mode_trend_vix(idx, prev_mode, indicators)
     else:
         raise ValueError(f"Unknown mode_switch_strategy: {strategy}")
 
@@ -661,6 +714,30 @@ def explain_mode(idx, indicators: Indicators, params: StrategyParams) -> str:
         ]
         return "\n".join(lines)
 
+    elif strategy == "trend_vix":
+        ratio = _scalar(indicators.daily_trend_ratio.loc[idx])
+        vix = _scalar(indicators.daily_vix.loc[idx])
+        trend_up = _scalar(indicators.daily_trend_up.loc[idx])
+        vix_calm = _scalar(indicators.daily_vix_calm.loc[idx])
+        mode = _trend_vix_mode(trend_up, vix_calm)
+        if mode is None:
+            return "추세/VIX 데이터 없음 → 이전 모드 유지"
+        band = params.trend_band_pct
+        result = "안전 모드 (강세장)" if mode == "defense" else "공세 모드 (약세장 저가매수)"
+        lines = [
+            f"[ 지표 현황 ]",
+            f"  {params.momentum_ticker} / {params.trend_sma_days}일 SMA : {float(ratio):.4f} ({(float(ratio) - 1) * 100:+.2f}%)",
+            f"  VIX : {float(vix):.2f}",
+            f"",
+            f"[ 조건 체크 ] (범위 안에서는 직전 상태 유지)",
+            f"  [{_check(trend_up == 1)}] 상승 추세 (SMA +{band:g}% 위로 올라선 뒤 -{band:g}% 아래로 안 내려감)",
+            f"  [{_check(vix_calm == 1)}] VIX 안정 ({params.vix_low:g} 아래로 내려온 뒤 {params.vix_high:g} 위로 안 올라감)",
+            f"  둘 다 O → 안전, 하나라도 X → 공세",
+            f"",
+            f"→ 판정: **{result}**",
+        ]
+        return "\n".join(lines)
+
     return "알 수 없는 전략"
 
 
@@ -732,6 +809,13 @@ def determine_initial_mode(backtest_start, indicators: Indicators, params: Strat
 
         return "offense" if float(last_roc) > 0 else "defense"
 
+    elif params.mode_switch_strategy == "trend_vix":
+        state = indicators.trend_vix_state
+        if state is None:
+            return "defense"
+        before = state[state.index < backtest_start].dropna()
+        return before.iloc[-1] if not before.empty else "defense"
+
     elif params.mode_switch_strategy == "btc_overnight":
         btc_sig = indicators.daily_btc_signal
         if btc_sig is not None and not btc_sig.empty:
@@ -755,9 +839,10 @@ def run_backtest(
     params: StrategyParams,
     cap: CapitalParams,
     btc_data: pd.DataFrame | None = None,
+    vix_data: pd.DataFrame | None = None,
 ) -> BacktestResult:
     """Run full backtest. Pure function — same inputs, same outputs."""
-    df, indicators = compute_indicators(daily_target, daily_momo, params, btc_data)
+    df, indicators = compute_indicators(daily_target, daily_momo, params, btc_data, vix_data)
 
     dates = df.index
     cash = money(cap.initial_cash)
@@ -773,6 +858,10 @@ def run_backtest(
         )
 
     mode = determine_initial_mode(dates[0], indicators, params)
+    # Weekly indicators are stamped on the Friday whose close they include, so they can
+    # only steer LOC orders from the next session on. BTC trades overnight: its signal for
+    # day d is already known before the US close.
+    same_day_signal = params.mode_switch_strategy == "btc_overnight"
     lots = []
     trades = []
     daily_rows = []
@@ -793,7 +882,8 @@ def run_backtest(
     for i, d in enumerate(dates):
         close = money(df.loc[d, 'Close'])
 
-        mode = decide_mode(d, mode, indicators, params)
+        if same_day_signal:
+            mode = decide_mode(d, mode, indicators, params)
         m = params.offense if mode == "offense" else params.defense
 
         tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
@@ -1022,9 +1112,12 @@ def run_backtest(
         if raw_sell_qty > Decimal("0"):
             raw_sell_avg = money_to_float(money(raw_sell_amt / raw_sell_qty))
 
+        next_mode = mode if same_day_signal else decide_mode(d, mode, indicators, params)
+
         daily_row = {
             "거래일자": d.strftime("%Y-%m-%d"),
             "모드": "공세" if mode == "offense" else "안전",
+            "다음모드": "공세" if next_mode == "offense" else "안전",
             "종가": money_to_float(close),
             "등락률(%)": round(((float(close) / float(prev_close)) - 1) * 100, 2) if i > 0 else 0.0,
             "매수조건(%)": round(m.buy_cond_pct, 2),
@@ -1060,6 +1153,7 @@ def run_backtest(
         daily_rows.append(daily_row)
 
         prev_close = close
+        mode = next_mode
 
     # Update open trades with current holding period
     last_index = len(dates) - 1

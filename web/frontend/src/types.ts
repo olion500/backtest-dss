@@ -1,6 +1,6 @@
 export type ViewName = "backtest" | "order-book" | "vr" | "settings";
 export type RunView = Exclude<ViewName, "settings" | "vr">;
-export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight";
+export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight" | "trend_vix";
 
 export interface ModeSettings {
   slices: number;
@@ -28,6 +28,11 @@ export interface StrategySettings {
   btc_ticker: string;
   btc_lookback_days: number;
   btc_threshold_pct: number;
+  trend_sma_days: number;
+  trend_band_pct: number;
+  vix_ticker: string;
+  vix_low: number;
+  vix_high: number;
   defense: ModeSettings;
   offense: ModeSettings;
 }
@@ -39,6 +44,14 @@ export interface BacktestRequest {
   log_scale: boolean;
   spread_buy_levels: number;
   spread_buy_step: number;
+  strategy: StrategySettings;
+}
+
+/** config/strategy.json (live) or config/presets/<id>.json, from GET /api/v1/presets. */
+export interface Preset {
+  id: string;
+  name: string;
+  live: boolean;
   strategy: StrategySettings;
 }
 
