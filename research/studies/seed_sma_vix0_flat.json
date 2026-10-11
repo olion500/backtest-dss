@@ -1,0 +1,17 @@
+{
+ "ticker": "QQQ",
+ "n": 30,
+ "band": 0.04,
+ "lo": 26,
+ "hi_gap": 8,
+ "off_slices": 8,
+ "off_buy": 3.5,
+ "off_tp": 1.25,
+ "off_hold": 24,
+ "off_sl": 5.0,
+ "def_slices": 2,
+ "def_buy": 3.5,
+ "def_tp": 3.25,
+ "def_hold": 16,
+ "def_sl": 20.0
+}

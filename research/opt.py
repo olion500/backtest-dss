@@ -8,7 +8,15 @@ import signals as S
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 MAX_DD = -0.45
 
+FLAT_SL = os.environ.get('FLAT_SL') == '1'
+
 def suggest_mode(t, p):
+    if FLAT_SL:  # one fixed-shape search space: sl 0 = off (multivariate TPE can model it)
+        sl = t.suggest_float(f'{p}_sl', 0.0, 40.0, step=1.0)
+        return mp(t.suggest_int(f'{p}_slices', 2, 15),
+                  t.suggest_float(f'{p}_buy', 0.0, 10.0, step=0.25),
+                  t.suggest_float(f'{p}_tp', 0.5, 10.0, step=0.25),
+                  t.suggest_int(f'{p}_hold', 3, 60), sl if sl >= 3 else 0)
     sl_on = t.suggest_categorical(f'{p}_sl_on', [False, True])
     return mp(t.suggest_int(f'{p}_slices', 2, 15),
               t.suggest_float(f'{p}_buy', 0.0, 10.0, step=0.25),
