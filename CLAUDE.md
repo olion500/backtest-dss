@@ -108,6 +108,10 @@ PORT=9000 make run
 
 **Default**: Maintain previous mode if conditions ambiguous
 
+**Timing**: A weekly bar includes its Friday close, so a new mode applies from the next session
+(usually Monday). The journal's `다음모드` column is the next session's mode; the order book trades it.
+`btc_overnight` is the exception (BTC's prior-day close is known before the US close).
+
 ### LOC Order Execution Rules
 
 **Buy LOC**:

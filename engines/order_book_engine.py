@@ -89,7 +89,8 @@ def extract_state(
     last_date = last_row["거래일자"].date()
     last_timestamp = pd.Timestamp(last_date)
 
-    current_mode = normalize_mode(last_row.get("모드", "안전"))
+    # The next session trades in "다음모드": it already reflects the last close's indicators.
+    current_mode = normalize_mode(last_row.get("다음모드", last_row.get("모드", "안전")))
     current_cash = safe_float(last_row.get("현금")) or init_cash
     current_position_qty = safe_int(last_row.get("보유수량"))
     prev_close = safe_float(last_row.get("종가"))

@@ -773,6 +773,10 @@ def run_backtest(
         )
 
     mode = determine_initial_mode(dates[0], indicators, params)
+    # Weekly indicators are stamped on the Friday whose close they include, so they can
+    # only steer LOC orders from the next session on. BTC trades overnight: its signal for
+    # day d is already known before the US close.
+    same_day_signal = params.mode_switch_strategy == "btc_overnight"
     lots = []
     trades = []
     daily_rows = []
@@ -793,7 +797,8 @@ def run_backtest(
     for i, d in enumerate(dates):
         close = money(df.loc[d, 'Close'])
 
-        mode = decide_mode(d, mode, indicators, params)
+        if same_day_signal:
+            mode = decide_mode(d, mode, indicators, params)
         m = params.offense if mode == "offense" else params.defense
 
         tranche_budget = tranche_budget_for(m.slices, tranche_base_cash)
@@ -1022,9 +1027,12 @@ def run_backtest(
         if raw_sell_qty > Decimal("0"):
             raw_sell_avg = money_to_float(money(raw_sell_amt / raw_sell_qty))
 
+        next_mode = mode if same_day_signal else decide_mode(d, mode, indicators, params)
+
         daily_row = {
             "거래일자": d.strftime("%Y-%m-%d"),
             "모드": "공세" if mode == "offense" else "안전",
+            "다음모드": "공세" if next_mode == "offense" else "안전",
             "종가": money_to_float(close),
             "등락률(%)": round(((float(close) / float(prev_close)) - 1) * 100, 2) if i > 0 else 0.0,
             "매수조건(%)": round(m.buy_cond_pct, 2),
@@ -1060,6 +1068,7 @@ def run_backtest(
         daily_rows.append(daily_row)
 
         prev_close = close
+        mode = next_mode
 
     # Update open trades with current holding period
     last_index = len(dates) - 1
