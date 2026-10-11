@@ -47,6 +47,7 @@
     - 데이터셋에 ^VIX 추가(data/tickers.txt), 원격 데이터 URL은 티커를 URL 인코딩
     - 프리셋 config/presets/trend_vix_2026-10-12.json. 웹 API 경로로 2021~ 91.06%/-43.37% = 연구 결과 일치
     - Streamlit 페이지·dongpa_optuna.py에는 미연결
+  - [x] main 머지·푸시(3b799ff) 후 Cloud Run 배포 (2026-10-12, 리비전 dongpa-viewer-00017-8hw)
   - [ ] 8. (나중에, 증권 계좌 나눌 때) 계좌별 전략 선택: 메인=현행, 서브=trend_vix
 - [ ] 오더북 PiP 주문 창 (시작 2026-10-06)
   - Document Picture-in-Picture(Chrome·Edge 데스크톱 116+). 미지원 브라우저는 버튼 숨김. 시안 비교: claude.ai/artifact/A7rFGQiDieAFGnDfA8BThw
