@@ -47,6 +47,14 @@ export interface BacktestRequest {
   strategy: StrategySettings;
 }
 
+/** config/strategy.json (live) or config/presets/<id>.json, from GET /api/v1/presets. */
+export interface Preset {
+  id: string;
+  name: string;
+  live: boolean;
+  strategy: StrategySettings;
+}
+
 /** config/accounts/<id>.json — the order book runs the shared strategy with these per-account values. */
 export interface Account {
   id: string;

@@ -134,3 +134,23 @@ def test_accounts_default_to_single_account(tmp_path):
 
     assert [a.id for a in accounts] == ["main"]
     assert accounts[0].initial_cash == 10_000
+
+
+def test_list_presets_puts_live_first_and_skips_invalid(tmp_path, monkeypatch):
+    import json
+    from web.api.app.services import backtest as svc
+    live = tmp_path / "strategy.json"
+    live.write_text(json.dumps({"target": "SOXL", "defense_slices": 11}))
+    presets = tmp_path / "presets"
+    presets.mkdir()
+    (presets / "trend.json").write_text(json.dumps({"mode_switch_strategy": "trend_vix", "offense_slices": 2}))
+    (presets / "broken.json").write_text(json.dumps({"rsi_low_threshold": 90, "rsi_high_threshold": 10}))
+    monkeypatch.setattr(svc, "STRATEGY_PATH", live)
+    monkeypatch.setattr(svc, "strategy_files", lambda: [live, presets / "trend.json", presets / "broken.json"])
+
+    listed = svc.list_presets()
+
+    assert [p["id"] for p in listed] == ["strategy", "trend"]
+    assert listed[0]["live"] and listed[0]["strategy"]["defense"]["slices"] == 11
+    assert listed[1]["strategy"]["mode_switch_strategy"] == "trend_vix"
+    assert listed[1]["strategy"]["offense"]["slices"] == 2

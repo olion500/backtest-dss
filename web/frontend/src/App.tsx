@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { getAccounts, getDefaults, runViewer } from "./api/client";
+import { getAccounts, getDefaults, getPresets, runViewer } from "./api/client";
+import { matchPreset, sameStrategy } from "./presets";
 import { DailyLog } from "./components/DailyLog";
 import { DataTable } from "./components/DataTable";
 import { EquityChart } from "./components/EquityChart";
@@ -11,7 +12,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { AccountSwitcher } from "./components/AccountSwitcher";
 import { StrategyStrip } from "./components/StrategyStrip";
 import { applyDemoOrders, isDemoMode } from "./dev/demoOrders";
-import type { Account, BacktestRequest, RunView, ViewerResult, ViewName } from "./types";
+import type { Account, BacktestRequest, Preset, RunView, ViewerResult, ViewName } from "./types";
 
 // v2: server defaults merge config/strategy.json with the first account; the
 // version bump discarded v1 blobs saved with the old defaults (2022 start, 10k cash).
@@ -111,6 +112,11 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [accountId, setAccountId] = useState<string | null>(loadAccountId);
+  const [presets, setPresets] = useState<Preset[]>([]);
+
+  useEffect(() => {
+    getPresets().then(setPresets).catch(() => setPresets([]));
+  }, []);
 
   useEffect(() => {
     // Without accounts the order book falls back to the browser settings.
@@ -164,10 +170,12 @@ export default function App() {
 
   // Wait for the accounts too, or the first order book run would use the browser settings.
   const ready = request != null && accountsLoaded;
+  // Re-run when the strategy changes too (e.g. "운용 전략으로 되돌리기"), so the sheet never shows stale orders.
+  const strategyKey = request ? JSON.stringify(request.strategy) : "";
   useEffect(() => {
     if (view === "order-book" && ready) void run("order-book");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, ready, account?.id]);
+  }, [view, ready, account?.id, strategyKey]);
 
   const navItems: Array<[ViewName, string]> = [
     ["order-book", "ORDER BOOK"],
@@ -176,6 +184,11 @@ export default function App() {
   ];
 
   if (!request) return <div className="boot-state">BOOTING VIEWER...</div>;
+
+  const livePreset = presets.find((preset) => preset.live);
+  const offLive = livePreset != null && !sameStrategy(livePreset.strategy, request.strategy);
+  const presetLabel = matchPreset(presets, request.strategy)?.name ?? "사용자 설정";
+  const backToLive = () => livePreset && setRequest({ ...request, strategy: livePreset.strategy });
 
   const activeRunView = view === "settings" ? null : view;
   const activeResult = activeRunView ? results[activeRunView] : undefined;
@@ -191,14 +204,14 @@ export default function App() {
           <button type="button" className="disabled" disabled>OPTIMIZER</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>SETTINGS</button>
         </nav>
-        <div className="top-status"><span><i />API READY // VIEWER</span><b>browser_local.json</b><em>v0.4</em></div>
+        <div className="top-status"><span><i />API READY // VIEWER</span><b>{presetLabel}</b><em>v0.4</em></div>
       </header>
 
       {view === "settings" ? (
         <SettingsPanel request={request} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
       ) : view === "backtest" ? (
         <main className="screen">
-          <RunToolbar request={request} currentMode={latestMode(results.backtest)} lastRun={lastRuns.backtest} loading={running === "backtest"} onChange={setRequest} onRun={() => run("backtest")} />
+          <RunToolbar request={request} presets={presets} currentMode={latestMode(results.backtest)} lastRun={lastRuns.backtest} loading={running === "backtest"} onChange={setRequest} onRun={() => run("backtest")} />
           <div className="page-body">
             {activeError && <div className="error-banner"><strong>REQUEST FAILED</strong><span>{activeError}</span></div>}
             {isLoading ? <LoadingResult /> : activeResult ? <BacktestResult result={activeResult} /> : <EmptyResult label="백테스트 결과가 없습니다." onSettings={() => setView("settings")} />}
@@ -210,6 +223,13 @@ export default function App() {
           {accounts.length > 1 && account && <AccountSwitcher accounts={accounts} selected={account.id} disabled={running === "order-book"} onSelect={selectAccount} />}
           <StrategyStrip request={orderBookRequest ?? request} orderBook={results["order-book"]?.order_book} onSettings={() => setView("settings")} />
           <div className="page-body">
+            {offLive && (
+              <div className="error-banner preset-warning">
+                <strong>운용 전략과 다름</strong>
+                <span>이 주문표는 현재 운용 중인 전략(strategy.json)이 아니라 "{presetLabel}" 설정으로 계산했습니다.</span>
+                <button className="button ghost" type="button" onClick={backToLive}>운용 전략으로 되돌리기</button>
+              </div>
+            )}
             {activeError && <div className="error-banner"><strong>REQUEST FAILED</strong><span>{activeError}</span></div>}
             {isLoading ? <LoadingResult /> : activeResult?.order_book ? <OrderBookView orderBook={activeResult.order_book} result={activeResult} request={orderBookRequest ?? request} accountId={account?.id} /> : <EmptyResult label="오더북 결과가 없습니다." onSettings={() => setView("settings")} />}
             <footer className="footer"><span>DONGPA VIEWER / READ ONLY</span><span>모의 계산 결과 · 실제 주문은 사용자 책임</span></footer>

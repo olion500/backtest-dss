@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Callable
 
 import pandas as pd
+from pydantic import ValidationError
 
 from engines.dongpa_engine import (
     BacktestResult,
@@ -30,7 +31,7 @@ from engines.order_book_engine import (
     build_spread_orders,
     extract_state,
 )
-from engines.config_store import load_strategy
+from engines.config_store import STRATEGY_PATH, load_strategy, strategy_files
 from web.api.app.schemas import BacktestRequest, ModeSettings, StrategySettings
 from web.api.app.serializers import dataframe_payload, json_value, records_payload
 from web.api.app.services.accounts import load_accounts
@@ -332,15 +333,9 @@ def run_order_book_view(
     return payload
 
 
-def default_request() -> BacktestRequest:
-    """Shared strategy + the first account (the web viewer's starting settings)."""
-    today = market_today()
-    raw = load_strategy()
-    accounts = load_accounts()
-    account = accounts[0] if accounts else None
-    start_date = account.start_date if account else date(today.year - 4, 1, 1)
-
-    strategy = StrategySettings(
+def strategy_from_raw(raw: dict) -> StrategySettings:
+    """StrategySettings from a strategy.json / preset dict (flat Streamlit-era keys)."""
+    return StrategySettings(
         target_ticker=raw.get("target", "SOXL"),
         momentum_ticker=raw.get("momentum", "QQQ"),
         mode_switch_strategy=raw.get("mode_switch_strategy", "rsi"),
@@ -372,6 +367,36 @@ def default_request() -> BacktestRequest:
             max_hold_days=raw.get("offense_hold", 7),
         ),
     )
+
+
+def list_presets() -> list[dict]:
+    """The live strategy (config/strategy.json) first, then saved presets newest first.
+    Presets that no longer validate are skipped."""
+    out = []
+    for path in strategy_files():
+        live = path == STRATEGY_PATH
+        try:
+            strategy = strategy_from_raw(load_strategy(path))
+        except ValidationError:
+            continue
+        out.append({
+            "id": "strategy" if live else path.stem,
+            "name": "현행 운용 (strategy.json)" if live else path.stem,
+            "live": live,
+            "strategy": strategy.model_dump(mode="json"),
+        })
+    return out
+
+
+def default_request() -> BacktestRequest:
+    """Shared strategy + the first account (the web viewer's starting settings)."""
+    today = market_today()
+    raw = load_strategy()
+    accounts = load_accounts()
+    account = accounts[0] if accounts else None
+    start_date = account.start_date if account else date(today.year - 4, 1, 1)
+
+    strategy = strategy_from_raw(raw)
     return BacktestRequest(
         start_date=start_date,
         end_date=today,
