@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 
-import { niceTicks } from "../chart/engine";
 import type { OrderBookPayload, TablePayload, VRCycle, VRResult } from "../types";
 import { DataTable } from "./DataTable";
 import { LocLadder } from "./LocLadder";
+import { VrBandChart } from "./VrBandChart";
 
 // 매도표는 현재가 +40%까지라 100줄이 넘는다. 종가에 가까운 주문부터 이만큼만 먼저 보여준다
 const NEAR_ORDERS = 10;
@@ -91,96 +91,101 @@ function cycleTable(cycles: VRCycle[], startWeek: number): TablePayload {
   };
 }
 
-function BandGauge({ cycle }: { cycle: VRCycle }) {
-  const value = cycle.stock_value ?? 0;
-  const lo = Math.min(cycle.v_min, value);
-  const hi = Math.max(cycle.v_max, value);
-  const at = (x: number) => `${(((x - lo) / (hi - lo || 1)) * 100).toFixed(2)}%`;
+function pct(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+/** 매수선(첫 매수 주문가) ~ 매도선(첫 매도 주문가) 사이 현재가 위치 */
+function PriceCorridor({ result }: { result: VRResult }) {
+  const { current, outlook } = result;
+  const close = current.close;
+  const { buy_line: buy, sell_line: sell } = outlook;
+  if (close == null) return null;
+  const lo = Math.min(buy ?? close, close);
+  const hi = Math.max(sell ?? close, close);
+  const at = (value: number) => `${(((value - lo) / (hi - lo || 1)) * 100).toFixed(2)}%`;
   return (
-    <div className="vr-gauge" aria-label="V 밴드 안의 평가금 위치">
-      <div className="vr-gauge-track">
-        <i className="vr-gauge-band" style={{ left: at(cycle.v_min), right: `calc(100% - ${at(cycle.v_max)})` }} />
-        <i className="vr-gauge-v" style={{ left: at(cycle.v) }} />
-        <i className="vr-gauge-value" style={{ left: at(value) }} />
+    <div className="vr-corridor">
+      <div className="vr-corridor-ends">
+        <span className="buy">매수선 <b>{buy == null ? "없음" : usd(buy, 2)}</b></span>
+        <span className="now">현재 <b>{usd(close, 2)}</b></span>
+        <span className="sell">매도선 <b>{sell == null ? "없음" : usd(sell, 2)}</b></span>
       </div>
-      <div className="vr-gauge-labels">
-        <span>V최소 {usd(cycle.v_min)}</span>
-        <span>V {usd(cycle.v)}</span>
-        <span>V최대 {usd(cycle.v_max)}</span>
+      <div className="vr-corridor-track" aria-hidden>
+        <i className="vr-corridor-dot" style={{ left: at(close) }} />
+      </div>
+      <div className="vr-corridor-notes">
+        <span>{buy == null ? "매수 주문 없음 (Pool 한도)" : `${pct((buy / close - 1) * 100)} 내려가면 매수`}</span>
+        <span>{current.close_date ?? "—"} 종가</span>
+        <span>{sell == null ? "매도 주문 없음" : `${pct((sell / close - 1) * 100)} 오르면 매도`}</span>
       </div>
     </div>
   );
 }
 
-const CW = 720;
-const CH = 240;
-const PAD = { top: 16, right: 64, bottom: 28, left: 12 };
-
-function BandChart({ cycles }: { cycles: VRCycle[] }) {
-  const chart = useMemo(() => {
-    const values = cycles.flatMap((c) => [c.v_min, c.v_max, c.stock_value ?? c.v]);
-    const lo = Math.min(...values) * 0.97;
-    const hi = Math.max(...values) * 1.03;
-    const n = cycles.length;
-    const x = (i: number) => PAD.left + (i / Math.max(n - 1, 1)) * (CW - PAD.left - PAD.right);
-    const y = (v: number) => PAD.top + ((hi - v) / (hi - lo)) * (CH - PAD.top - PAD.bottom);
-    const line = (pick: (c: VRCycle) => number | null) =>
-      cycles.map((c, i) => [i, pick(c)] as const).filter(([, v]) => v != null)
-        .map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v as number).toFixed(1)}`).join("");
-    const band = `${cycles.map((c, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(c.v_max).toFixed(1)}`).join("")}`
-      + `${[...cycles].reverse().map((c, k) => `L${x(n - 1 - k).toFixed(1)},${y(c.v_min).toFixed(1)}`).join("")}Z`;
-    return { x, y, band, v: line((c) => c.v), value: line((c) => c.stock_value), ticks: niceTicks(lo, hi, 4) };
-  }, [cycles]);
-
-  if (cycles.length < 2) {
-    return <div className="compact-empty">사이클이 2개 이상 쌓이면 V 밴드와 평가금 추이를 그립니다.</div>;
-  }
-  return (
-    <svg className="vr-chart" viewBox={`0 0 ${CW} ${CH}`} role="img" aria-label="사이클별 V 밴드와 평가금">
-      {chart.ticks.map((t) => (
-        <g key={t}>
-          <line x1={PAD.left} x2={CW - PAD.right} y1={chart.y(t)} y2={chart.y(t)} className="vr-chart-grid" />
-          <text x={CW - PAD.right + 8} y={chart.y(t) + 4} className="vr-chart-tick">{t >= 1000 ? `${(t / 1000).toFixed(0)}k` : t}</text>
-        </g>
-      ))}
-      <path d={chart.band} className="vr-chart-band" />
-      <path d={chart.v} className="vr-chart-v" />
-      <path d={chart.value} className="vr-chart-value" />
-      <text x={PAD.left} y={CH - 8} className="vr-chart-tick">{cycles[0].start}</text>
-      <text x={CW - PAD.right} y={CH - 8} textAnchor="end" className="vr-chart-tick">{cycles[cycles.length - 1].start}</text>
-    </svg>
-  );
-}
-
 export function VrView({ result }: { result: VRResult }) {
-  const { current, account } = result;
+  const { current, account, outlook } = result;
   const [showAll, setShowAll] = useState(false);
   const ladder = useMemo(() => ladderPayload(result, showAll), [result, showAll]);
   const openCount = result.orders.filter((order) => !order.filled_on).length;
-  const pv = current.pool / current.v;
+  const total = current.total ?? 0;
+  const profit = total - current.principal;
+  const stock = current.stock_value ?? 0;
+  const stockShare = total ? (stock / total) * 100 : 0;
+  const vGap = (stock / current.v - 1) * 100;
+  const budgetUsed = outlook.buy_budget ? 1 - outlook.buy_budget_left / outlook.buy_budget : 0;
   const formula = account.advanced ? "V + P/G + (E−V)/(2√G)" : "V + P/G";
 
   return (
     <div className="result-stack">
-      <section className="order-overview-grid">
-        <article className="current-mode-card">
-          <header>
-            <span className="eyebrow">{account.start_week + current.index * 2}주차 // CYCLE {current.index + 1}</span>
-            <small>{account.ticker} · {shortDate(current.start)} ~ {shortDate(current.end)}</small>
-          </header>
-          <div className="current-mode-title"><strong>{usd(current.v)}</strong><span>목표 V · G {current.g}</span></div>
-          <p>
-            다음 V = <b>{formula}</b>{account.deposit ? <> + 적립 <b>{usd(account.deposit)}</b></> : null}.
-            밴드 ±{account.band_pct}%, 매수는 사이클 시작 Pool의 {account.pool_limit_pct}%까지.
-          </p>
-          <BandGauge cycle={current} />
+      <section className="vr-hero">
+        <header>
+          <div className="vr-hero-cycle">
+            <span className="eyebrow">{account.start_week + current.index * 2}주차 // {account.ticker}</span>
+            <strong>{shortDate(current.start)} ~ {shortDate(current.end)}</strong>
+            <span className="vr-days" aria-label={`사이클 ${outlook.day}일째`}>
+              {Array.from({ length: outlook.cycle_days }, (_, i) => <i key={i} className={i < outlook.day ? "on" : ""} />)}
+              <em>{outlook.day}/{outlook.cycle_days}일째</em>
+            </span>
+          </div>
+          <div className="vr-hero-total">
+            <span className="eyebrow">계좌총액 // TOTAL</span>
+            <strong>{usd(current.total)}</strong>
+            <small className={profit < 0 ? "negative" : "lime"}>
+              {current.return_pct == null ? "—" : pct(current.return_pct)} ({profit < 0 ? "−" : "+"}{usd(Math.abs(profit))})
+            </small>
+            <small>원금 {usd(current.principal)}</small>
+          </div>
+        </header>
+        <PriceCorridor result={result} />
+      </section>
+
+      <section className="vr-stats">
+        <article>
+          <span>목표 V // TARGET</span>
+          <strong>{usd(current.v)}</strong>
+          <small>G {current.g} · ±{account.band_pct}%</small>
+          <small>{usd(current.v_min)} ~ {usd(current.v_max)}</small>
         </article>
-        <section className="snapshot-grid">
-          <article><span>평가금 // STOCK</span><strong>{usd(current.stock_value)}</strong><small>{current.shares.toLocaleString()}주 × {usd(current.close, 2)} ({current.close_date ?? "—"})</small></article>
-          <article><span>POOL // CASH</span><strong>{usd(current.pool)}</strong><small>P/V {pv.toFixed(3)}</small></article>
-          <article><span>계좌총액 // TOTAL</span><strong>{usd(current.total)}</strong><small>투자원금 {usd(current.principal)}</small></article>
-          <article><span>수익률 // RETURN</span><strong className={current.return_pct != null && current.return_pct < 0 ? "negative" : "lime"}>{current.return_pct == null ? "—" : `${current.return_pct.toFixed(2)}%`}</strong><small>원금 대비</small></article>
-        </section>
+        <article>
+          <span>평가금 // STOCK</span>
+          <strong>{usd(current.stock_value)}</strong>
+          <small>{current.shares.toLocaleString()}주 · 주식 {stockShare.toFixed(0)}%</small>
+          <small className={vGap < 0 ? "vr-down" : "vr-up"}>V 대비 {pct(vGap)}</small>
+        </article>
+        <article>
+          <span>POOL // CASH</span>
+          <strong>{usd(current.pool)}</strong>
+          <small>P/V {(current.pool / current.v).toFixed(3)}</small>
+          <small>매수 한도 남음 {usd(outlook.buy_budget_left)} / {account.pool_limit_pct}%</small>
+          <i className="vr-meter" aria-hidden><b style={{ width: `${(Math.min(1, Math.max(0, budgetUsed)) * 100).toFixed(1)}%` }} /></i>
+        </article>
+        <article>
+          <span>다음 사이클 // {shortDate(outlook.next_start)}</span>
+          <strong>{usd(outlook.next_v)}</strong>
+          <small>예상 V · G {outlook.next_g}{outlook.next_deposit ? ` · 적립 ${outlook.next_deposit > 0 ? "+" : "−"}${usd(Math.abs(outlook.next_deposit))}` : ""}</small>
+          <small>지금 종가로 계산 · {formula}</small>
+        </article>
       </section>
 
       <LocLadder
@@ -195,12 +200,9 @@ export function VrView({ result }: { result: VRResult }) {
         ) : undefined}
       />
 
-      <section className="chart-card">
-        <header className="panel-header"><span className="eyebrow">V 밴드 // VALUE BAND</span><small>점선 V · 띠 V최소~V최대 · 흰 선 사이클 마지막 종가 평가금</small></header>
-        <BandChart cycles={result.cycles} />
-      </section>
+      <VrBandChart result={result} />
 
-      <DataTable title="사이클 기록" eyebrow="CYCLES" table={cycleTable(result.cycles, account.start_week)} filename={`vr_cycles_${account.id}.csv`} limit={0} />
+      <DataTable title="사이클 기록" eyebrow="CYCLES" table={cycleTable(result.cycles, account.start_week)} filename={`vr_cycles_${account.id}.csv`} limit={1000} />
 
       <footer className="footer">
         <span>VR // {account.name}</span>

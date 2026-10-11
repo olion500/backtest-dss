@@ -84,6 +84,7 @@ class Cycle:
     pool: float = 0.0
     close: float | None = None
     close_date: date | None = None
+    days: list[dict] = field(default_factory=list)  # {date, close, shares, pool} after each session
 
     @property
     def stock_value(self) -> float | None:
@@ -115,6 +116,15 @@ def _adjustment(config: VRConfig, start: date, end: date) -> dict:
         if start <= item["date"] <= end:
             merged.update({key: item[key] for key in ("shares", "pool", "v") if item.get(key) is not None})
     return merged
+
+
+def deposit_for(config: VRConfig, start: date) -> float:
+    """The deposit added at the cycle starting on ``start`` (not the first cycle)."""
+    return _deposit(config, start)
+
+
+def g_for(config: VRConfig, index: int) -> float:
+    return _g(config, index)
 
 
 def next_v(v: float, pool: float, stock_value: float, g: float, advanced: bool, deposit: float) -> float:
@@ -183,6 +193,7 @@ def run_vr(prices: pd.DataFrame, config: VRConfig, today: date) -> list[Cycle]:
     if before.empty:
         raise ValueError(f"{config.start_date} 이전 종가가 없습니다.")
     last_close = round(float(before["Close"].iloc[-1]), 2)
+    last_date = before.index[-1].date()
 
     shares, pool = config.start_shares, config.start_pool
     v = config.start_v if config.start_v is not None else shares * last_close
@@ -223,11 +234,12 @@ def run_vr(prices: pd.DataFrame, config: VRConfig, today: date) -> list[Cycle]:
                 else:
                     shares -= order.qty
                     pool += order.qty * order.fill_price
-            last_close = round(float(bar["Close"]), 2)
-            cycle.close, cycle.close_date = last_close, day.date()
+            last_close, last_date = round(float(bar["Close"]), 2), day.date()
+            cycle.close, cycle.close_date = last_close, last_date
+            cycle.days.append({"date": day.date(), "close": last_close, "shares": shares, "pool": round(pool, 2)})
         cycle.shares, cycle.pool = shares, round(pool, 2)
-        if cycle.close is None:
-            cycle.close = last_close
+        if cycle.close is None:  # no session in this cycle yet: the latest close so far
+            cycle.close, cycle.close_date = last_close, last_date
         cycles.append(cycle)
         start, index = end + timedelta(days=1), index + 1
     return cycles

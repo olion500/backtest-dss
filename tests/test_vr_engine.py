@@ -108,3 +108,21 @@ def test_vr_view_before_start_shows_first_orders():
     view = run_vr_view(account, provider=lambda *_: bars, today=date(2026, 10, 12))
     assert view["current"]["index"] == 0 and view["current"]["v"] == pytest.approx(810.0)
     assert view["orders"]
+
+
+def test_vr_view_outlook_and_daily():
+    account = VRAccount(id="a", name="a", start_date=date(2026, 10, 3), start_shares=800, start_pool=15112.35,
+                        start_v=67915.68, deposit=500)
+    bars = _bars([("2026-10-02", 81, 82, 80, 81.28), ("2026-10-05", 81, 82, 70, 72), ("2026-10-06", 72, 73, 71, 72.5)])
+    view = run_vr_view(account, provider=lambda *_: bars, today=date(2026, 10, 8))
+    out = view["outlook"]
+    filled = [o for o in view["orders"] if o["filled_on"]]
+    spent = sum(o["qty"] * o["fill_price"] for o in filled)
+    assert out["day"] == 6 and out["cycle_days"] == 14
+    assert out["buy_budget_left"] == pytest.approx(15112.35 * 0.75 - spent, abs=0.01)
+    assert out["buy_line"] == max(o["price"] for o in view["orders"] if o["side"] == "buy" and not o["filled_on"])
+    current = view["current"]
+    expected = next_v(67915.68, current["pool"], current["shares"] * 72.5, 10, True, 500)
+    assert out["next_v"] == pytest.approx(round(expected, 2)) and out["next_deposit"] == 500
+    assert [d["date"] for d in view["daily"]] == ["2026-10-05", "2026-10-06"]
+    assert view["daily"][-1]["stock_value"] == pytest.approx(current["shares"] * 72.5)

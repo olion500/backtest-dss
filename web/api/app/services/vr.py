@@ -14,7 +14,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
 from engines.config_store import VR_DIR, load_vr_accounts
-from engines.vr_engine import Cycle, VRConfig, run_vr
+from engines.vr_engine import CYCLE_DAYS, Cycle, VRConfig, deposit_for, g_for, next_v, run_vr
 from web.api.app.serializers import json_value
 from web.api.app.services.market_data import market_data_client, market_today
 
@@ -118,19 +118,50 @@ def _cycle_row(cycle: Cycle) -> dict:
     }
 
 
+def _outlook(account: VRAccount, config: VRConfig, cycle: Cycle, as_of: date) -> dict:
+    """Where the current cycle stands and what the next one would look like at the last close."""
+    open_buys = [o.price for o in cycle.orders if o.side == "buy" and not o.filled_on]
+    open_sells = [o.price for o in cycle.orders if o.side == "sell" and not o.filled_on]
+    budget = cycle.pool_start * config.pool_limit_pct / 100
+    spent = sum(o.qty * o.fill_price for o in cycle.orders if o.side == "buy" and o.filled_on)
+    next_start = cycle.end + timedelta(days=1)
+    deposit = deposit_for(config, next_start)
+    stock = cycle.shares * cycle.close if cycle.close is not None else None
+    return {
+        "day": min(max((as_of - cycle.start).days + 1, 1), CYCLE_DAYS),
+        "cycle_days": CYCLE_DAYS,
+        "buy_line": max(open_buys) if open_buys else None,
+        "sell_line": min(open_sells) if open_sells else None,
+        "buy_budget": round(budget, 2),
+        "buy_budget_left": round(budget - spent, 2),
+        "next_start": next_start,
+        "next_deposit": deposit,
+        "next_g": g_for(config, cycle.index + 1),
+        "next_v": round(next_v(cycle.v, cycle.pool, stock, g_for(config, cycle.index), config.advanced, deposit), 2)
+        if stock is not None else None,
+    }
+
+
 def run_vr_view(account: VRAccount, provider: PriceProvider | None = None, today: date | None = None) -> dict:
     today = today or market_today()
     # An account starting later still shows its first cycle's orders.
     as_of = max(today, account.start_date)
     download = provider or market_data_client.download
     prices = download(account.ticker, account.start_date - timedelta(days=10), as_of + timedelta(days=1))
-    cycles = run_vr(prices, account.engine_config(), as_of)
+    config = account.engine_config()
+    cycles = run_vr(prices, config, as_of)
     current = cycles[-1]
     return json_value({
         "account": account.model_dump(mode="json", by_alias=True),
         "today": today,
         "current": _cycle_row(current),
         "orders": _order_rows(current),
+        "outlook": _outlook(account, config, current, today),
+        "daily": [
+            {**day, "stock_value": round(day["shares"] * day["close"], 2), "cycle": cycle.index,
+             "v": cycle.v, "v_min": round(cycle.v_min, 2), "v_max": round(cycle.v_max, 2)}
+            for cycle in cycles for day in cycle.days
+        ],
         "cycles": [_cycle_row(cycle) for cycle in cycles],
         "fills": [
             {"cycle": cycle.index, "date": order.filled_on, "side": order.side, "qty": order.qty, "price": order.fill_price}

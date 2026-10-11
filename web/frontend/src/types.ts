@@ -163,11 +163,41 @@ export interface VROrder {
   fill_price: number | null;
 }
 
+export interface VROutlook {
+  /** 사이클 며칠째 (달력 기준, 1~cycle_days) */
+  day: number;
+  cycle_days: number;
+  /** 아직 안 걸린 매수 중 가장 높은 주문가 / 매도 중 가장 낮은 주문가 */
+  buy_line: number | null;
+  sell_line: number | null;
+  buy_budget: number;
+  buy_budget_left: number;
+  next_start: string;
+  next_deposit: number;
+  next_g: number;
+  /** 지금 종가로 계산한 다음 사이클 V */
+  next_v: number | null;
+}
+
+export interface VRDay {
+  date: string;
+  close: number;
+  shares: number;
+  pool: number;
+  stock_value: number;
+  cycle: number;
+  v: number;
+  v_min: number;
+  v_max: number;
+}
+
 export interface VRResult {
   account: VRAccount;
   today: string;
   current: VRCycle;
   orders: VROrder[];
+  outlook: VROutlook;
+  daily: VRDay[];
   cycles: VRCycle[];
   fills: Array<{ cycle: number; date: string; side: "buy" | "sell"; qty: number; price: number }>;
 }
