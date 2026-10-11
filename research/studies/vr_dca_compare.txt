@@ -1,0 +1,81 @@
+cell = TWR CAGR / TWR MDD | IRR | 최종/원금 배수 | 계좌금액 MDD
+
+== 11~all
+TQQQ hold                                        40.0% /  -81.8% | IRR   40.8% | x   48.8 | acct  -81.6%
+TQQQ current                                     30.2% /  -44.3% | IRR   32.3% | x   21.3 | acct  -39.6%
+TQQQ vr G=10 pool_limit=0.75 advanced=False      39.5% /  -80.3% | IRR   40.4% | x   46.9 | acct  -80.1%
+TQQQ vr G=10 pool_limit=0.75 advanced=True       39.5% /  -80.6% | IRR   40.1% | x   45.8 | acct  -80.4%
+TQQQ vr advanced=True schedule=True              37.2% /  -74.8% | IRR   37.6% | x   35.7 | acct  -74.6%
+TQQQ vr G=20 pool_limit=0.75 advanced=True       38.2% /  -79.0% | IRR   38.6% | x   39.5 | acct  -78.8%
+TQQQ vr G=40 pool_limit=0.75 advanced=True       36.5% /  -74.6% | IRR   37.1% | x   34.0 | acct  -74.4%
+SOXL hold                                        38.2% /  -90.5% | IRR   44.4% | x   68.9 | acct  -90.5%
+SOXL current                                     57.7% /  -56.6% | IRR   65.5% | x  465.8 | acct  -55.3%
+SOXL vr G=10 pool_limit=0.75 advanced=False      39.5% /  -89.1% | IRR   46.0% | x   79.8 | acct  -89.0%
+SOXL vr G=10 pool_limit=0.75 advanced=True       37.9% /  -89.2% | IRR   43.7% | x   64.4 | acct  -89.1%
+SOXL vr advanced=True schedule=True              36.6% /  -81.9% | IRR   42.2% | x   55.9 | acct  -81.8%
+SOXL vr G=20 pool_limit=0.75 advanced=True       38.9% /  -87.2% | IRR   44.5% | x   69.1 | acct  -87.1%
+SOXL vr G=40 pool_limit=0.75 advanced=True       38.8% /  -84.3% | IRR   43.9% | x   65.4 | acct  -84.2%
+
+== 11~20
+TQQQ hold                                        49.7% /  -69.9% | IRR   53.5% | x   20.5 | acct  -69.9%
+TQQQ current                                     32.8% /  -44.3% | IRR   37.4% | x    8.4 | acct  -39.6%
+TQQQ vr G=10 pool_limit=0.75 advanced=False      47.6% /  -62.3% | IRR   51.0% | x   18.0 | acct  -62.2%
+TQQQ vr G=10 pool_limit=0.75 advanced=True       48.8% /  -64.6% | IRR   52.1% | x   19.1 | acct  -64.6%
+TQQQ vr advanced=True schedule=True              45.8% /  -55.1% | IRR   48.7% | x   15.8 | acct  -55.0%
+TQQQ vr G=20 pool_limit=0.75 advanced=True       47.4% /  -61.4% | IRR   50.4% | x   17.3 | acct  -61.4%
+TQQQ vr G=40 pool_limit=0.75 advanced=True       44.3% /  -56.8% | IRR   47.2% | x   14.6 | acct  -56.7%
+SOXL hold                                        43.3% /  -80.4% | IRR   55.5% | x   23.0 | acct  -80.4%
+SOXL current                                     37.8% /  -56.6% | IRR   45.4% | x   13.2 | acct  -55.3%
+SOXL vr G=10 pool_limit=0.75 advanced=False      42.7% /  -75.7% | IRR   54.8% | x   22.1 | acct  -75.7%
+SOXL vr G=10 pool_limit=0.75 advanced=True       41.7% /  -76.9% | IRR   52.9% | x   19.9 | acct  -76.9%
+SOXL vr advanced=True schedule=True              39.1% /  -65.6% | IRR   49.7% | x   16.7 | acct  -62.2%
+SOXL vr G=20 pool_limit=0.75 advanced=True       41.6% /  -73.4% | IRR   51.9% | x   18.8 | acct  -73.4%
+SOXL vr G=40 pool_limit=0.75 advanced=True       41.5% /  -67.7% | IRR   50.9% | x   17.9 | acct  -67.6%
+
+== 21~
+TQQQ hold                                        25.7% /  -81.8% | IRR   38.2% | x    3.3 | acct  -67.2%
+TQQQ current                                     25.8% /  -38.6% | IRR   30.0% | x    2.6 | acct  -34.3%
+TQQQ vr G=10 pool_limit=0.75 advanced=False      26.2% /  -80.4% | IRR   40.3% | x    3.5 | acct  -64.8%
+TQQQ vr G=10 pool_limit=0.75 advanced=True       24.4% /  -79.6% | IRR   38.1% | x    3.3 | acct  -64.0%
+TQQQ vr advanced=True schedule=True              23.4% /  -79.4% | IRR   36.4% | x    3.2 | acct  -63.8%
+TQQQ vr G=20 pool_limit=0.75 advanced=True       23.5% /  -78.3% | IRR   36.7% | x    3.2 | acct  -62.0%
+TQQQ vr G=40 pool_limit=0.75 advanced=True       23.9% /  -75.8% | IRR   35.6% | x    3.1 | acct  -58.0%
+SOXL hold                                        30.1% /  -90.5% | IRR   53.2% | x    5.2 | acct  -86.0%
+SOXL current                                     99.3% /  -34.6% | IRR  108.1% | x   21.9 | acct  -24.9%
+SOXL vr G=10 pool_limit=0.75 advanced=False      35.2% /  -89.0% | IRR   57.8% | x    5.9 | acct  -83.3%
+SOXL vr G=10 pool_limit=0.75 advanced=True       31.0% /  -88.8% | IRR   52.0% | x    5.0 | acct  -83.2%
+SOXL vr advanced=True schedule=True              28.9% /  -88.6% | IRR   48.5% | x    4.5 | acct  -81.6%
+SOXL vr G=20 pool_limit=0.75 advanced=True       32.5% /  -87.8% | IRR   52.8% | x    5.1 | acct  -79.0%
+SOXL vr G=40 pool_limit=0.75 advanced=True       33.5% /  -85.8% | IRR   51.5% | x    4.9 | acct  -76.1%
+
+== 23~
+TQQQ hold                                        82.4% /  -58.3% | IRR   71.0% | x    3.9 | acct  -56.2%
+TQQQ current                                     46.2% /  -36.2% | IRR   40.3% | x    2.3 | acct  -33.1%
+TQQQ vr G=10 pool_limit=0.75 advanced=False      71.7% /  -55.4% | IRR   66.7% | x    3.7 | acct  -52.8%
+TQQQ vr G=10 pool_limit=0.75 advanced=True       69.5% /  -56.0% | IRR   64.5% | x    3.5 | acct  -53.4%
+TQQQ vr advanced=True schedule=True              68.7% /  -55.3% | IRR   63.6% | x    3.5 | acct  -52.7%
+TQQQ vr G=20 pool_limit=0.75 advanced=True       64.5% /  -53.6% | IRR   60.4% | x    3.3 | acct  -50.7%
+TQQQ vr G=40 pool_limit=0.75 advanced=True       59.8% /  -49.4% | IRR   55.8% | x    3.0 | acct  -46.3%
+SOXL hold                                       105.1% /  -88.0% | IRR  103.3% | x    6.6 | acct  -85.6%
+SOXL current                                    145.9% /  -25.9% | IRR  144.8% | x   11.8 | acct  -24.2%
+SOXL vr G=10 pool_limit=0.75 advanced=False      95.6% /  -85.2% | IRR  100.7% | x    6.3 | acct  -82.1%
+SOXL vr G=10 pool_limit=0.75 advanced=True       87.8% /  -85.3% | IRR   92.0% | x    5.5 | acct  -82.2%
+SOXL vr advanced=True schedule=True              85.2% /  -84.9% | IRR   88.6% | x    5.3 | acct  -81.7%
+SOXL vr G=20 pool_limit=0.75 advanced=True       87.2% /  -81.7% | IRR   90.6% | x    5.4 | acct  -78.0%
+SOXL vr G=40 pool_limit=0.75 advanced=True       82.5% /  -78.5% | IRR   85.0% | x    5.0 | acct  -74.2%
+
+== 02~synth
+TQQQ hold                                        17.8% /  -96.8% | IRR   30.4% | x  126.9 | acct  -92.7%
+TQQQ current                                     23.7% /  -65.2% | IRR   28.9% | x   98.5 | acct  -48.1%
+TQQQ vr G=10 pool_limit=0.75 advanced=False      19.7% /  -94.5% | IRR   30.4% | x  126.9 | acct  -92.0%
+TQQQ vr G=10 pool_limit=0.75 advanced=True       19.1% /  -94.7% | IRR   29.9% | x  117.4 | acct  -91.9%
+TQQQ vr advanced=True schedule=True              17.8% /  -92.0% | IRR   27.5% | x   78.3 | acct  -87.8%
+TQQQ vr G=20 pool_limit=0.75 advanced=True       18.9% /  -94.2% | IRR   29.2% | x  103.4 | acct  -91.6%
+TQQQ vr G=40 pool_limit=0.75 advanced=True       18.3% /  -93.6% | IRR   28.1% | x   85.9 | acct  -90.9%
+SOXL hold                                         1.9% /  -99.9% | IRR   27.6% | x   78.9 | acct  -96.5%
+SOXL current                                     35.8% /  -69.2% | IRR   44.8% | x 1294.0 | acct  -59.2%
+SOXL vr G=10 pool_limit=0.75 advanced=False       5.2% /  -99.8% | IRR   28.9% | x   98.2 | acct  -96.4%
+SOXL vr G=10 pool_limit=0.75 advanced=True        4.6% /  -99.8% | IRR   27.5% | x   78.4 | acct  -96.2%
+SOXL vr advanced=True schedule=True               5.7% /  -99.4% | IRR   26.0% | x   60.9 | acct  -91.8%
+SOXL vr G=20 pool_limit=0.75 advanced=True        5.6% /  -99.7% | IRR   28.1% | x   86.2 | acct  -96.3%
+SOXL vr G=40 pool_limit=0.75 advanced=True        6.6% /  -99.7% | IRR   28.1% | x   86.8 | acct  -96.4%
