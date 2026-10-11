@@ -56,6 +56,14 @@ def suggest_signal(t, fam, idx):
         dd = t.suggest_float('dd', 0.05, 0.3, step=0.01); rec = t.suggest_float('rec_frac', 0.2, 1.0, step=0.05) * dd
         return S.combine_and(S.vix_regime(idx, hi, lo),
                              S.drawdown_breaker(idx, t.suggest_categorical('ticker', ['QQQ', 'SOXX']), 252, dd, rec))
+    if fam == 'rsi_sma':
+        lo = t.suggest_float('low', 15, 45, step=0.5); ml = t.suggest_float('mid_low', 30, 55, step=0.5)
+        ne = t.suggest_float('neutral', 40, 60, step=0.5); mh = t.suggest_float('mid_high', 50, 75, step=0.5)
+        hi = t.suggest_float('high', 55, 85, step=0.5)
+        a = S.rsi_mode(idx, hi, mh, ne, ml, lo, momo=t.suggest_categorical('momo', ['QQQ', 'SOXX']))
+        b = S.sma_trend(idx, t.suggest_categorical('ticker', ['QQQ', 'SOXX', 'SOXL']),
+                        t.suggest_int('n', 20, 250, step=10), t.suggest_float('band', 0.0, 0.06, step=0.01))
+        return S.combine_and(a, b)
     if fam == 'ddq':
         dd = t.suggest_float('dd', 0.05, 0.3, step=0.01); rec = t.suggest_float('rec_frac', 0.2, 1.0, step=0.05) * dd
         return S.drawdown_breaker(idx, t.suggest_categorical('ticker', ['QQQ', 'SOXX']), 252, dd, rec)
