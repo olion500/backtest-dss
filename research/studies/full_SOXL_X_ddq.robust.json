@@ -1,0 +1,338 @@
+[
+ {
+  "rank_in_study": 1,
+  "params": {
+   "dd": 0.14,
+   "rec_frac": 0.4,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 7,
+   "off_buy": 5.0,
+   "off_tp": 0.5,
+   "off_hold": 29,
+   "def_sl_on": true,
+   "def_slices": 7,
+   "def_buy": 3.25,
+   "def_tp": 3.75,
+   "def_hold": 16,
+   "def_sl": 9.0
+  },
+  "base": [
+   0.3191580230608786,
+   -0.4493689696748291,
+   0.6928225457390005,
+   -0.266752062249788
+  ],
+  "nb_cagr": 0.31982280366240956,
+  "nb_mdd": -0.46248371043467973,
+  "nb_worst": -0.53876276782
+ },
+ {
+  "rank_in_study": 2,
+  "params": {
+   "dd": 0.14,
+   "rec_frac": 0.5,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 8,
+   "off_buy": 4.5,
+   "off_tp": 1.25,
+   "off_hold": 38,
+   "def_sl_on": true,
+   "def_slices": 9,
+   "def_buy": 3.25,
+   "def_tp": 2.25,
+   "def_hold": 16,
+   "def_sl": 12.0
+  },
+  "base": [
+   0.3147117557881216,
+   -0.4243838020381248,
+   0.6053758422539108,
+   -0.2757260820430113
+  ],
+  "nb_cagr": 0.31573314269697506,
+  "nb_mdd": -0.4706318185145424,
+  "nb_worst": -0.603008736
+ },
+ {
+  "rank_in_study": 6,
+  "params": {
+   "dd": 0.060000000000000005,
+   "rec_frac": 0.4,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 8,
+   "off_buy": 7.75,
+   "off_tp": 1.0,
+   "off_hold": 43,
+   "def_sl_on": true,
+   "def_slices": 7,
+   "def_buy": 1.5,
+   "def_tp": 3.25,
+   "def_hold": 20,
+   "def_sl": 12.0
+  },
+  "base": [
+   0.30663555439273216,
+   -0.4295556146501256,
+   0.5649789843835689,
+   -0.33467907657523366
+  ],
+  "nb_cagr": 0.3110941038207601,
+  "nb_mdd": -0.445708688515,
+  "nb_worst": -0.52642358229
+ },
+ {
+  "rank_in_study": 3,
+  "params": {
+   "dd": 0.08,
+   "rec_frac": 0.2,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 10,
+   "off_buy": 1.5,
+   "off_tp": 7.25,
+   "off_hold": 47,
+   "def_sl_on": true,
+   "def_slices": 10,
+   "def_buy": 4.5,
+   "def_tp": 2.25,
+   "def_hold": 32,
+   "def_sl": 13.0
+  },
+  "base": [
+   0.31422238389095325,
+   -0.4267258284261423,
+   0.49467622789963595,
+   -0.4267258284261423
+  ],
+  "nb_cagr": 0.30698629081432316,
+  "nb_mdd": -0.4404760031815471,
+  "nb_worst": -0.5125524683927403
+ },
+ {
+  "rank_in_study": 7,
+  "params": {
+   "dd": 0.1,
+   "rec_frac": 0.2,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 11,
+   "off_buy": 4.75,
+   "off_tp": 4.75,
+   "off_hold": 45,
+   "def_sl_on": true,
+   "def_slices": 9,
+   "def_buy": 6.5,
+   "def_tp": 3.75,
+   "def_hold": 19,
+   "def_sl": 10.0
+  },
+  "base": [
+   0.3056455867279626,
+   -0.4289232448089505,
+   0.5346058548922212,
+   -0.3230847334408601
+  ],
+  "nb_cagr": 0.305931656953625,
+  "nb_mdd": -0.47113813710033337,
+  "nb_worst": -0.5530280866271075
+ },
+ {
+  "rank_in_study": 0,
+  "params": {
+   "dd": 0.060000000000000005,
+   "rec_frac": 0.6000000000000001,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 6,
+   "off_buy": 7.5,
+   "off_tp": 1.0,
+   "off_hold": 40,
+   "def_sl_on": true,
+   "def_slices": 10,
+   "def_buy": 0.25,
+   "def_tp": 3.75,
+   "def_hold": 19,
+   "def_sl": 15.0
+  },
+  "base": [
+   0.32172099104356366,
+   -0.4268760454068301,
+   0.6051201078801154,
+   -0.3347417030931803
+  ],
+  "nb_cagr": 0.3039199777509658,
+  "nb_mdd": -0.45322561478711654,
+  "nb_worst": -0.510058202220478
+ },
+ {
+  "rank_in_study": 4,
+  "params": {
+   "dd": 0.16,
+   "rec_frac": 0.6000000000000001,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 9,
+   "off_buy": 8.75,
+   "off_tp": 1.75,
+   "off_hold": 22,
+   "def_sl_on": true,
+   "def_slices": 6,
+   "def_buy": 1.25,
+   "def_tp": 2.75,
+   "def_hold": 22,
+   "def_sl": 11.0
+  },
+  "base": [
+   0.31144675675457356,
+   -0.4166572427808484,
+   0.5633419547255929,
+   -0.3591830966871952
+  ],
+  "nb_cagr": 0.30057386579833256,
+  "nb_mdd": -0.449508230655,
+  "nb_worst": -0.53632654948
+ },
+ {
+  "rank_in_study": 8,
+  "params": {
+   "dd": 0.05,
+   "rec_frac": 0.2,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 7,
+   "off_buy": 1.0,
+   "off_tp": 3.25,
+   "off_hold": 54,
+   "def_sl_on": true,
+   "def_slices": 8,
+   "def_buy": 4.5,
+   "def_tp": 3.25,
+   "def_hold": 44,
+   "def_sl": 11.0
+  },
+  "base": [
+   0.30333050393281513,
+   -0.4420273965514466,
+   0.566659894945845,
+   -0.37474720515648713
+  ],
+  "nb_cagr": 0.29951066354461575,
+  "nb_mdd": -0.4897279398542038,
+  "nb_worst": -0.5456527820617292
+ },
+ {
+  "rank_in_study": 9,
+  "params": {
+   "dd": 0.060000000000000005,
+   "rec_frac": 0.7,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 6,
+   "off_buy": 9.0,
+   "off_tp": 1.0,
+   "off_hold": 35,
+   "def_sl_on": true,
+   "def_slices": 8,
+   "def_buy": 0.75,
+   "def_tp": 3.0,
+   "def_hold": 8,
+   "def_sl": 10.0
+  },
+  "base": [
+   0.2993302447357986,
+   -0.44892551453124857,
+   0.5983075967686116,
+   -0.35519791746012735
+  ],
+  "nb_cagr": 0.29853917704367916,
+  "nb_mdd": -0.4489746958789484,
+  "nb_worst": -0.5199728642549857
+ },
+ {
+  "rank_in_study": 11,
+  "params": {
+   "dd": 0.08,
+   "rec_frac": 0.2,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 9,
+   "off_buy": 1.5,
+   "off_tp": 6.25,
+   "off_hold": 45,
+   "def_sl_on": true,
+   "def_slices": 14,
+   "def_buy": 6.75,
+   "def_tp": 4.5,
+   "def_hold": 13,
+   "def_sl": 17.0
+  },
+  "base": [
+   0.29651404055590436,
+   -0.4412202666210599,
+   0.4703745689996164,
+   -0.4100825221320315
+  ],
+  "nb_cagr": 0.2977217866103986,
+  "nb_mdd": -0.45383819631497013,
+  "nb_worst": -0.5151018109304449
+ },
+ {
+  "rank_in_study": 5,
+  "params": {
+   "dd": 0.09,
+   "rec_frac": 0.55,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 7,
+   "off_buy": 9.0,
+   "off_tp": 0.5,
+   "off_hold": 39,
+   "def_sl_on": true,
+   "def_slices": 8,
+   "def_buy": 2.5,
+   "def_tp": 3.0,
+   "def_hold": 28,
+   "def_sl": 11.0
+  },
+  "base": [
+   0.3076422162016763,
+   -0.44544930263,
+   0.5922546339515595,
+   -0.3669106145699186
+  ],
+  "nb_cagr": 0.29435707616171003,
+  "nb_mdd": -0.4565094950036014,
+  "nb_worst": -0.47745240417
+ },
+ {
+  "rank_in_study": 10,
+  "params": {
+   "dd": 0.07,
+   "rec_frac": 0.2,
+   "ticker": "SOXX",
+   "off_sl_on": false,
+   "off_slices": 11,
+   "off_buy": 0.0,
+   "off_tp": 6.5,
+   "off_hold": 47,
+   "def_sl_on": true,
+   "def_slices": 10,
+   "def_buy": 1.5,
+   "def_tp": 4.25,
+   "def_hold": 27,
+   "def_sl": 17.0
+  },
+  "base": [
+   0.2971694187610241,
+   -0.43341072897000005,
+   0.4586672128574323,
+   -0.3719436200031035
+  ],
+  "nb_cagr": 0.2939620237492423,
+  "nb_mdd": -0.44512926628,
+  "nb_worst": -0.51708654174
+ }
+]
