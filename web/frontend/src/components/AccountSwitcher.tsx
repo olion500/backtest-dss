@@ -6,7 +6,7 @@ export function AccountSwitcher({
   disabled,
   onSelect,
 }: {
-  accounts: Account[];
+  accounts: Array<Pick<Account, "id" | "name">>;
   selected: string;
   disabled: boolean;
   onSelect: (id: string) => void;

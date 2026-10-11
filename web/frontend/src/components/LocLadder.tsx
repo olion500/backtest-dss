@@ -108,7 +108,20 @@ function Row({
   );
 }
 
-export function LocLadder({ orderBook, footer, action }: { orderBook: OrderBookPayload; footer: string; action?: ReactNode }) {
+export function LocLadder({
+  orderBook,
+  footer,
+  action,
+  heading = "// 다음 거래일 주문 시트",
+  subheading,
+}: {
+  orderBook: OrderBookPayload;
+  footer: string;
+  action?: ReactNode;
+  heading?: string;
+  /** 기본값: LOC 제출 시각과 MOC 여부 */
+  subheading?: string;
+}) {
   const { state } = orderBook;
   const { sells, buys } = useMemo(() => buildRows(orderBook.orders, state.prev_close), [orderBook.orders, state.prev_close]);
   const [hovered, setHovered] = useState<{ side: Side; rank: number } | null>(null);
@@ -128,8 +141,8 @@ export function LocLadder({ orderBook, footer, action }: { orderBook: OrderBookP
   return (
     <section className="order-sheet-panel ladder-panel" onPointerLeave={() => setHovered(null)}>
       <header className="panel-header">
-        <span className="eyebrow lime">// 다음 거래일 주문 시트</span>
-        <small>장 마감 30분 전 제출 · {[...sells, ...buys].some((r) => r.moc) ? "만료·손절은 MOC, 나머지 LOC" : "전부 LOC"}</small>
+        <span className="eyebrow lime">{heading}</span>
+        <small>{subheading ?? `장 마감 30분 전 제출 · ${[...sells, ...buys].some((r) => r.moc) ? "만료·손절은 MOC, 나머지 LOC" : "전부 LOC"}`}</small>
         <div className="ladder-summary">
           <span className="sell">매도 {sells.length}건 · {qtyText(sellQty)}주</span>
           <span className="buy">매수 {buys.length}건 · {qtyText(buyQty)}주</span>

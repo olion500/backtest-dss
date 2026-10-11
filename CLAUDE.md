@@ -30,6 +30,10 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 **`engines/order_book_engine.py`** - Pure business logic for the LOC order book
 - `extract_state()`, `build_holdings()`, `build_order_sheet()`, `apply_netting()`, `build_spread_orders()`
 
+**`engines/vr_engine.py`** - Value rebalancing (라오어 VR 5.0, 실력공식), separate from 동파법
+- `run_vr()`: 2-week cycles from a config + daily bars; buy/sell ladders placed per cycle, fills estimated from Low/High (limit) or Close (LOC)
+- Rules mirror the user's VR Google Sheet (`docs/vr_sheet.md`); accounts in `config/vr/<id>.json`, web tab "VR"
+
 **`engines/dongpa_optuna.py`** - Optuna optimizer engine
 - `OptunaConfig`, `run_optuna()`, `extract_results()`, `narrow_config()`
 
@@ -156,6 +160,7 @@ backtest-dss/
 │   ├── __init__.py
 │   ├── dongpa_engine.py     # Core backtest engine
 │   ├── order_book_engine.py # LOC order book logic
+│   ├── vr_engine.py         # Value rebalancing (VR) cycles, ladders, estimated fills
 │   ├── config_store.py      # config/ file I/O shared by web and Streamlit
 │   └── dongpa_optuna.py     # Optuna optimizer engine
 ├── ui/
@@ -213,6 +218,7 @@ backtest-dss/
 ## Documentation References
 
 - **docs/dongpa_strategy.md**: Complete strategy rules, mode logic, parameter definitions (Korean)
+- **docs/vr_sheet.md**: VR Google Sheet rules and how the web VR tab maps them
 - **docs/dongpa_visualize.md**: UI layout, metric descriptions, output column definitions
 - **AGENTS.md**: Repository conventions, commit style, testing guidelines
 - **strategy_performance.md**: Latest optimizer results (auto-generated)

@@ -5,6 +5,7 @@ Layout::
     config/strategy.json         shared strategy (all accounts trade it)
     config/accounts/<id>.json    per-account: name, order + ACCOUNT_KEYS (gitignored)
     config/presets/<name>.json   saved strategy candidates (backups, Optuna results)
+    config/vr/<id>.json          value rebalancing (VR) accounts (gitignored)
 
 Strategy files never hold account keys and account files hold nothing else,
 so saving one can never clobber the other.
@@ -20,6 +21,7 @@ CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 STRATEGY_PATH = CONFIG_DIR / "strategy.json"
 ACCOUNTS_DIR = CONFIG_DIR / "accounts"
 PRESETS_DIR = CONFIG_DIR / "presets"
+VR_DIR = CONFIG_DIR / "vr"
 
 ACCOUNT_KEYS = ("start_date", "init_cash", "spread_buy_levels", "spread_buy_step")
 ACCOUNT_DEFAULTS = {"start_date": None, "init_cash": 10_000.0, "spread_buy_levels": 5, "spread_buy_step": 1}
@@ -105,3 +107,15 @@ def strategy_files(presets_dir: Path = PRESETS_DIR, strategy_path: Path = STRATE
 def preset_path(name: str, presets_dir: Path = PRESETS_DIR) -> Path:
     name = name.strip().removesuffix(".json")
     return Path(presets_dir) / f"{name}.json"
+
+
+def load_vr_accounts(vr_dir: Path = VR_DIR) -> list[dict]:
+    """VR account files as raw dicts with ``id`` added, sorted like :func:`load_accounts`."""
+    accounts = []
+    paths = sorted(Path(vr_dir).glob("*.json")) if Path(vr_dir).is_dir() else []
+    for path in paths:
+        raw = read_json(path)
+        if raw:
+            accounts.append({**raw, "id": path.stem, "name": raw.get("name") or path.stem, "order": _account_order(raw)})
+    accounts.sort(key=lambda account: (account["order"] is None, account["order"] or 0))
+    return accounts

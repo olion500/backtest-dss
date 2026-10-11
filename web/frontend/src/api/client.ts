@@ -1,4 +1,4 @@
-import type { Account, BacktestRequest, RunView, ViewerResult } from "../types";
+import type { Account, BacktestRequest, RunView, ViewerResult, VRAccount, VRResult } from "../types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -27,5 +27,18 @@ export function runViewer(view: RunView, payload: BacktestRequest): Promise<View
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function getVrAccounts(): Promise<VRAccount[]> {
+  const data = await requestJson<{ accounts: VRAccount[] }>("/api/v1/vr/accounts");
+  return data.accounts;
+}
+
+export function runVr(accountId: string): Promise<VRResult> {
+  return requestJson<VRResult>("/api/v1/vr/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ account_id: accountId }),
   });
 }

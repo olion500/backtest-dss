@@ -1,5 +1,5 @@
-export type ViewName = "backtest" | "order-book" | "settings";
-export type RunView = Exclude<ViewName, "settings">;
+export type ViewName = "backtest" | "order-book" | "vr" | "settings";
+export type RunView = Exclude<ViewName, "settings" | "vr">;
 export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight";
 
 export interface ModeSettings {
@@ -102,4 +102,72 @@ export interface ViewerResult {
   journal: TablePayload;
   trade_log: TablePayload;
   order_book?: OrderBookPayload;
+}
+
+/** config/vr/<id>.json — 밸류리밸런싱(VR) 계좌. 체결은 일별 가격으로 추정한다. */
+export interface VRAccount {
+  id: string;
+  name: string;
+  order: number | null;
+  ticker: string;
+  /** 첫 사이클의 주차 (시트에서 이어받을 때) */
+  start_week: number;
+  start_date: string;
+  start_shares: number;
+  start_pool: number;
+  start_v: number | null;
+  principal: number | null;
+  deposit: number;
+  deposit_changes: Array<{ from: string; deposit: number }>;
+  g: number;
+  g_step_cycles: number;
+  g_step: number;
+  advanced: boolean;
+  band_pct: number;
+  pool_limit_pct: number;
+  order_type: "limit" | "loc";
+  buy_unit: number;
+  sell_unit: number;
+  sell_cap_pct: number;
+  adjustments: Array<{ date: string; shares: number | null; pool: number | null; v: number | null }>;
+}
+
+export interface VRCycle {
+  index: number;
+  start: string;
+  end: string;
+  g: number;
+  v: number;
+  v_min: number;
+  v_max: number;
+  deposit: number;
+  shares_start: number;
+  pool_start: number;
+  bought: number;
+  sold: number;
+  shares: number;
+  close: number | null;
+  close_date: string | null;
+  stock_value: number | null;
+  pool: number;
+  total: number | null;
+  principal: number;
+  return_pct: number | null;
+}
+
+export interface VROrder {
+  side: "buy" | "sell";
+  price: number;
+  qty: number;
+  filled_on: string | null;
+  fill_price: number | null;
+}
+
+export interface VRResult {
+  account: VRAccount;
+  today: string;
+  current: VRCycle;
+  orders: VROrder[];
+  cycles: VRCycle[];
+  fills: Array<{ cycle: number; date: string; side: "buy" | "sell"; qty: number; price: number }>;
 }

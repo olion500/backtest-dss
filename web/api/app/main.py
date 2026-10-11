@@ -11,11 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from web.api.app.schemas import BacktestRequest
 from web.api.app.services.accounts import load_accounts
 from web.api.app.services.backtest import default_request, run_backtest_view, run_order_book_view
 from web.api.app.services.market_data import MarketDataError
+from web.api.app.services.vr import load_vr_account_models, run_vr_view
 
 
 app = FastAPI(
@@ -96,6 +98,23 @@ def backtest(request: BacktestRequest) -> dict:
 @app.post("/api/v1/order-book/preview")
 def order_book(request: BacktestRequest) -> dict:
     return _run_view(run_order_book_view, request)
+
+
+@app.get("/api/v1/vr/accounts")
+def vr_accounts() -> dict:
+    return {"accounts": [account.model_dump(mode="json", by_alias=True) for account in load_vr_account_models()]}
+
+
+class VRRequest(BaseModel):
+    account_id: str
+
+
+@app.post("/api/v1/vr/preview")
+def vr_preview(request: VRRequest) -> dict:
+    account = next((item for item in load_vr_account_models() if item.id == request.account_id), None)
+    if account is None:
+        raise HTTPException(status_code=404, detail="VR 계좌를 찾을 수 없습니다.")
+    return _run_view(run_vr_view, account)
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"

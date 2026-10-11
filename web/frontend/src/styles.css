@@ -587,3 +587,18 @@ td.tone-muted { color: var(--muted); }
   .table-actions button { border-color: var(--border-strong); }
   .strategy-edit { color: var(--lime); }
 }
+
+/* VR (value rebalancing) */
+.vr-gauge { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.vr-gauge-track { position: relative; height: 14px; }
+.vr-gauge-track::before { content: ""; position: absolute; top: 6px; left: 0; right: 0; height: 2px; background: #333; }
+.vr-gauge-band { position: absolute; top: 4px; height: 6px; background: var(--lime-soft); border: 1px solid var(--lime); }
+.vr-gauge-v { position: absolute; top: 0; width: 1px; height: 14px; background: var(--lime); }
+.vr-gauge-value { position: absolute; top: 1px; width: 10px; height: 10px; border: 2px solid #0a0a0a; border-radius: 50%; background: #f5f5f5; transform: translateX(-50%); }
+.vr-gauge-labels { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font: 11px/1.2 var(--mono); }
+.vr-chart { display: block; width: 100%; height: auto; font-family: var(--mono); }
+.vr-chart-grid { stroke: var(--border); stroke-width: 1; }
+.vr-chart-tick { fill: var(--faint); font-size: 11px; }
+.vr-chart-band { fill: var(--lime-soft); stroke: none; }
+.vr-chart-v { fill: none; stroke: var(--lime); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.vr-chart-value { fill: none; stroke: #f5f5f5; stroke-width: 2; }

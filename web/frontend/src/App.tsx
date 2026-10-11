@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { getAccounts, getDefaults, runViewer } from "./api/client";
+import { getAccounts, getDefaults, getVrAccounts, runViewer, runVr } from "./api/client";
 import { DailyLog } from "./components/DailyLog";
 import { DataTable } from "./components/DataTable";
 import { EquityChart } from "./components/EquityChart";
@@ -10,17 +10,19 @@ import { RunToolbar } from "./components/RunToolbar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AccountSwitcher } from "./components/AccountSwitcher";
 import { StrategyStrip } from "./components/StrategyStrip";
+import { VrView } from "./components/VrView";
 import { applyDemoOrders, isDemoMode } from "./dev/demoOrders";
-import type { Account, BacktestRequest, RunView, ViewerResult, ViewName } from "./types";
+import type { Account, BacktestRequest, RunView, ViewerResult, ViewName, VRAccount, VRResult } from "./types";
 
 // v2: server defaults merge config/strategy.json with the first account; the
 // version bump discarded v1 blobs saved with the old defaults (2022 start, 10k cash).
 const STORAGE_KEY = "dongpa-viewer-settings-v2";
 const ACCOUNT_KEY = "dongpa-viewer-account";
+const VR_ACCOUNT_KEY = "dongpa-viewer-vr-account";
 
-function loadAccountId() {
+function loadAccountId(key = ACCOUNT_KEY) {
   try {
-    return localStorage.getItem(ACCOUNT_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
@@ -100,7 +102,7 @@ function BacktestResult({ result }: { result: ViewerResult }) {
 export default function App() {
   const [view, setView] = useState<ViewName>(() => {
     const requested = window.location.hash.replace("#", "");
-    return requested === "settings" || requested === "backtest" ? requested : "order-book";
+    return requested === "settings" || requested === "backtest" || requested === "vr" ? requested : "order-book";
   });
   const [defaults, setDefaults] = useState<BacktestRequest | null>(null);
   const [request, setRequest] = useState<BacktestRequest | null>(null);
@@ -111,6 +113,11 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [accountId, setAccountId] = useState<string | null>(loadAccountId);
+  const [vrAccounts, setVrAccounts] = useState<VRAccount[]>([]);
+  const [vrAccountId, setVrAccountId] = useState<string | null>(() => loadAccountId(VR_ACCOUNT_KEY));
+  const [vrResult, setVrResult] = useState<VRResult | null>(null);
+  const [vrError, setVrError] = useState<string | undefined>();
+  const [vrLoading, setVrLoading] = useState(false);
 
   useEffect(() => {
     // Without accounts the order book falls back to the browser settings.
@@ -119,6 +126,32 @@ export default function App() {
       .catch(() => setAccounts([]))
       .finally(() => setAccountsLoaded(true));
   }, []);
+
+  useEffect(() => {
+    getVrAccounts().then(setVrAccounts).catch(() => setVrAccounts([]));
+  }, []);
+
+  const vrAccount = vrAccounts.find((item) => item.id === vrAccountId) ?? vrAccounts[0];
+  useEffect(() => {
+    if (view !== "vr" || !vrAccount) return;
+    let stale = false;
+    setVrLoading(true);
+    setVrError(undefined);
+    runVr(vrAccount.id)
+      .then((value) => { if (!stale) setVrResult(value); })
+      .catch((reason: Error) => { if (!stale) setVrError(reason.message); })
+      .finally(() => { if (!stale) setVrLoading(false); });
+    return () => { stale = true; };
+  }, [view, vrAccount?.id]);
+
+  const selectVrAccount = (id: string) => {
+    setVrAccountId(id);
+    try {
+      localStorage.setItem(VR_ACCOUNT_KEY, id);
+    } catch {
+      // storage unavailable: the choice lasts for this session only
+    }
+  };
 
   const account = accounts.find((item) => item.id === accountId) ?? accounts[0];
   const orderBookRequest = useMemo(() => (request ? withAccount(request, account) : null), [request, account]);
@@ -177,7 +210,7 @@ export default function App() {
 
   if (!request) return <div className="boot-state">BOOTING VIEWER...</div>;
 
-  const activeRunView = view === "settings" ? null : view;
+  const activeRunView = view === "settings" || view === "vr" ? null : view;
   const activeResult = activeRunView ? results[activeRunView] : undefined;
   const activeError = activeRunView ? errors[activeRunView] : undefined;
   const isLoading = activeRunView != null && running === activeRunView;
@@ -188,6 +221,7 @@ export default function App() {
         <button className="brand" type="button" onClick={() => setView("order-book")}>DONGPA<span>//</span></button>
         <nav aria-label="주요 화면">
           {navItems.slice(0, 2).map(([name, label]) => <button key={name} className={view === name ? "active" : ""} type="button" onClick={() => setView(name)}>{label}</button>)}
+          <button className={view === "vr" ? "active" : ""} type="button" onClick={() => setView("vr")}>VR</button>
           <button type="button" className="disabled" disabled>OPTIMIZER</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>SETTINGS</button>
         </nav>
@@ -196,6 +230,20 @@ export default function App() {
 
       {view === "settings" ? (
         <SettingsPanel request={request} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
+      ) : view === "vr" ? (
+        <main className="screen">
+          {vrAccounts.length > 1 && vrAccount && <AccountSwitcher accounts={vrAccounts} selected={vrAccount.id} disabled={vrLoading} onSelect={selectVrAccount} />}
+          <div className="page-body">
+            {vrError && <div className="error-banner"><strong>REQUEST FAILED</strong><span>{vrError}</span></div>}
+            {!vrAccount ? (
+              <section className="result-empty">
+                <span className="eyebrow">VR // NO ACCOUNT</span>
+                <strong>VR 계좌가 없습니다.</strong>
+                <p>config/vr/example.json.sample을 config/vr/&lt;id&gt;.json으로 복사해 시작 상태를 적으세요.</p>
+              </section>
+            ) : vrLoading ? <LoadingResult /> : vrResult && vrResult.account.id === vrAccount.id ? <VrView result={vrResult} /> : null}
+          </div>
+        </main>
       ) : view === "backtest" ? (
         <main className="screen">
           <RunToolbar request={request} currentMode={latestMode(results.backtest)} lastRun={lastRuns.backtest} loading={running === "backtest"} onChange={setRequest} onRun={() => run("backtest")} />
