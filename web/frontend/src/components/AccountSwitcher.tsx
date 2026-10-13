@@ -5,15 +5,17 @@ export function AccountSwitcher({
   selected,
   disabled,
   onSelect,
+  label = "계좌 // ACCOUNT",
 }: {
   accounts: Array<Pick<Account, "id" | "name">>;
   selected: string;
   disabled: boolean;
   onSelect: (id: string) => void;
+  label?: string;
 }) {
   return (
-    <div className="account-switcher" role="tablist" aria-label="계좌 선택">
-      <span className="account-switcher-label">계좌 // ACCOUNT</span>
+    <div className="account-switcher" role="tablist" aria-label={label}>
+      <span className="account-switcher-label">{label}</span>
       {accounts.map((account) => (
         <button
           key={account.id}

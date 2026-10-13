@@ -217,7 +217,7 @@ export default function App() {
       </header>
 
       {view === "settings" ? (
-        <SettingsPanel request={request} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
+        <SettingsPanel request={request} presets={presets} vrAccounts={vrAccounts} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
       ) : view === "vr" ? (
         <main className="screen">
           {vrAccounts.length > 1 && vrAccount && <AccountSwitcher accounts={vrAccounts} selected={vrAccount.id} disabled={vrLoading} onSelect={setVrAccountId} />}

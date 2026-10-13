@@ -1,7 +1,14 @@
-import type { BacktestRequest, ModeSettings, StrategySettings } from "../types";
+import { useState } from "react";
+
+import type { BacktestRequest, ModeSettings, Preset, StrategySettings, VRAccount } from "../types";
+import { AccountSwitcher } from "./AccountSwitcher";
+import { PresetSelect } from "./RunToolbar";
+import { VrSettings } from "./VrSettings";
 
 interface SettingsPanelProps {
   request: BacktestRequest;
+  presets: Preset[];
+  vrAccounts: VRAccount[];
   onChange: (request: BacktestRequest) => void;
   onReset: () => void;
   onApply: () => void;
@@ -90,7 +97,13 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
   );
 }
 
-export function SettingsPanel({ request, onChange, onReset, onApply }: SettingsPanelProps) {
+const STRATEGY_TABS = [
+  { id: "dongpa", name: "동파법 · LOC" },
+  { id: "vr", name: "VR" },
+];
+
+export function SettingsPanel({ request, presets, vrAccounts, onChange, onReset, onApply }: SettingsPanelProps) {
+  const [tab, setTab] = useState("dongpa");
   const strategy = request.strategy;
   const updateRequest = <K extends keyof BacktestRequest>(key: K, value: BacktestRequest[K]) => {
     onChange({ ...request, [key]: value });
@@ -107,12 +120,24 @@ export function SettingsPanel({ request, onChange, onReset, onApply }: SettingsP
             <span className="eyebrow">// 설정 · STRATEGY SETTINGS</span>
             <h1>전략 설정 · 뷰어</h1>
           </div>
-          <div className="settings-actions">
+          <div className="settings-actions" hidden={tab === "vr"}>
             <span className="local-status">브라우저 자동 저장</span>
             <button className="button ghost" type="button" onClick={onReset}>되돌리기</button>
             <button className="button primary" type="button" onClick={onApply}>설정 적용</button>
           </div>
         </header>
+
+        <AccountSwitcher accounts={STRATEGY_TABS} selected={tab} disabled={false} onSelect={setTab} label="전략 // STRATEGY" />
+
+        {tab === "vr" ? <VrSettings accounts={vrAccounts} /> : (
+          <>
+        <section className="local-settings-panel preset-panel">
+          <div className="local-settings-copy">
+            <span className="eyebrow">프리셋 // PRESET</span>
+            <p>프리셋을 고르면 전환 전략과 안전·공세 값이 한 번에 바뀝니다. "추세 + VIX"는 VIX 파라미터가 함께 보입니다.</p>
+          </div>
+          <PresetSelect request={request} presets={presets} onChange={onChange} />
+        </section>
 
         <section className="local-settings-panel">
           <div className="local-settings-copy">
@@ -196,6 +221,8 @@ export function SettingsPanel({ request, onChange, onReset, onApply }: SettingsP
             <p className="setting-help">레벨 간격은 매수조건 구간을 등분합니다. 스프레드는 신규 트랜치 예산 안에서 체결됩니다.</p>
           </SettingCard>
         </section>
+          </>
+        )}
       </div>
     </main>
   );
