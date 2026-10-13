@@ -18,16 +18,6 @@ import type { Account, BacktestRequest, Preset, RunView, ViewerResult, ViewName,
 // v2: server defaults merge config/strategy.json with the first account; the
 // version bump discarded v1 blobs saved with the old defaults (2022 start, 10k cash).
 const STORAGE_KEY = "dongpa-viewer-settings-v2";
-const ACCOUNT_KEY = "dongpa-viewer-account";
-const VR_ACCOUNT_KEY = "dongpa-viewer-vr-account";
-
-function loadAccountId(key = ACCOUNT_KEY) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
 
 /** The order book runs the shared strategy with the account's own start, cash and steps. */
 function withAccount(request: BacktestRequest, account?: Account): BacktestRequest {
@@ -113,9 +103,10 @@ export default function App() {
   const [errors, setErrors] = useState<Partial<Record<RunView, string>>>({});
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
-  const [accountId, setAccountId] = useState<string | null>(loadAccountId);
+  // The page always opens on the first account (by order); a switch lasts until reload.
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [vrAccounts, setVrAccounts] = useState<VRAccount[]>([]);
-  const [vrAccountId, setVrAccountId] = useState<string | null>(() => loadAccountId(VR_ACCOUNT_KEY));
+  const [vrAccountId, setVrAccountId] = useState<string | null>(null);
   const [vrResult, setVrResult] = useState<VRResult | null>(null);
   const [vrError, setVrError] = useState<string | undefined>();
   const [vrLoading, setVrLoading] = useState(false);
@@ -150,26 +141,10 @@ export default function App() {
     return () => { stale = true; };
   }, [view, vrAccount?.id]);
 
-  const selectVrAccount = (id: string) => {
-    setVrAccountId(id);
-    try {
-      localStorage.setItem(VR_ACCOUNT_KEY, id);
-    } catch {
-      // storage unavailable: the choice lasts for this session only
-    }
-  };
 
   const account = accounts.find((item) => item.id === accountId) ?? accounts[0];
   const orderBookRequest = useMemo(() => (request ? withAccount(request, account) : null), [request, account]);
 
-  const selectAccount = (id: string) => {
-    setAccountId(id);
-    try {
-      localStorage.setItem(ACCOUNT_KEY, id);
-    } catch {
-      // storage unavailable: the choice lasts for this session only
-    }
-  };
 
   useEffect(() => {
     getDefaults()
@@ -245,7 +220,7 @@ export default function App() {
         <SettingsPanel request={request} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
       ) : view === "vr" ? (
         <main className="screen">
-          {vrAccounts.length > 1 && vrAccount && <AccountSwitcher accounts={vrAccounts} selected={vrAccount.id} disabled={vrLoading} onSelect={selectVrAccount} />}
+          {vrAccounts.length > 1 && vrAccount && <AccountSwitcher accounts={vrAccounts} selected={vrAccount.id} disabled={vrLoading} onSelect={setVrAccountId} />}
           <div className="page-body">
             {vrError && <div className="error-banner"><strong>REQUEST FAILED</strong><span>{vrError}</span></div>}
             {!vrAccount ? (
@@ -268,7 +243,7 @@ export default function App() {
         </main>
       ) : (
         <main className="screen">
-          {accounts.length > 1 && account && <AccountSwitcher accounts={accounts} selected={account.id} disabled={running === "order-book"} onSelect={selectAccount} />}
+          {accounts.length > 1 && account && <AccountSwitcher accounts={accounts} selected={account.id} disabled={running === "order-book"} onSelect={setAccountId} />}
           <StrategyStrip request={orderBookRequest ?? request} orderBook={results["order-book"]?.order_book} onSettings={() => setView("settings")} />
           <div className="page-body">
             {offLive && (
