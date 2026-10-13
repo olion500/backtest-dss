@@ -151,7 +151,11 @@ export function LocLadder({
   const [hovered, setHovered] = useState<{ side: Side; rank: number } | null>(null);
   const [flash, setFlash] = useState<{ key: string; nonce: number } | null>(null);
 
-  const maxDistance = Math.max(1e-9, ...[...sells, ...buys].map((r) => Math.abs(r.distancePct ?? 0)));
+  // 거리 막대의 기준(가장 먼 주문)은 같은 쪽의 거리 막대 행끼리만 잡는다:
+  // 매수는 매수끼리, 퉁치기 매도는 퉁치기 매도끼리. 익절 진행도 행은 빠진다.
+  const scale = (rows: LadderRow[]) => Math.max(1e-9, ...rows.filter((r) => !r.progress).map((r) => Math.abs(r.distancePct ?? 0)));
+  const sellScale = scale(sells);
+  const buyScale = scale(buys);
   const sellQty = sells[0]?.total ?? 0;
   const buyQty = buys[buys.length - 1]?.total ?? 0;
 
@@ -188,7 +192,7 @@ export function LocLadder({
 
           <ul className="ladder-side sell" aria-label="매도 주문">
             {sells.map((row) => (
-              <Row key={row.key} row={row} maxDistance={maxDistance} highlighted={isHighlighted(row)} flashNonce={flash?.key === row.key ? flash.nonce : null} onEnter={() => setHovered({ side: "sell", rank: row.rank })} onCopy={() => copy(row)} />
+              <Row key={row.key} row={row} maxDistance={sellScale} highlighted={isHighlighted(row)} flashNonce={flash?.key === row.key ? flash.nonce : null} onEnter={() => setHovered({ side: "sell", rank: row.rank })} onCopy={() => copy(row)} />
             ))}
             {!sells.length && <li className="ladder-empty">매도 주문 없음</li>}
           </ul>
@@ -201,7 +205,7 @@ export function LocLadder({
 
           <ul className="ladder-side buy" aria-label="매수 주문">
             {buys.map((row) => (
-              <Row key={row.key} row={row} maxDistance={maxDistance} highlighted={isHighlighted(row)} flashNonce={flash?.key === row.key ? flash.nonce : null} onEnter={() => setHovered({ side: "buy", rank: row.rank })} onCopy={() => copy(row)} />
+              <Row key={row.key} row={row} maxDistance={buyScale} highlighted={isHighlighted(row)} flashNonce={flash?.key === row.key ? flash.nonce : null} onEnter={() => setHovered({ side: "buy", rank: row.rank })} onCopy={() => copy(row)} />
             ))}
             {!buys.length && <li className="ladder-empty">매수 주문 없음</li>}
           </ul>
