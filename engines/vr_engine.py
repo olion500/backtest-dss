@@ -40,6 +40,7 @@ class VRConfig:
     start_date: date              # first cycle's start; later cycles every 14 days
     start_shares: int
     start_pool: float             # pool at the first cycle's start, this cycle's deposit included
+    origin_date: date | None = None  # VR 시작일 (시트 시작일): G steps and week numbers count from here; None → start_date
     start_v: float | None = None  # None → stock value at the close before start_date
     principal: float | None = None  # money put in up to start_date; None → stock value + pool
     deposit: float = 0.0          # per cycle from the second cycle on (+적립 / −인출)
@@ -69,6 +70,7 @@ class Order:
 @dataclass
 class Cycle:
     index: int
+    week: int          # weeks since the VR start (origin_date), the sheet's 주차
     start: date
     end: date
     g: float
@@ -96,9 +98,27 @@ class Cycle:
         return None if value is None else value + self.pool
 
 
+def _origin(config: VRConfig) -> date:
+    return config.origin_date or config.start_date
+
+
+def _offset(config: VRConfig) -> int:
+    """Cycles between the VR start and this config's first cycle."""
+    gap = (config.start_date - _origin(config)).days
+    if gap < 0 or gap % CYCLE_DAYS:
+        raise ValueError(f"VR 시작일 {_origin(config)}과 첫 사이클 {config.start_date}의 간격이 2주 단위가 아닙니다.")
+    return gap // CYCLE_DAYS
+
+
 def _g(config: VRConfig, index: int) -> float:
-    steps = index // config.g_step_cycles if config.g_step_cycles > 0 else 0
+    """G for the ``index``-th cycle of this config; steps count from the VR start (origin_date)."""
+    cycles = _offset(config) + index
+    steps = cycles // config.g_step_cycles if config.g_step_cycles > 0 else 0
     return config.g + steps * config.g_step
+
+
+def week_of(config: VRConfig, start: date) -> int:
+    return (start - _origin(config)).days // 7
 
 
 def _deposit(config: VRConfig, start: date) -> float:
@@ -187,6 +207,7 @@ def run_vr(prices: pd.DataFrame, config: VRConfig, today: date) -> list[Cycle]:
     ``prices`` holds daily Open/High/Low/Close bars, at least from a few sessions before
     ``start_date``. Bars after ``today`` are ignored.
     """
+    _offset(config)  # validates origin_date before any work
     prices = normalize_ohlcv(prices)
     bars = prices[(prices.index <= pd.Timestamp(today)) & prices["Close"].notna()]
     before = bars[bars.index < pd.Timestamp(config.start_date)]
@@ -215,7 +236,7 @@ def run_vr(prices: pd.DataFrame, config: VRConfig, today: date) -> list[Cycle]:
             principal += deposit
         v = float(adjust.get("v", v))
         cycle = Cycle(
-            index=index, start=start, end=end, g=g, v=round(v, 2),
+            index=index, week=week_of(config, start), start=start, end=end, g=g, v=round(v, 2),
             v_min=v * (1 - config.band_pct / 100), v_max=v * (1 + config.band_pct / 100),
             deposit=deposit, principal=principal, shares_start=shares, pool_start=pool,
             orders=build_orders(shares, v, pool, last_close, config),

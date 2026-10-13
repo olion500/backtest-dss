@@ -126,3 +126,38 @@ def test_vr_view_outlook_and_daily():
     assert out["next_v"] == pytest.approx(round(expected, 2)) and out["next_deposit"] == 500
     assert [d["date"] for d in view["daily"]] == ["2026-10-05", "2026-10-06"]
     assert view["daily"][-1]["stock_value"] == pytest.approx(current["shares"] * 72.5)
+
+
+def _flat_bars(start: str, days: int, price: float = 80.0) -> pd.DataFrame:
+    dates = pd.bdate_range(start=start, periods=days)
+    return _bars([(d.strftime("%Y-%m-%d"), price, price, price, price) for d in dates])
+
+
+def test_origin_date_sets_weeks_and_g_steps():
+    # 시트 시작일 2023-07-01 → 2026-10-03은 85사이클(170주) 뒤: G 10에서 26사이클마다 +1 → 13
+    config = _config(origin_date=date(2023, 7, 1), deposit=500)
+    cycles = run_vr(_flat_bars("2026-09-28", 300), config, date(2027, 7, 1))
+    assert cycles[0].week == 170 and cycles[1].week == 172
+    assert cycles[0].g == 13
+    # the 104th cycle from the VR start (19 after this config's first) is the next step
+    assert cycles[18].g == 13 and cycles[19].g == 14
+    assert cycles[19].start == date(2027, 6, 26)
+
+
+def test_without_origin_counts_from_start_date():
+    cycles = run_vr(_flat_bars("2026-09-28", 30), _config(), date(2026, 10, 20))
+    assert cycles[0].week == 0 and cycles[0].g == 10
+
+
+def test_origin_must_be_whole_cycles_before_start():
+    with pytest.raises(ValueError, match="2주 단위"):
+        run_vr(_flat_bars("2026-09-28", 10), _config(origin_date=date(2023, 7, 2)), date(2026, 10, 5))
+
+
+def test_account_converts_legacy_start_week_to_origin():
+    account = VRAccount.model_validate({
+        "id": "main", "name": "VR", "start_week": 170, "start_date": "2026-10-03",
+        "start_shares": 800, "start_pool": 15112.35,
+    })
+    assert account.origin_date == date(2023, 7, 1)
+    assert account.engine_config().origin_date == date(2023, 7, 1)

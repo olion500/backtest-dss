@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable, Literal
 
 import pandas as pd
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from engines.config_store import VR_DIR, load_vr_accounts
 from engines.vr_engine import CYCLE_DAYS, Cycle, VRConfig, deposit_for, g_for, next_v, run_vr
@@ -38,8 +38,8 @@ class VRAccount(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     order: int | None = None
     ticker: str = "TQQQ"
-    start_week: int = Field(default=0, ge=0)  # 시트에서 이어받을 때 첫 사이클의 주차 (표시용)
     start_date: date
+    origin_date: date | None = None  # VR 시작일 (시트 시작일): 주차와 G 증가를 여기서부터 셈
     start_shares: int = Field(ge=0)
     start_pool: float = Field(ge=0)
     start_v: float | None = Field(default=None, gt=0)
@@ -58,8 +58,17 @@ class VRAccount(BaseModel):
     sell_cap_pct: float = Field(default=40, gt=0, le=1000)
     adjustments: list[Adjustment] = []
 
+    @model_validator(mode="before")
+    @classmethod
+    def origin_from_start_week(cls, data):
+        """Older files gave the first cycle's week number instead of the VR start date."""
+        if isinstance(data, dict) and data.get("start_week") and not data.get("origin_date"):
+            data = dict(data)
+            data["origin_date"] = date.fromisoformat(str(data["start_date"])) - timedelta(weeks=int(data["start_week"]))
+        return data
+
     def engine_config(self) -> VRConfig:
-        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "start_week", "deposit_changes", "adjustments"})
+        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "deposit_changes", "adjustments"})
         return VRConfig(
             **fields,
             deposit_changes=[{"from": item.from_, "deposit": item.deposit} for item in self.deposit_changes],
@@ -96,6 +105,7 @@ def _cycle_row(cycle: Cycle) -> dict:
     total = cycle.total
     return {
         "index": cycle.index,
+        "week": cycle.week,
         "start": cycle.start,
         "end": cycle.end,
         "g": cycle.g,

@@ -2,7 +2,7 @@
   "name": "VR 적립식",
   "order": 1,
   "ticker": "TQQQ",
-  "start_week": 170,
+  "origin_date": "2023-07-01",
   "start_date": "2026-10-03",
   "start_shares": 800,
   "start_pool": 15112.35,

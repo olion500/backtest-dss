@@ -65,12 +65,12 @@ function ladderPayload(result: VRResult, showAll: boolean): OrderBookPayload {
   };
 }
 
-function cycleTable(cycles: VRCycle[], startWeek: number): TablePayload {
+function cycleTable(cycles: VRCycle[]): TablePayload {
   const columns = ["주차", "시작", "종료", "G", "V", "V최소", "V최대", "적립", "매수", "매도", "보유", "종가", "평가금", "Pool", "계좌총액", "투자원금", "수익률"];
   return {
     columns,
     rows: cycles.map((c) => ({
-      주차: startWeek + c.index * 2,
+      주차: c.week,
       시작: c.start,
       종료: c.end,
       G: c.g,
@@ -141,7 +141,7 @@ export function VrView({ result }: { result: VRResult }) {
       <section className="vr-hero">
         <header>
           <div className="vr-hero-cycle">
-            <span className="eyebrow">{account.start_week + current.index * 2}주차 // {account.ticker}</span>
+            <span className="eyebrow">{current.week}주차 // {account.ticker}</span>
             <strong>{shortDate(current.start)} ~ {shortDate(current.end)}</strong>
             <span className="vr-days" aria-label={`사이클 ${outlook.day}일째`}>
               {Array.from({ length: outlook.cycle_days }, (_, i) => <i key={i} className={i < outlook.day ? "on" : ""} />)}
@@ -202,7 +202,7 @@ export function VrView({ result }: { result: VRResult }) {
 
       <VrBandChart result={result} />
 
-      <DataTable title="사이클 기록" eyebrow="CYCLES" table={cycleTable(result.cycles, account.start_week)} filename={`vr_cycles_${account.id}.csv`} limit={1000} />
+      <DataTable title="사이클 기록" eyebrow="CYCLES" table={cycleTable(result.cycles)} filename={`vr_cycles_${account.id}.csv`} limit={1000} />
 
       <footer className="footer">
         <span>VR // {account.name}</span>

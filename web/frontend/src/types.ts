@@ -123,9 +123,9 @@ export interface VRAccount {
   name: string;
   order: number | null;
   ticker: string;
-  /** 첫 사이클의 주차 (시트에서 이어받을 때) */
-  start_week: number;
   start_date: string;
+  /** VR 시작일 (시트 시작일). 주차와 G 증가를 여기서부터 센다 */
+  origin_date: string | null;
   start_shares: number;
   start_pool: number;
   start_v: number | null;
@@ -147,6 +147,8 @@ export interface VRAccount {
 
 export interface VRCycle {
   index: number;
+  /** VR 시작일부터 지난 주 수 (시트의 주차) */
+  week: number;
   start: string;
   end: string;
   g: number;
