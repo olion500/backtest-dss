@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from engines.order_book_engine import (
+    MOC_SELL,
     BacktestState,
     NettingResult,
     apply_netting,
@@ -234,6 +235,23 @@ class TestBuildOrderSheet:
         )
         tp_rows = [r for r in sheet if "익절" in r["구분"]]
         assert len(tp_rows) == 1
+
+    def test_sell_rows_carry_the_lots_levels(self):
+        """TP and expiry sells carry the lot's buy/TP/SL prices for the sheet's progress gauge."""
+        trades = _make_open_trades([
+            {"매수일자": "2024-01-02", "매수체결가": 100.0, "매수수량": 10, "TP목표가": 110.0,
+             "SL목표가": 90.0, "최대보유일": 30, "보유기간(일)": 3},
+            {"매수일자": "2024-01-03", "매수체결가": 96.0, "매수수량": 5, "TP목표가": 99.0,
+             "SL목표가": None, "최대보유일": 4, "보유기간(일)": 3},
+        ])
+        sheet, _ = build_order_sheet(trades, 98.0, 5000.0, 1000.0, "defense", _DEFAULT_UI, False)
+        tp = next(r for r in sheet if r["구분"] == "매도 (익절)")
+        moc = next(r for r in sheet if r["구분"] == MOC_SELL)
+        assert (tp["매수가"], tp["익절가"], tp["손절가"]) == (100.0, 110.0, 90.0)
+        assert (moc["매수가"], moc["익절가"], moc["손절가"]) == (96.0, 99.0, None)
+        # display-only keys survive netting untouched
+        result = apply_netting(sheet, 98.0, False)
+        assert all(r.get("익절가") == 110.0 for r in result.order_sheet if r["구분"] == "매도 (익절)")
 
     def test_open_lot_gets_no_stop_loss_row(self):
         """An open lot's SL is unknown until the close, so it is not on the sheet."""

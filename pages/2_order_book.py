@@ -740,7 +740,7 @@ order_sheet.extend(build_stop_loss_orders(trade_log, state.last_date))
 
 # Display order sheet
 if order_sheet:
-    order_df = pd.DataFrame(order_sheet)
+    order_df = pd.DataFrame(order_sheet).drop(columns=["매수가", "익절가", "손절가"], errors="ignore")
     order_df = order_df.sort_values("주문가", ascending=False).reset_index(drop=True)
     order_df["주문가"] = order_df["주문가"].apply(lambda x: f"${x:.2f}")
     st.dataframe(order_df, width="stretch", hide_index=True)

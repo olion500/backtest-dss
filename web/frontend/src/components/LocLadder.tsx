@@ -20,6 +20,23 @@ interface LadderRow {
   note: string;
   /** 만료·손절 매도: 지정가 없이 MOC로 넣는다 (주문가는 참고용 직전 종가) */
   moc: boolean;
+  /** 보유 물량 매도: 종가가 손절가(없으면 매수가) 0% → 익절가 100% 사이 어디인지. 그 외는 null */
+  progress: { value: number; floor: number; floorLabel: string; target: number } | null;
+}
+
+const STOP_LOSS_MOC = "매도 (손절)";
+
+function lotProgress(row: TablePayload["rows"][number], kind: string, close: number | null): LadderRow["progress"] {
+  const target = num(row["익절가"]);
+  const stop = num(row["손절가"]);
+  const buy = num(row["매수가"]);
+  const floor = stop ?? buy;
+  if (target == null || floor == null || close == null) return null;
+  const floorLabel = stop != null ? "손절가" : "매수가 (손절 없음)";
+  // 이미 손절선에 닿아 MOC로 파는 물량
+  if (kind === STOP_LOSS_MOC) return { value: 0, floor, floorLabel, target };
+  if (target <= floor) return null;
+  return { value: Math.min(1, Math.max(0, (close - floor) / (target - floor))), floor, floorLabel, target };
 }
 
 function tagOf(kind: string, side: Side) {
@@ -50,6 +67,7 @@ function buildRows(table: TablePayload, prevClose: number | null) {
       distancePct: prevClose ? ((price - prevClose) / prevClose) * 100 : null,
       note: String(row["비고"] ?? ""),
       moc: isMocKind(kind),
+      progress: side === "sell" ? lotProgress(row, kind, prevClose) : null,
     } satisfies LadderRow];
   });
   // 매도는 종가에서 위로, 매수는 종가에서 아래로 누적한다
@@ -86,12 +104,17 @@ function Row({
   onEnter: () => void;
   onCopy: () => void;
 }) {
-  // 막대 폭: 종가(0%)를 칸의 절반으로 두고, 종가보다 높으면 그만큼 길게, 낮으면 짧게 그린다
-  const depth = row.distancePct == null ? 0.5 : 0.5 + (0.5 * row.distancePct) / maxDistance;
+  // 보유 물량 매도: 손절(0%) → 익절(100%) 진행도.
+  // 그 외(매수, 퉁치기 매도): 종가(0%)를 칸의 절반으로 두고, 종가보다 높으면 그만큼 길게, 낮으면 짧게 그린다
+  const depth = row.progress ? row.progress.value
+    : row.distancePct == null ? 0.5 : 0.5 + (0.5 * row.distancePct) / maxDistance;
+  const progressText = row.progress
+    ? `\n익절 진행 ${Math.round(row.progress.value * 100)}% — ${row.progress.floorLabel} $${row.progress.floor.toFixed(2)} → 익절가 $${row.progress.target.toFixed(2)}`
+    : "";
   return (
     <li
-      className={`ladder-row ${row.side}${highlighted ? " highlighted" : ""}`}
-      title={row.moc ? `MOC 주문 — 지정가 없이 장마감 시장가로 넣으세요${row.note ? `\n${row.note}` : ""}` : `클릭하면 주문가 ${row.price.toFixed(2)} 복사${row.note ? `\n${row.note}` : ""}`}
+      className={`ladder-row ${row.side}${highlighted ? " highlighted" : ""}${row.progress ? " lot" : ""}`}
+      title={(row.moc ? `MOC 주문 — 지정가 없이 장마감 시장가로 넣으세요${row.note ? `\n${row.note}` : ""}` : `클릭하면 주문가 ${row.price.toFixed(2)} 복사${row.note ? `\n${row.note}` : ""}`) + progressText}
       onPointerEnter={onEnter}
       onClick={onCopy}
     >
@@ -103,6 +126,7 @@ function Row({
       <span className="ladder-note">
         <i className="ladder-depth" style={{ width: `${(depth * 100).toFixed(2)}%` }} aria-hidden />
         <em>{row.note || "—"}</em>
+        {row.progress && <b className="ladder-progress">{Math.round(row.progress.value * 100)}%</b>}
       </span>
     </li>
   );

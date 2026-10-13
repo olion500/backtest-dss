@@ -225,10 +225,14 @@ def build_order_sheet(
             buy_price = safe_float(trade.get("매수체결가"))
             buy_qty = safe_int(trade.get("매수수량", 0))
             tp_price = safe_float(trade.get("TP목표가"))
+            sl_price = safe_float(trade.get("SL목표가"))
             max_hold = safe_int(trade.get("최대보유일", 0))
 
             if buy_qty <= 0:
                 continue
+            # Where the lot sits between its stop and its target (the sheet's 익절 progress
+            # gauge). Display only: netting and the order logic never read these keys.
+            lot_levels = {"매수가": buy_price, "익절가": tp_price, "손절가": sl_price}
 
             hold_period = safe_int(trade.get("보유기간(일)", 0))
             days_left = None
@@ -252,6 +256,7 @@ def build_order_sheet(
                     "수량": buy_qty,
                     "변화율": f"{tp_change:+.1f}%" if tp_change is not None else "-",
                     "비고": f"매수일: {buy_date}, 매수가: ${buy_price:.2f}" if buy_price else "",
+                    **lot_levels,
                 })
 
             if is_expiring:
@@ -263,6 +268,7 @@ def build_order_sheet(
                     "수량": buy_qty,
                     "변화율": f"{((prev_close / buy_price) - 1) * 100:+.1f}%" if buy_price else "-",
                     "비고": f"보유기간 만료 → 가격 무관 종가 매도 (잔여일: {days_left}일)",
+                    **lot_levels,
                 })
 
     # --- buy order ---
@@ -350,6 +356,9 @@ def build_stop_loss_orders(trade_log: pd.DataFrame, last_date) -> list[dict]:
                 f"{last_date} 종가 ${sell_price:.2f} ≤ 손절가 ${sl_price:.2f} → 백테스트는 매도 완료, 계좌는 MOC 매도"
                 if sl_price else f"{last_date} 손절 → 백테스트는 매도 완료, 계좌는 MOC 매도"
             ) + f" | 매수일: {trade.get('매수일자', '')}",
+            "매수가": safe_float(trade.get("매수체결가")),
+            "익절가": safe_float(trade.get("TP목표가")),
+            "손절가": sl_price,
         })
     return rows
 

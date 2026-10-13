@@ -672,3 +672,6 @@ td.tone-muted { color: var(--muted); }
 .preset-panel .toolbar-preset > span { display: none; }
 .local-settings-panel.single { grid-template-columns: 1fr; }
 .settings-actions[hidden] { display: none; }
+/* 보유 물량 매도: 손절(0%) → 익절(100%) 진행도. 종가 기준 점선은 의미가 없어 숨긴다 */
+.ladder-row.lot .ladder-note::before { display: none; }
+.ladder-progress { position: relative; z-index: 1; margin-left: auto; padding-left: 8px; color: var(--blue); font: 700 11px/1 var(--mono); white-space: nowrap; }
