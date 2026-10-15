@@ -598,11 +598,8 @@ td.tone-muted { color: var(--muted); }
 .vr-down { color: var(--blue) !important; }
 .vr-hero { padding: 24px; display: flex; flex-direction: column; gap: 28px; border: 1px solid var(--lime); background: var(--surface); }
 .vr-hero > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.vr-hero-cycle, .vr-hero-total { display: flex; flex-direction: column; gap: 10px; }
+.vr-hero-cycle { display: flex; flex-direction: column; gap: 10px; }
 .vr-hero-cycle strong { font: 700 28px/1 var(--mono); }
-.vr-hero-total { align-items: flex-end; text-align: right; }
-.vr-hero-total strong { color: var(--lime); font: 700 40px/1 var(--mono); letter-spacing: -.01em; }
-.vr-hero-total small { color: var(--muted); font: 13px/1.2 var(--mono); }
 .vr-days { display: flex; align-items: center; gap: 3px; }
 .vr-days i { width: 10px; height: 10px; border: 1px solid var(--border-strong); }
 .vr-days i.on { border-color: var(--lime); background: var(--lime); }
@@ -621,7 +618,7 @@ td.tone-muted { color: var(--muted); }
 .vr-corridor-track::after { content: ""; position: absolute; inset: 2px 0; border-left: 2px solid var(--red); border-right: 2px solid var(--blue); }
 .vr-corridor-dot { position: absolute; top: 1px; width: 14px; height: 14px; border: 2px solid var(--surface); border-radius: 50%; background: #f5f5f5; transform: translateX(-50%); }
 .vr-corridor-notes span { color: var(--faint); font-size: 11px; }
-.vr-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--border); background: var(--border); }
+.vr-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--border); background: var(--border); }
 .vr-stats article { min-height: 132px; padding: 18px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); }
 .vr-stats span { color: var(--faint); font: 10px/1.2 var(--mono); letter-spacing: .12em; }
 .vr-stats strong { margin: 4px 0 6px; font: 700 24px/1 var(--mono); }
@@ -662,12 +659,10 @@ td.tone-muted { color: var(--muted); }
 .swatch.buy { border-bottom: 8px solid var(--red); }
 .swatch.sell { border-top: 8px solid var(--blue); }
 @media (max-width: 900px) {
-  .vr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vr-stats { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .vr-hero { padding: 18px; }
-  .vr-hero-total { align-items: flex-start; text-align: left; }
-  .vr-hero-total strong { font-size: 32px; }
   .vr-corridor-ends b { display: block; margin: 4px 0 0; font-size: 16px; }
   .vr-stats article { min-height: 0; }
   .vr-range { margin-left: 0; }
@@ -702,3 +697,27 @@ td.tone-muted { color: var(--muted); }
 .c5 { color: #2ee6d6; }
 .c6 { color: var(--muted); }
 .benchmark-windows button { white-space: nowrap; flex: none; }
+
+/* VR 계좌 현황: 주식 비중 링 + 계좌총액 + 보유 명세 */
+.vrh { display: grid; grid-template-columns: auto 1fr; gap: 32px; align-items: center; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.vrh-summary { display: flex; align-items: center; gap: 24px; }
+.vrh-total { display: flex; flex-direction: column; gap: 8px; }
+.vrh-total strong { color: var(--lime); font: 700 40px/1 var(--mono); letter-spacing: -.01em; }
+.vrh-total small { color: var(--muted); font: 13px/1.2 var(--mono); }
+.vrh-ring { width: 128px; height: 128px; flex: none; }
+.vrh-ring circle { fill: none; stroke-width: 12; }
+.vrh-ring circle.cash { stroke: #3a3a3a; }
+.vrh-ring circle.stock { stroke: var(--lime); }
+.vrh-ring .big { fill: #f5f5f5; font: 22px var(--mono); }
+.vrh-ring .small { fill: var(--muted); font: 10px var(--mono); }
+.vrh-list { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+.vrh-list div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.vrh-list dt { color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+.vrh-list dt i { width: 10px; height: 10px; display: inline-block; }
+.vrh-list dt i.stock { background: var(--lime); }
+.vrh-list dt i.cash { background: #3a3a3a; }
+.vrh-list dd { margin: 0; color: #f5f5f5; font-size: 16px; }
+@media (max-width: 760px) {
+  .vrh, .vrh-list { grid-template-columns: 1fr; }
+  .vrh-total strong { font-size: 32px; }
+}

@@ -215,6 +215,8 @@ export interface VRResult {
   daily: VRDay[];
   cycles: VRCycle[];
   fills: Array<{ cycle: number; date: string; side: "buy" | "sell"; qty: number; price: number }>;
+  /** 이동평균 평단: 매도는 평단을 그대로 두고 수량만 줄인다 */
+  holding: { cost_basis: number; avg_cost: number | null; unrealized: number | null };
 }
 
 /** benchmarks/results/summary.json (python -m benchmarks summary) */

@@ -128,6 +128,33 @@ def _cycle_row(cycle: Cycle) -> dict:
     }
 
 
+def _holding_cost(account: VRAccount, cycles: list[Cycle]) -> float:
+    """Total cost of the shares held now: moving average, sells leave the average unchanged.
+
+    The starting shares cost what was paid in apart from the starting Pool (the
+    sheet's 체결금액), else their value at the first V. A cycle that starts with a
+    different holding than the fills imply (an adjustment) keeps the average price.
+    """
+    first = cycles[0]
+    if account.principal is not None:
+        cost = max(account.principal - account.start_pool, 0.0)
+    else:
+        cost = first.v
+    shares = first.shares_start
+    for cycle in cycles:
+        if cycle.shares_start != shares:
+            cost = cost / shares * cycle.shares_start if shares else 0.0
+            shares = cycle.shares_start
+        for order in sorted((o for o in cycle.orders if o.filled_on), key=lambda o: o.filled_on):
+            if order.side == "buy":
+                cost += order.qty * order.fill_price
+                shares += order.qty
+            else:
+                cost -= cost / shares * order.qty if shares else 0.0
+                shares -= order.qty
+    return cost
+
+
 def _outlook(account: VRAccount, config: VRConfig, cycle: Cycle, as_of: date) -> dict:
     """Where the current cycle stands and what the next one would look like at the last close."""
     open_buys = [o.price for o in cycle.orders if o.side == "buy" and not o.filled_on]
@@ -161,12 +188,18 @@ def run_vr_view(account: VRAccount, provider: PriceProvider | None = None, today
     config = account.engine_config()
     cycles = run_vr(prices, config, as_of)
     current = cycles[-1]
+    cost = _holding_cost(account, cycles)
     return json_value({
         "account": account.model_dump(mode="json", by_alias=True),
         "today": today,
         "current": _cycle_row(current),
         "orders": _order_rows(current),
         "outlook": _outlook(account, config, current, today),
+        "holding": {
+            "cost_basis": round(cost, 2),
+            "avg_cost": round(cost / current.shares, 4) if current.shares else None,
+            "unrealized": round(current.stock_value - cost, 2) if current.stock_value is not None else None,
+        },
         "daily": [
             {**day, "stock_value": round(day["shares"] * day["close"], 2), "cycle": cycle.index,
              "v": cycle.v, "v_min": round(cycle.v_min, 2), "v_max": round(cycle.v_max, 2)}

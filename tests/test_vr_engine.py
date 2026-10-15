@@ -311,3 +311,24 @@ def test_cycle_without_a_session_uses_the_latest_close():
     assert (cycle.close, cycle.close_date) == (81.28, date(2026, 10, 2))
     assert cycle.days == []
     assert cycle.stock_value == pytest.approx(800 * 81.28)
+
+
+def test_holding_cost_is_a_moving_average():
+    from engines.vr_engine import Order
+    from web.api.app.services.vr import _holding_cost
+
+    def cycle(shares_start, orders):
+        c = run_vr.__globals__["Cycle"](index=0, week=0, start=date(2026, 1, 3), end=date(2026, 1, 16), g=10, v=1,
+                                        v_min=1, v_max=1, deposit=0, principal=0, shares_start=shares_start,
+                                        pool_start=0, orders=orders)
+        return c
+
+    account = VRAccount(id="a", name="a", start_date=date(2026, 1, 3), start_shares=10, start_pool=100, principal=1100)
+    cycles = [
+        cycle(10, [Order("buy", 50.0, 10, date(2026, 1, 5), 50.0)]),          # 10 @ 100 + 10 @ 50 → avg 75
+        cycle(20, [Order("sell", 90.0, 4, date(2026, 1, 20), 90.0)]),         # selling keeps avg 75 → 16 × 75
+        cycle(32, []),                                                          # adjustment doubles holding, avg kept
+    ]
+    assert _holding_cost(account, cycles[:1]) == pytest.approx(1500.0)
+    assert _holding_cost(account, cycles[:2]) == pytest.approx(16 * 75.0)
+    assert _holding_cost(account, cycles) == pytest.approx(32 * 75.0)

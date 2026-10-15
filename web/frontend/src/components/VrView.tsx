@@ -4,6 +4,7 @@ import type { OrderBookPayload, TablePayload, VRCycle, VRResult } from "../types
 import { DataTable } from "./DataTable";
 import { LocLadder } from "./LocLadder";
 import { VrBandChart } from "./VrBandChart";
+import { VrAccountHero } from "./VrAccountHero";
 
 // 매도표는 현재가 +40%까지라 100줄이 넘는다. 종가에 가까운 주문부터 이만큼만 먼저 보여준다
 const NEAR_ORDERS = 10;
@@ -128,13 +129,13 @@ export function VrView({ result }: { result: VRResult }) {
   const [showAll, setShowAll] = useState(false);
   const ladder = useMemo(() => ladderPayload(result, showAll), [result, showAll]);
   const openCount = result.orders.filter((order) => !order.filled_on).length;
-  const total = current.total ?? 0;
-  const profit = total - current.principal;
   const stock = current.stock_value ?? 0;
-  const stockShare = total ? (stock / total) * 100 : 0;
   const vGap = (stock / current.v - 1) * 100;
   const budgetUsed = outlook.buy_budget ? 1 - outlook.buy_budget_left / outlook.buy_budget : 0;
-  const formula = account.advanced ? "V + P/G + (E−V)/(2√G)" : "V + P/G";
+  const openBuys = result.orders.filter((order) => order.side === "buy" && !order.filled_on);
+  const lowestBuy = openBuys.length ? Math.min(...openBuys.map((order) => order.price)) : 0;
+  const openBuyQty = openBuys.reduce((sum, order) => sum + order.qty, 0);
+  const daysLeft = Math.round((Date.parse(outlook.next_start) - Date.parse(result.today)) / 86_400_000);
 
   return (
     <div className="result-stack">
@@ -148,43 +149,30 @@ export function VrView({ result }: { result: VRResult }) {
               <em>{outlook.day}/{outlook.cycle_days}일째</em>
             </span>
           </div>
-          <div className="vr-hero-total">
-            <span className="eyebrow">계좌총액 // TOTAL</span>
-            <strong>{usd(current.total)}</strong>
-            <small className={profit < 0 ? "negative" : "lime"}>
-              {current.return_pct == null ? "—" : pct(current.return_pct)} ({profit < 0 ? "−" : "+"}{usd(Math.abs(profit))})
-            </small>
-            <small>원금 {usd(current.principal)}</small>
-          </div>
         </header>
+        <VrAccountHero result={result} />
         <PriceCorridor result={result} />
       </section>
 
       <section className="vr-stats">
         <article>
-          <span>목표 V // TARGET</span>
-          <strong>{usd(current.v)}</strong>
-          <small>G {current.g} · ±{account.band_pct}%</small>
-          <small>{usd(current.v_min)} ~ {usd(current.v_max)}</small>
-        </article>
-        <article>
-          <span>평가금 // STOCK</span>
-          <strong>{usd(current.stock_value)}</strong>
-          <small>{current.shares.toLocaleString()}주 · 주식 {stockShare.toFixed(0)}%</small>
-          <small className={vGap < 0 ? "vr-down" : "vr-up"}>V 대비 {pct(vGap)}</small>
-        </article>
-        <article>
-          <span>POOL // CASH</span>
-          <strong>{usd(current.pool)}</strong>
-          <small>P/V {(current.pool / current.v).toFixed(3)}</small>
-          <small>매수 한도 남음 {usd(outlook.buy_budget_left)} / {account.pool_limit_pct}%</small>
+          <span>매수 여력 // BUY ROOM</span>
+          <strong>{usd(outlook.buy_budget_left)}</strong>
+          <small>Pool {usd(current.pool)} 중 이번 사이클 한도 {account.pool_limit_pct}% 남은 돈</small>
+          <small>{openBuys.length ? `${usd(lowestBuy, 2)}(${pct((lowestBuy / (current.close ?? lowestBuy) - 1) * 100)})까지 ${openBuyQty.toLocaleString()}주 더 매수` : "매수 주문 없음"}</small>
           <i className="vr-meter" aria-hidden><b style={{ width: `${(Math.min(1, Math.max(0, budgetUsed)) * 100).toFixed(1)}%` }} /></i>
         </article>
         <article>
-          <span>다음 사이클 // {shortDate(outlook.next_start)}</span>
-          <strong>{usd(outlook.next_v)}</strong>
-          <small>예상 V · G {outlook.next_g}{outlook.next_deposit ? ` · 적립 ${outlook.next_deposit > 0 ? "+" : "−"}${usd(Math.abs(outlook.next_deposit))}` : ""}</small>
-          <small>지금 종가로 계산 · {formula}</small>
+          <span>이번 사이클 체결 // FILLS</span>
+          <strong>{current.bought || current.sold ? `매수 ${current.bought}주 · 매도 ${current.sold}주` : "체결 없음"}</strong>
+          <small>{outlook.day}/{outlook.cycle_days}일째 · 일별 가격으로 추정</small>
+          <small>평가금 V 대비 {pct(vGap)} ({usd(current.v_min)} ~ {usd(current.v_max)} 밴드)</small>
+        </article>
+        <article>
+          <span>다음 사이클 // {shortDate(outlook.next_start)} {daysLeft > 0 ? `D-${daysLeft}` : "오늘"}</span>
+          <strong>{outlook.next_deposit ? `${outlook.next_deposit > 0 ? "+" : "−"}${usd(Math.abs(outlook.next_deposit))} 입금` : "입금 없음"}</strong>
+          <small>V {usd(current.v)} → {usd(outlook.next_v)} · G {outlook.next_g}</small>
+          <small>새 V로 매수·매도 주문을 다시 냅니다</small>
         </article>
       </section>
 
