@@ -128,6 +128,7 @@ def test_vr_view_outlook_and_daily():
     assert out["next_v"] == pytest.approx(round(expected, 2)) and out["next_deposit"] == 500
     assert [d["date"] for d in view["daily"]] == ["2026-10-05", "2026-10-06"]
     assert view["daily"][-1]["stock_value"] == pytest.approx(current["shares"] * 72.5)
+    assert view["daily"][-1]["principal"] == current["principal"]
     # low 70 reaches three 8-share chunks: V최소/807 = 71.53, /815 = 70.83, /823 = 70.14
     assert sorted(o["fill_price"] for o in filled) == [70.14, 70.83, 71.53]
     assert (current["bought"], current["sold"], current["shares"]) == (24, 0, 824)

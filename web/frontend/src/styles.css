@@ -721,3 +721,13 @@ td.tone-muted { color: var(--muted); }
   .vrh, .vrh-list { grid-template-columns: 1fr; }
   .vrh-total strong { font-size: 32px; }
 }
+.vr-mode { margin-left: 0; }
+.vr-chart-total { fill: none; stroke: var(--lime); stroke-width: 1.75; stroke-linejoin: round; }
+.vr-chart-principal { fill: none; stroke: #f5f5f5; stroke-width: 1.25; stroke-dasharray: 4 3; }
+.vr-chart-gain { fill: rgba(212, 255, 0, .14); }
+.vr-chart-loss { fill: rgba(255, 46, 146, .22); }
+.vr-chart-zero { stroke: var(--muted); stroke-width: 1; }
+.swatch.total { height: 2px; background: var(--lime); }
+.swatch.principal { height: 0; border-top: 2px dashed #f5f5f5; }
+.swatch.gain { background: rgba(212, 255, 0, .3); }
+.swatch.loss { background: rgba(255, 46, 146, .4); }

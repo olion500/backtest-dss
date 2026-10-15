@@ -202,6 +202,7 @@ def run_vr_view(account: VRAccount, provider: PriceProvider | None = None, today
         },
         "daily": [
             {**day, "stock_value": round(day["shares"] * day["close"], 2), "cycle": cycle.index,
+             "principal": round(cycle.principal, 2),
              "v": cycle.v, "v_min": round(cycle.v_min, 2), "v_max": round(cycle.v_max, 2)}
             for cycle in cycles for day in cycle.days
         ],

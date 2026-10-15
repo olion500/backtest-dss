@@ -200,6 +200,8 @@ export interface VRDay {
   shares: number;
   pool: number;
   stock_value: number;
+  /** 그 사이클까지 넣은 돈 (시작 원금 + 적립) */
+  principal: number;
   cycle: number;
   v: number;
   v_min: number;
