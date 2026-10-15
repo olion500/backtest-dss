@@ -1,14 +1,14 @@
-"""Config files shared by the web API and the Streamlit pages.
+"""Config files read by the web API (the web never writes them).
 
 Layout::
 
     config/strategy.json         shared strategy (all accounts trade it)
     config/accounts/<id>.json    per-account: name, order + ACCOUNT_KEYS (gitignored)
-    config/presets/<name>.json   saved strategy candidates (backups, Optuna results)
+    config/presets/<name>.json   saved strategy candidates
     config/vr/<id>.json          value rebalancing (VR) accounts (gitignored)
 
 Strategy files never hold account keys and account files hold nothing else,
-so saving one can never clobber the other.
+so editing one never touches the other.
 """
 
 from __future__ import annotations
@@ -36,22 +36,12 @@ def read_json(path: Path) -> dict:
         return {}
 
 
-def write_json(path: Path, data: dict) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def strategy_only(data: dict) -> dict:
     return {key: value for key, value in data.items() if key not in ACCOUNT_KEYS and key != "name"}
 
 
 def load_strategy(path: Path = STRATEGY_PATH) -> dict:
     return strategy_only(read_json(path))
-
-
-def save_strategy(data: dict, path: Path = STRATEGY_PATH) -> None:
-    write_json(path, strategy_only(data))
 
 
 def _account_order(raw: dict) -> int | None:
@@ -79,34 +69,10 @@ def load_accounts(accounts_dir: Path = ACCOUNTS_DIR) -> list[dict]:
     return accounts
 
 
-def find_account(account_id: str | None, accounts_dir: Path = ACCOUNTS_DIR) -> dict:
-    """The account with ``account_id``, else the first one."""
-    accounts = load_accounts(accounts_dir)
-    return next((account for account in accounts if account["id"] == account_id), accounts[0])
-
-
-def save_account(account_id: str, data: dict, accounts_dir: Path = ACCOUNTS_DIR) -> Path:
-    """Write the account keys of ``data``; the existing name and order are kept unless ``data`` has them."""
-    path = Path(accounts_dir) / f"{account_id}.json"
-    current = read_json(path)
-    account = {"name": data.get("name") or current.get("name") or account_id}
-    order = _account_order(data) if _account_order(data) is not None else _account_order(current)
-    if order is not None:
-        account["order"] = order
-    account.update({key: data.get(key, current.get(key)) for key in ACCOUNT_KEYS})
-    write_json(path, account)
-    return path
-
-
 def strategy_files(presets_dir: Path = PRESETS_DIR, strategy_path: Path = STRATEGY_PATH) -> list[Path]:
     """strategy.json first, then presets newest first."""
     presets = sorted(Path(presets_dir).glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True) if Path(presets_dir).is_dir() else []
     return ([Path(strategy_path)] if Path(strategy_path).exists() else []) + presets
-
-
-def preset_path(name: str, presets_dir: Path = PRESETS_DIR) -> Path:
-    name = name.strip().removesuffix(".json")
-    return Path(presets_dir) / f"{name}.json"
 
 
 def load_vr_accounts(vr_dir: Path = VR_DIR) -> list[dict]:

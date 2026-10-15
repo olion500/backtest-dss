@@ -129,8 +129,7 @@ class MarketDataClient:
     @staticmethod
     def _drop_live_bar(frame: pd.DataFrame) -> pd.DataFrame:
         """Drop today's in-progress bar while the US session is still open,
-        so the newest close is always an official close (matches the
-        Streamlit pages' market-hours cutoff)."""
+        so the newest close is always an official close."""
         now_ny = datetime.now(MARKET_TZ)
         if now_ny.hour >= 16:
             return frame

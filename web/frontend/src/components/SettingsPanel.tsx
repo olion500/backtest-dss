@@ -142,7 +142,7 @@ export function SettingsPanel({ request, presets, vrAccounts, onChange, onReset,
         <section className="local-settings-panel">
           <div className="local-settings-copy">
             <span className="eyebrow">개인 설정 // LOCAL · 서버 저장 없음</span>
-            <p>현재 값은 이 브라우저에만 저장됩니다. 서버 설정 파일과 기존 Streamlit 설정은 변경하지 않습니다.</p>
+            <p>현재 값은 이 브라우저에만 저장됩니다. 서버 설정 파일은 변경하지 않습니다.</p>
             <p>오더북은 선택한 계좌(config/accounts)의 시작일 · 초기현금 · 스프레드 값을 씁니다. 여기 값은 백테스트 화면에만 적용됩니다.</p>
           </div>
           <div className="local-settings-fields">

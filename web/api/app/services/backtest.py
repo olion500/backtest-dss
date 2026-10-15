@@ -334,7 +334,7 @@ def run_order_book_view(
 
 
 def strategy_from_raw(raw: dict) -> StrategySettings:
-    """StrategySettings from a strategy.json / preset dict (flat Streamlit-era keys)."""
+    """StrategySettings from a strategy.json / preset dict (flat keys)."""
     return StrategySettings(
         target_ticker=raw.get("target", "SOXL"),
         momentum_ticker=raw.get("momentum", "QQQ"),

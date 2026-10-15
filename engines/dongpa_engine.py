@@ -321,9 +321,7 @@ class Indicators:
     daily_roc: pd.Series | None = None
     daily_btc_signal: pd.Series | None = None
     trend_vix_state: pd.Series | None = None   # full history: "defense" (strong) / "offense" (weak) / None
-    daily_trend_ratio: pd.Series | None = None  # momentum close / SMA
     daily_trend_up: pd.Series | None = None     # 1.0 up / 0.0 down / NaN
-    daily_vix: pd.Series | None = None
     daily_vix_calm: pd.Series | None = None     # 1.0 calm / 0.0 stressed / NaN
 
 # ---------------------- Backtest Result ----------------------
@@ -393,7 +391,7 @@ def compute_indicators(
         t_u, v_u = trend_up.reindex(union).ffill(), vix_calm.reindex(union).ffill()
         state = pd.Series(np.where((t_u == 1) & (v_u == 1), "defense", "offense"), index=union, dtype=object)
         state[t_u.isna() | v_u.isna()] = None
-        ind_kwargs.update(trend_vix_state=state, _ratio=ratio, _trend_up=trend_up, _vix=vix_close, _vix_calm=vix_calm)
+        ind_kwargs.update(trend_vix_state=state, _trend_up=trend_up, _vix_calm=vix_calm)
     else:
         raise ValueError(f"Unknown mode_switch_strategy: {params.mode_switch_strategy}")
 
@@ -431,9 +429,7 @@ def compute_indicators(
     elif params.mode_switch_strategy == "trend_vix":
         def _align(series: pd.Series) -> pd.Series:
             return series.reindex(series.index.union(df.index)).ffill().reindex(df.index)
-        ind_kwargs["daily_trend_ratio"] = _align(ind_kwargs.pop("_ratio"))
         ind_kwargs["daily_trend_up"] = _align(ind_kwargs.pop("_trend_up"))
-        ind_kwargs["daily_vix"] = _align(ind_kwargs.pop("_vix"))
         ind_kwargs["daily_vix_calm"] = _align(ind_kwargs.pop("_vix_calm"))
 
     return df, Indicators(**ind_kwargs)
@@ -547,198 +543,6 @@ def decide_mode(idx, prev_mode: str, indicators: Indicators, params: StrategyPar
         return _decide_mode_trend_vix(idx, prev_mode, indicators)
     else:
         raise ValueError(f"Unknown mode_switch_strategy: {strategy}")
-
-
-def _check(ok: bool) -> str:
-    return "O" if ok else "X"
-
-
-def explain_mode(idx, indicators: Indicators, params: StrategyParams) -> str:
-    """Return a human-readable explanation of why the current mode was chosen."""
-    strategy = indicators.strategy
-
-    if strategy == "rsi":
-        rsi_raw = _scalar(indicators.daily_rsi.loc[idx])
-        if pd.isna(rsi_raw):
-            return "RSI 데이터 없음 → 이전 모드 유지"
-        rsi = float(rsi_raw)
-        prev_raw = _scalar(indicators.daily_prev_week.loc[idx])
-        prev_w = float(prev_raw) if not pd.isna(prev_raw) else rsi
-        delta_raw = _scalar(indicators.daily_rsi_delta.loc[idx])
-        delta = float(delta_raw) if not pd.isna(delta_raw) else 0.0
-
-        is_down = delta < 0
-        is_up = delta > 0
-
-        rsi_high = params.rsi_high_threshold
-        rsi_mid_low = params.rsi_mid_low
-        rsi_mid_high = params.rsi_mid_high
-        rsi_low = params.rsi_low_threshold
-        rsi_neutral = params.rsi_neutral
-
-        # Evaluate individual conditions
-        c_high_down = is_down and rsi >= rsi_high
-        c_mid_low_down = is_down and (rsi_mid_low < rsi < rsi_neutral)
-        c_cross_down = is_down and cross_down(prev_w, rsi, rsi_neutral)
-        c_cross_up = is_up and cross_up(prev_w, rsi, rsi_neutral)
-        c_mid_high_up = is_up and (rsi_neutral < rsi < rsi_mid_high)
-        c_low_up = is_up and (rsi < rsi_low)
-
-        cond_def = c_high_down or c_mid_low_down or c_cross_down
-        cond_off = c_cross_up or c_mid_high_up or c_low_up
-
-        if cond_off and not cond_def:
-            result = "공세 모드"
-        elif cond_def and not cond_off:
-            result = "안전 모드"
-        else:
-            result = "이전 모드 유지"
-
-        lines = [
-            f"[ 지표 현황 ]",
-            f"  주봉 RSI    : {rsi:.2f}",
-            f"  전주 RSI    : {prev_w:.2f}",
-            f"  ΔRSI        : {delta:+.2f} ({'상승' if is_up else '하락' if is_down else '변동없음'})",
-            f"",
-            f"[ 임계값 설정 ]",
-            f"  H={rsi_high} MH={rsi_mid_high} N={rsi_neutral} ML={rsi_mid_low} L={rsi_low}",
-            f"",
-            f"[ 안전 조건 ] (ΔRSI<0 필수)",
-            f"  [{_check(is_down)}] ΔRSI < 0 (전제조건)",
-            f"  [{_check(c_high_down)}] RSI ≥ H : {rsi:.1f} ≥ {rsi_high}",
-            f"  [{_check(c_mid_low_down)}] ML < RSI < N : {rsi_mid_low} < {rsi:.1f} < {rsi_neutral}",
-            f"  [{_check(c_cross_down)}] N선 하향돌파 : {prev_w:.1f} → {rsi:.1f}",
-            f"",
-            f"[ 공세 조건 ] (ΔRSI>0 필수)",
-            f"  [{_check(is_up)}] ΔRSI > 0 (전제조건)",
-            f"  [{_check(c_cross_up)}] N선 상향돌파 : {prev_w:.1f} → {rsi:.1f}",
-            f"  [{_check(c_mid_high_up)}] N < RSI < MH : {rsi_neutral} < {rsi:.1f} < {rsi_mid_high}",
-            f"  [{_check(c_low_up)}] RSI < L : {rsi:.1f} < {rsi_low}",
-            f"",
-            f"→ 판정: **{result}**",
-        ]
-        return "\n".join(lines)
-
-    elif strategy == "ma_cross":
-        ma_short = _scalar(indicators.daily_ma_short.loc[idx])
-        ma_long = _scalar(indicators.daily_ma_long.loc[idx])
-        if pd.isna(ma_short) or pd.isna(ma_long):
-            return "MA 데이터 없음 → 이전 모드 유지"
-
-        ma_s = float(ma_short)
-        ma_l = float(ma_long)
-        is_golden = bool(_scalar(indicators.daily_golden.loc[idx]))
-        is_death = bool(_scalar(indicators.daily_death.loc[idx]))
-        above = ma_s > ma_l
-
-        if is_golden:
-            result = "공세 모드 (골든크로스)"
-        elif is_death:
-            result = "안전 모드 (데스크로스)"
-        elif above:
-            result = "공세 모드"
-        else:
-            result = "안전 모드"
-
-        lines = [
-            f"[ 지표 현황 ]",
-            f"  Short MA ({params.ma_short_period}주) : {ma_s:.2f}",
-            f"  Long  MA ({params.ma_long_period}주) : {ma_l:.2f}",
-            f"  차이 (S-L)       : {ma_s - ma_l:+.2f}",
-            f"",
-            f"[ 조건 체크 ]",
-            f"  [{_check(is_golden)}] 골든크로스 (Short가 Long 상향돌파)",
-            f"  [{_check(is_death)}] 데스크로스 (Short가 Long 하향돌파)",
-            f"  [{_check(above)}] Short > Long (상승 추세)",
-            f"",
-            f"→ 판정: **{result}**",
-        ]
-        return "\n".join(lines)
-
-    elif strategy == "roc":
-        roc_raw = _scalar(indicators.daily_roc.loc[idx])
-        if pd.isna(roc_raw):
-            return "ROC 데이터 없음 → 이전 모드 유지"
-        roc_val = float(roc_raw)
-
-        positive = roc_val > 0
-        negative = roc_val < 0
-        if positive:
-            result = "공세 모드"
-        elif negative:
-            result = "안전 모드"
-        else:
-            result = "이전 모드 유지"
-
-        lines = [
-            f"[ 지표 현황 ]",
-            f"  {params.roc_period}주 ROC : {roc_val:+.6f} ({roc_val * 100:+.2f}%)",
-            f"",
-            f"[ 판정 규칙 ]",
-            f"  [{_check(positive)}] ROC > 0 → 공세",
-            f"  [{_check(negative)}] ROC < 0 → 안전",
-            f"  [{_check(not positive and not negative)}] ROC = 0 → 이전 모드 유지",
-            f"",
-            f"→ 판정: **{result}**",
-        ]
-        return "\n".join(lines)
-
-    elif strategy == "btc_overnight":
-        sig = _scalar(indicators.daily_btc_signal.loc[idx])
-        if pd.isna(sig):
-            return "BTC 시그널 없음 → 이전 모드 유지"
-        sig_val = float(sig)
-        threshold = params.btc_threshold_pct / 100.0
-
-        above = sig_val > threshold
-        below = sig_val < -threshold
-        if above:
-            result = "공세 모드"
-        elif below:
-            result = "안전 모드"
-        else:
-            result = "이전 모드 유지"
-
-        lines = [
-            f"[ 지표 현황 ]",
-            f"  BTC 야간수익률  : {sig_val:+.6f} ({sig_val * 100:+.2f}%)",
-            f"  Lookback        : {params.btc_lookback_days}일",
-            f"  임계값          : ±{params.btc_threshold_pct:.1f}% (±{threshold:.4f})",
-            f"",
-            f"[ 판정 규칙 ]",
-            f"  [{_check(above)}] 수익률 > +임계값 ({sig_val:+.4f} > {threshold:+.4f}) → 공세",
-            f"  [{_check(below)}] 수익률 < -임계값 ({sig_val:+.4f} < {-threshold:+.4f}) → 안전",
-            f"  [{_check(not above and not below)}] 범위 내 → 이전 모드 유지",
-            f"",
-            f"→ 판정: **{result}**",
-        ]
-        return "\n".join(lines)
-
-    elif strategy == "trend_vix":
-        ratio = _scalar(indicators.daily_trend_ratio.loc[idx])
-        vix = _scalar(indicators.daily_vix.loc[idx])
-        trend_up = _scalar(indicators.daily_trend_up.loc[idx])
-        vix_calm = _scalar(indicators.daily_vix_calm.loc[idx])
-        mode = _trend_vix_mode(trend_up, vix_calm)
-        if mode is None:
-            return "추세/VIX 데이터 없음 → 이전 모드 유지"
-        band = params.trend_band_pct
-        result = "안전 모드 (강세장)" if mode == "defense" else "공세 모드 (약세장 저가매수)"
-        lines = [
-            f"[ 지표 현황 ]",
-            f"  {params.momentum_ticker} / {params.trend_sma_days}일 SMA : {float(ratio):.4f} ({(float(ratio) - 1) * 100:+.2f}%)",
-            f"  VIX : {float(vix):.2f}",
-            f"",
-            f"[ 조건 체크 ] (범위 안에서는 직전 상태 유지)",
-            f"  [{_check(trend_up == 1)}] 상승 추세 (SMA +{band:g}% 위로 올라선 뒤 -{band:g}% 아래로 안 내려감)",
-            f"  [{_check(vix_calm == 1)}] VIX 안정 ({params.vix_low:g} 아래로 내려온 뒤 {params.vix_high:g} 위로 안 올라감)",
-            f"  둘 다 O → 안전, 하나라도 X → 공세",
-            f"",
-            f"→ 판정: **{result}**",
-        ]
-        return "\n".join(lines)
-
-    return "알 수 없는 전략"
 
 
 def determine_initial_mode(backtest_start, indicators: Indicators, params: StrategyParams) -> str:

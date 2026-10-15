@@ -1,7 +1,6 @@
-"""Pure business logic for the LOC order book page.
+"""Pure business logic for the LOC order book.
 
-All functions here are free of Streamlit dependencies. They take plain
-data (dicts, DataFrames, floats) and return plain data.
+Functions take plain data (dicts, DataFrames, floats) and return plain data.
 """
 
 from __future__ import annotations

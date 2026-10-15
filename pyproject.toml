@@ -1,16 +1,13 @@
 [project]
 name = "dongpa-backtest"
 version = "0.1.0"
-description = "Streamlit-based backtesting application for Dongpa Method trading strategy"
+description = "Backtester and LOC order book for the Dongpa (동파법) strategy, served as a React + FastAPI web app"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi",
-    "streamlit",
     "yfinance",
     "pandas",
     "numpy",
-    "optuna",
-    "scipy>=1.18.0",
     "uvicorn",
 ]
 
@@ -18,4 +15,9 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov>=7.0.0",
+]
+
+# Strategy research under benchmarks/ (Optuna searches)
+bench = [
+    "optuna",
 ]

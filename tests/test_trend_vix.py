@@ -11,7 +11,6 @@ from engines.dongpa_engine import (
     CapitalParams,
     compute_indicators,
     determine_initial_mode,
-    explain_mode,
     hysteresis_state,
     run_backtest,
 )
@@ -69,7 +68,6 @@ def test_modes_follow_trend_and_vix(params, market):
     assert ind.trend_vix_state[days[55]] == "offense"     # VIX back inside the band: still stressed
     assert ind.trend_vix_state[days[65]] == "defense"     # VIX calm again
     assert ind.trend_vix_state[days[120]] == "offense"    # momentum sold off below the band
-    assert "공세 모드" in explain_mode(days[120], ind, params)
 
 
 def test_backtest_trades_the_previous_sessions_state(params, market):
