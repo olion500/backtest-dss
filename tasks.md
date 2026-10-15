@@ -3,6 +3,7 @@
 ## In Progress
 - [ ] 레포 정리 (시작 2026-10-15)
   - [x] main 머지·푸시(694d0a5) + 배포 리비전 dongpa-viewer-00023-lwf (2026-10-16)
+  - [x] 매수 지정가 반올림 수정 푸시(b3bbcd7) + 배포 리비전 dongpa-viewer-00024-zzn (2026-10-16)
   - [x] 1. Streamlit 앱 삭제 (main.py, pages/, ui/, Dockerfile·Dockerfile.dev, dongpa_optuna.py, docs/dongpa_visualize.md), streamlit·scipy 의존성 제거, optuna는 `bench` 그룹
   - [x] 2. research/ → benchmarks/ 패키지로 재구성 (2026-10-16): `python -m benchmarks <suite>`, lib/ + suites/. 기존 결과와 숫자 전부 일치 확인
   - [x] 3. 안 쓰는 코드 정리 (1차): explain_mode, 설정 쓰기 함수(save_strategy 등), trend_vix 표시용 지표
