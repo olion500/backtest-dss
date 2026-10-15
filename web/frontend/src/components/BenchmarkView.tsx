@@ -77,21 +77,13 @@ export function BenchmarkView({ summary }: { summary: BenchmarkSummary }) {
 
   return (
     <div className="result-stack benchmark">
-      <section className="summary-panel">
-        <header className="panel-header benchmark-header">
-          <span className="eyebrow">BENCHMARK // READ ONLY</span>
-          <small>데이터 {summary.data_end}까지 · 생성 {summary.generated_at.slice(0, 10)}</small>
-        </header>
-        <p className="benchmark-note">
-          benchmarks/의 실제 엔진 결과를 그대로 보여 줍니다. 여기서는 계산하지 않습니다.
-          갱신은 <code>python -m benchmarks summary</code> 실행 후 커밋·배포.
-        </p>
-      </section>
-
-      <div className="range-selector benchmark-windows" role="group" aria-label="구간">
-        {summary.windows.map((w) => (
-          <button key={w.id} type="button" className={w.id === win.id ? "active" : ""} onClick={() => { setWindowId(w.id); setHover(null); }}>{w.label}</button>
-        ))}
+      <div className="benchmark-bar">
+        <div className="range-selector benchmark-windows" role="group" aria-label="구간">
+          {summary.windows.map((w) => (
+            <button key={w.id} type="button" className={w.id === win.id ? "active" : ""} onClick={() => { setWindowId(w.id); setHover(null); }}>{w.label}</button>
+          ))}
+        </div>
+        <small>데이터 {summary.data_end}까지</small>
       </div>
 
       <section className="table-card">

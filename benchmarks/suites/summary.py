@@ -23,11 +23,11 @@ WINDOW_INFO = {
 }
 STRATEGIES = [  # id, name, description
     ('current', '현행 RSI', 'config/strategy.json: QQQ 주봉 RSI로 안전/공세 전환'),
-    ('trend_vix', '추세 + VIX', 'trend_vix 프리셋: QQQ 30일선 ±4% + VIX 26/34'),
-    ('mix', '현행 50 + 추세VIX 50', '두 전략을 계좌를 나눠 반씩 (리밸런싱 없음)'),
-    ('A', '후보 A', 'SOXL 160일선 + VIX (2002~ 학습, 이웃 강건성 상위)'),
-    ('B', '후보 B', 'SOXL 140일선 + VIX'),
-    ('C', '후보 C', 'SOXX 1년 고점 대비 낙폭 브레이커'),
+    ('trend_vix', '추세 + VIX', 'trend_vix 프리셋: QQQ 30일선 ±4% 위 + VIX 26 아래면 방어, 34 위면 공세'),
+    ('mix', '현행 RSI · 추세 + VIX 반반', '두 전략을 계좌를 나눠 반씩 (리밸런싱 없음)'),
+    ('A', 'SOXL 160일선 + VIX', 'SOXL 160일선 ±2% 위 + VIX 38 아래면 방어, 2002~ 합성으로 학습'),
+    ('B', 'SOXL 140일선 + VIX', 'SOXL 140일선 ±4% 위 + VIX 37 아래면 방어, 49 위면 공세'),
+    ('C', 'SOXX 낙폭 브레이커', 'SOXX가 1년 고점 대비 -14% 아래면 방어, -5.6% 안으로 회복하면 공세'),
     ('hold', 'SOXL 보유', '매매 없이 보유 (비교 기준)'),
 ]
 

@@ -679,10 +679,9 @@ td.tone-muted { color: var(--muted); }
 .ladder-progress { position: relative; z-index: 1; margin-left: auto; padding-left: 8px; color: var(--blue); font: 700 11px/1 var(--mono); white-space: nowrap; }
 
 /* BENCHMARK 탭: benchmarks/results/summary.json 보기 전용 */
-.benchmark-header { justify-content: space-between; }
-.benchmark-note { margin: 0; padding: 14px 24px; color: var(--muted); font-size: 13px; line-height: 1.55; }
-.benchmark-note code { color: var(--lime); font: 12px var(--mono); }
-.benchmark-windows { margin-left: 0; align-self: flex-start; max-width: 100%; overflow-x: auto; }
+.benchmark-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.benchmark-bar small { color: var(--faint); font: 11px/1 var(--mono); }
+.benchmark-windows { margin-left: 0; max-width: 100%; overflow-x: auto; }
 .benchmark-table { max-height: none; }
 .benchmark-table td:last-child { white-space: normal; min-width: 240px; }
 .bench-swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; background: currentColor; }
