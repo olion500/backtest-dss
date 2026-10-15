@@ -7,8 +7,11 @@ const PAD = { top: 14, right: 52, bottom: 26, left: 8 };
 const RANGES: Array<[string, number | null]> = [["3M", 63], ["6M", 126], ["1Y", 252], ["ALL", null]];
 const DEFAULT_RANGE = 126;
 
-type Mode = "band" | "account" | "return";
-const MODES: Array<[Mode, string]> = [["band", "V 밴드"], ["account", "계좌"], ["return", "수익률"]];
+type Mode = "band" | "account";
+const MODES: Array<[Mode, string]> = [["band", "V 밴드"], ["account", "계좌 · 수익률"]];
+// 계좌·수익률은 한 차트를 위(금액)·아래(수익률)로 나눈다
+const SPLIT = 0.68;
+const PANE_GAP = 22;
 
 /** viewBox를 실제 폭에 맞춰 글자 크기가 화면 폭과 상관없이 같게 보이도록 한다 */
 function useWidth(ref: RefObject<HTMLElement | null>, fallback: number) {
@@ -31,8 +34,7 @@ function signedPct(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
-function tickLabel(value: number, mode: Mode) {
-  if (mode === "return") return `${value}%`;
+function tickLabel(value: number) {
   return value >= 1000 ? `${(value / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 })}k` : String(value);
 }
 
@@ -68,23 +70,21 @@ export function VrBandChart({ result }: { result: VRResult }) {
   const boxRef = useRef<HTMLElement>(null);
   const clipId = useId().replace(/:/g, "");
   const W = useWidth(boxRef, 960);
-  const H = W < 600 ? 240 : 300;
+  const H = mode === "account" ? (W < 600 ? 320 : 400) : W < 600 ? 240 : 300;
   const days = useMemo(() => (range == null ? all : all.slice(-range)), [all, range]);
 
   const chart = useMemo(() => {
     if (days.length < 2) return null;
-    const values = mode === "band"
-      ? days.flatMap((d) => [d.v_min, d.v_max, d.stock_value])
-      : mode === "account" ? days.flatMap((d) => [total(d), d.principal]) : [0, ...days.map(returnPct)];
-    const [lo, hi] = paddedRange(values, mode !== "return");
     const n = days.length;
     const x = (i: number) => PAD.left + (i / (n - 1)) * (W - PAD.left - PAD.right);
-    const y = (v: number) => PAD.top + ((hi - v) / (hi - lo)) * (H - PAD.top - PAD.bottom);
-    const ticks = niceTicks(lo, hi, 4);
-    if (mode === "return") {
-      return { mode, x, y, ticks, line: linePath(days, x, y, returnPct), zero: y(0) };
-    }
     if (mode === "account") {
+      const moneyBottom = PAD.top + (H - PAD.top - PAD.bottom) * SPLIT;
+      const retTop = moneyBottom + PANE_GAP;
+      const retBottom = H - PAD.bottom;
+      const [lo, hi] = paddedRange(days.flatMap((d) => [total(d), d.principal]), true);
+      const y = (v: number) => PAD.top + ((hi - v) / (hi - lo)) * (moneyBottom - PAD.top);
+      const [rlo, rhi] = paddedRange([0, ...days.map(returnPct)], false);
+      const ry = (v: number) => retTop + ((rhi - v) / (rhi - rlo)) * (retBottom - retTop);
       const principal = stepPath(days, x, y, (d) => d.principal);
       const totalLine = linePath(days, x, y, total);
       // 계좌총액과 원금 사이 영역: 원금 위쪽은 이익, 아래쪽은 손실 색으로 잘라서 칠한다
@@ -93,12 +93,22 @@ export function VrBandChart({ result }: { result: VRResult }) {
         const next = i + 1 < n ? x(i + 1) : x(i);
         return `L${next.toFixed(1)},${y(d.principal).toFixed(1)}H${x(i).toFixed(1)}`;
       }).join("");
-      const gap = `${totalLine}${back}Z`;
-      const right = W - PAD.right;
-      const above = `${principal}V${PAD.top}H${PAD.left}Z`;
-      const below = `${principal}V${H - PAD.bottom}H${PAD.left}Z`;
-      return { mode, x, y, ticks, principal, totalLine, gap, above, below, right };
+      const ret = linePath(days, x, ry, returnPct);
+      const zero = ry(0);
+      const retArea = `${ret}V${zero.toFixed(1)}H${x(0).toFixed(1)}Z`;
+      return {
+        mode, x, y, ry, moneyBottom, retTop, zero,
+        ticks: niceTicks(lo, hi, 4), retTicks: niceTicks(rlo, rhi, 2),
+        principal, totalLine, gap: `${totalLine}${back}Z`,
+        above: `${principal}V${PAD.top}H${PAD.left}Z`, below: `${principal}V${moneyBottom}H${PAD.left}Z`,
+        ret, retArea,
+        retAbove: `M${PAD.left},${retTop}H${W - PAD.right}V${zero}H${PAD.left}Z`,
+        retBelow: `M${PAD.left},${zero}H${W - PAD.right}V${retBottom}H${PAD.left}Z`,
+      };
     }
+    const [lo, hi] = paddedRange(days.flatMap((d) => [d.v_min, d.v_max, d.stock_value]), true);
+    const y = (v: number) => PAD.top + ((hi - v) / (hi - lo)) * (H - PAD.top - PAD.bottom);
+    const ticks = niceTicks(lo, hi, 4);
     const top = stepPath(days, x, y, (d) => d.v_max);
     const bottom = [...days].reverse().map((d, k) => {
       const i = n - 1 - k;
@@ -173,14 +183,14 @@ export function VrBandChart({ result }: { result: VRResult }) {
         className="vr-chart"
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={mode === "band" ? "일별 평가금과 사이클별 V 밴드" : mode === "account" ? "계좌총액과 투자원금" : "투자원금 대비 수익률"}
+        aria-label={mode === "band" ? "일별 평가금과 사이클별 V 밴드" : "계좌총액·투자원금과 수익률"}
         onPointerMove={(event) => onMove(event.clientX)}
         onPointerLeave={() => setHover(null)}
       >
         {chart.ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={chart.y(t)} y2={chart.y(t)} className="vr-chart-grid" />
-            <text x={W - PAD.right + 8} y={chart.y(t) + 4} className="vr-chart-tick">{tickLabel(t, mode)}</text>
+            <text x={W - PAD.right + 8} y={chart.y(t) + 4} className="vr-chart-tick">{tickLabel(t)}</text>
           </g>
         ))}
         {chart.mode === "band" && (
@@ -203,17 +213,25 @@ export function VrBandChart({ result }: { result: VRResult }) {
             <defs>
               <clipPath id={`${clipId}-up`}><path d={chart.above} /></clipPath>
               <clipPath id={`${clipId}-down`}><path d={chart.below} /></clipPath>
+              <clipPath id={`${clipId}-rup`}><path d={chart.retAbove} /></clipPath>
+              <clipPath id={`${clipId}-rdown`}><path d={chart.retBelow} /></clipPath>
             </defs>
             <path d={chart.gap} className="vr-chart-gain" clipPath={`url(#${clipId}-up)`} />
             <path d={chart.gap} className="vr-chart-loss" clipPath={`url(#${clipId}-down)`} />
             <path d={chart.principal} className="vr-chart-principal" />
             <path d={chart.totalLine} className="vr-chart-total" />
-          </>
-        )}
-        {chart.mode === "return" && (
-          <>
+            <line x1={PAD.left} x2={W - PAD.right} y1={chart.retTop - PANE_GAP / 2} y2={chart.retTop - PANE_GAP / 2} className="vr-chart-divider" />
+            <text x={PAD.left} y={chart.retTop + 10} className="vr-chart-tick">수익률</text>
+            {chart.retTicks.map((t) => (
+              <g key={`r${t}`}>
+                <line x1={PAD.left} x2={W - PAD.right} y1={chart.ry(t)} y2={chart.ry(t)} className="vr-chart-grid" />
+                <text x={W - PAD.right + 8} y={chart.ry(t) + 4} className="vr-chart-tick">{t}%</text>
+              </g>
+            ))}
+            <path d={chart.retArea} className="vr-chart-gain" clipPath={`url(#${clipId}-rup)`} />
+            <path d={chart.retArea} className="vr-chart-loss" clipPath={`url(#${clipId}-rdown)`} />
             <line x1={PAD.left} x2={W - PAD.right} y1={chart.zero} y2={chart.zero} className="vr-chart-zero" />
-            <path d={chart.line} className="vr-chart-total" />
+            <path d={chart.ret} className="vr-chart-return" />
           </>
         )}
         {hover != null && <line x1={chart.x(hover)} x2={chart.x(hover)} y1={PAD.top} y2={H - PAD.bottom} className="vr-chart-cursor" />}
@@ -237,12 +255,7 @@ export function VrBandChart({ result }: { result: VRResult }) {
             <span><i className="swatch principal" />투자원금 (시작 + 적립)</span>
             <span><i className="swatch gain" />이익</span>
             <span><i className="swatch loss" />손실</span>
-          </>
-        )}
-        {mode === "return" && (
-          <>
-            <span><i className="swatch total" />수익률 = 계좌총액 ÷ 투자원금 − 1</span>
-            <span>적립금은 수익에서 빠집니다</span>
+            <span><i className="swatch return" />수익률 = 계좌총액 ÷ 투자원금 − 1 (적립금은 수익 아님)</span>
           </>
         )}
       </footer>

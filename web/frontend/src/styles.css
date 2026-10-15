@@ -731,3 +731,6 @@ td.tone-muted { color: var(--muted); }
 .swatch.principal { height: 0; border-top: 2px dashed #f5f5f5; }
 .swatch.gain { background: rgba(212, 255, 0, .3); }
 .swatch.loss { background: rgba(255, 46, 146, .4); }
+.vr-chart-return { fill: none; stroke: #f5f5f5; stroke-width: 1.5; stroke-linejoin: round; }
+.vr-chart-divider { stroke: var(--border-strong); stroke-width: 1; }
+.swatch.return { height: 2px; background: #f5f5f5; }
