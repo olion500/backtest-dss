@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { getAccounts, getDefaults, getPresets, getVrAccounts, runViewer, runVr } from "./api/client";
+import { getAccounts, getBenchmarkSummary, getDefaults, getPresets, getVrAccounts, runViewer, runVr } from "./api/client";
 import { matchPreset, sameStrategy } from "./presets";
 import { DailyLog } from "./components/DailyLog";
 import { DataTable } from "./components/DataTable";
@@ -10,10 +10,11 @@ import { OrderBookView } from "./components/OrderBookView";
 import { RunToolbar } from "./components/RunToolbar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AccountSwitcher } from "./components/AccountSwitcher";
+import { BenchmarkView } from "./components/BenchmarkView";
 import { StrategyStrip } from "./components/StrategyStrip";
 import { VrView } from "./components/VrView";
 import { applyDemoOrders, isDemoMode } from "./dev/demoOrders";
-import type { Account, BacktestRequest, Preset, RunView, ViewerResult, ViewName, VRAccount, VRResult } from "./types";
+import type { Account, BacktestRequest, BenchmarkSummary, Preset, RunView, ViewerResult, ViewName, VRAccount, VRResult } from "./types";
 
 // v2: server defaults merge config/strategy.json with the first account; the
 // version bump discarded v1 blobs saved with the old defaults (2022 start, 10k cash).
@@ -93,7 +94,7 @@ function BacktestResult({ result }: { result: ViewerResult }) {
 export default function App() {
   const [view, setView] = useState<ViewName>(() => {
     const requested = window.location.hash.replace("#", "");
-    return requested === "settings" || requested === "backtest" || requested === "vr" ? requested : "order-book";
+    return requested === "settings" || requested === "backtest" || requested === "vr" || requested === "benchmark" ? requested : "order-book";
   });
   const [defaults, setDefaults] = useState<BacktestRequest | null>(null);
   const [request, setRequest] = useState<BacktestRequest | null>(null);
@@ -111,6 +112,8 @@ export default function App() {
   const [vrError, setVrError] = useState<string | undefined>();
   const [vrLoading, setVrLoading] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
+  const [benchmarkError, setBenchmarkError] = useState<string | undefined>();
 
   useEffect(() => {
     getPresets().then(setPresets).catch(() => setPresets([]));
@@ -185,6 +188,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, ready, account?.id, strategyKey]);
 
+  // Loaded once, the first time the tab opens (a static file on the server).
+  useEffect(() => {
+    if (view !== "benchmark" || benchmark || benchmarkError) return;
+    getBenchmarkSummary().then(setBenchmark).catch((error: Error) => setBenchmarkError(error.message));
+  }, [view, benchmark, benchmarkError]);
+
   const navItems: Array<[ViewName, string]> = [
     ["order-book", "ORDER BOOK"],
     ["backtest", "BACKTEST"],
@@ -198,7 +207,7 @@ export default function App() {
   const presetLabel = matchPreset(presets, request.strategy)?.name ?? "사용자 설정";
   const backToLive = () => livePreset && setRequest({ ...request, strategy: livePreset.strategy });
 
-  const activeRunView = view === "settings" || view === "vr" ? null : view;
+  const activeRunView = view === "settings" || view === "vr" || view === "benchmark" ? null : view;
   const activeResult = activeRunView ? results[activeRunView] : undefined;
   const activeError = activeRunView ? errors[activeRunView] : undefined;
   const isLoading = activeRunView != null && running === activeRunView;
@@ -210,6 +219,7 @@ export default function App() {
         <nav aria-label="주요 화면">
           {navItems.slice(0, 2).map(([name, label]) => <button key={name} className={view === name ? "active" : ""} type="button" onClick={() => setView(name)}>{label}</button>)}
           <button className={view === "vr" ? "active" : ""} type="button" onClick={() => setView("vr")}>VR</button>
+          <button className={view === "benchmark" ? "active" : ""} type="button" onClick={() => setView("benchmark")}>BENCHMARK</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>SETTINGS</button>
         </nav>
         <div className="top-status"><span><i />API READY // VIEWER</span><b>{presetLabel}</b><em>v0.4</em></div>
@@ -217,6 +227,13 @@ export default function App() {
 
       {view === "settings" ? (
         <SettingsPanel request={request} presets={presets} vrAccounts={vrAccounts} onChange={setRequest} onReset={() => defaults && setRequest(defaults)} onApply={() => setView("backtest")} />
+      ) : view === "benchmark" ? (
+        <main className="screen">
+          <div className="page-body">
+            {benchmarkError && <div className="error-banner"><strong>REQUEST FAILED</strong><span>{benchmarkError}</span></div>}
+            {benchmark ? <BenchmarkView summary={benchmark} /> : !benchmarkError && <LoadingResult />}
+          </div>
+        </main>
       ) : view === "vr" ? (
         <main className="screen">
           {vrAccounts.length > 1 && vrAccount && <AccountSwitcher accounts={vrAccounts} selected={vrAccount.id} disabled={vrLoading} onSelect={setVrAccountId} />}

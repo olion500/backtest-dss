@@ -25,7 +25,7 @@ uv run python -m benchmarks verify_harness  # 끼워 넣기 = 엔진 결과인�
 | `lib/windows.py` | 평가 구간(`WINDOWS`)과 지표(`metrics` = CAGR, MDD) |
 | `lib/signals.py` | 모드 신호: 주봉 RSI, 이동평균 추세, VIX, 실현변동성, 고점 대비 낙폭. 전부 전날 종가까지만 사용 |
 | `lib/search.py` | Optuna 탐색 공간(신호 계열 `FAMILIES`), 저장된 파라미터 재생(`strategy`), ±10% 이웃(`perturb`) |
-| `lib/candidates.py` | 비교용 이름 붙은 전략: 현행, A, B, C |
+| `lib/candidates.py` | 비교용 이름 붙은 전략: 현행, 추세+VIX, A, B, C |
 | `lib/vr.py` | 비교용 라오어 VR 시뮬레이터 (웹 VR 탭은 `engines/vr_engine.py`) |
 | `results/` | 결과 요약(json, txt). Optuna 기록(`*.log`)은 커서 git에서 제외 |
 | `data/` | 내려받은 가격 (git 제외) |
@@ -68,6 +68,7 @@ def main(argv):
 
 | 이름 | 하는 일 |
 |---|---|
+| `summary` | 웹 BENCHMARK 탭용 비교표·주간 자산곡선 → `results/summary.json` (커밋·배포하면 탭에 반영) |
 | `verify_harness`, `verify_trend_vix` | 끼워 넣기·엔진 `trend_vix`가 연구 신호와 같은지 확인 |
 | `screen` | 단순 신호 수십 개를 현행 매매 숫자로 한 번에 비교 |
 | `drawdowns` | 큰 낙폭 구간(고점·저점·회복일)과 연도별 수익 |

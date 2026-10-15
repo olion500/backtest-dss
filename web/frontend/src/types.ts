@@ -1,5 +1,5 @@
-export type ViewName = "backtest" | "order-book" | "vr" | "settings";
-export type RunView = Exclude<ViewName, "settings" | "vr">;
+export type ViewName = "backtest" | "order-book" | "vr" | "benchmark" | "settings";
+export type RunView = Exclude<ViewName, "settings" | "vr" | "benchmark">;
 export type ModeSwitchStrategy = "rsi" | "ma_cross" | "roc" | "btc_overnight" | "trend_vix";
 
 export interface ModeSettings {
@@ -215,4 +215,22 @@ export interface VRResult {
   daily: VRDay[];
   cycles: VRCycle[];
   fills: Array<{ cycle: number; date: string; side: "buy" | "sell"; qty: number; price: number }>;
+}
+
+/** benchmarks/results/summary.json (python -m benchmarks summary) */
+export interface BenchmarkSummary {
+  generated_at: string;
+  data_end: string;
+  strategies: Array<{ id: string; name: string; description: string }>;
+  windows: Array<{
+    id: string;
+    label: string;
+    description: string;
+    start: string;
+    end: string;
+    total_return: boolean;
+    dates: string[];
+    curves: Record<string, number[]>;
+    stats: Record<string, { cagr: number; mdd: number }>;
+  }>;
 }

@@ -246,3 +246,28 @@ def test_order_book_view_seeds_from_the_two_sessions_before_start():
     # session lookup 14 days back, then a run over the last two sessions (May 17 and May 20)
     assert calls[0] == ("TEST", date(2024, 5, 7), date(2024, 5, 22))
     assert calls[1] == ("TEST", date(2024, 5, 17), date(2024, 5, 21))
+
+
+def test_benchmark_summary_reads_the_committed_results(tmp_path):
+    from web.api.app.services.benchmarks import SUMMARY_PATH, load_benchmark_summary
+
+    summary = load_benchmark_summary()
+    assert summary is not None and SUMMARY_PATH.name == "summary.json"
+    ids = {s["id"] for s in summary["strategies"]}
+    for window in summary["windows"]:
+        assert set(window["curves"]) == ids == set(window["stats"])
+        assert all(len(values) == len(window["dates"]) for values in window["curves"].values())
+        assert all(values[0] == 1.0 for values in window["curves"].values())
+    assert load_benchmark_summary(tmp_path / "missing.json") is None
+
+
+def test_benchmark_summary_endpoint_404_without_results(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(api_main, "load_benchmark_summary", lambda: None)
+    try:
+        api_main.benchmark_summary()
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("expected 404")

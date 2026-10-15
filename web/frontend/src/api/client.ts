@@ -1,4 +1,4 @@
-import type { Account, BacktestRequest, Preset, RunView, ViewerResult, VRAccount, VRResult } from "../types";
+import type { Account, BacktestRequest, BenchmarkSummary, Preset, RunView, ViewerResult, VRAccount, VRResult } from "../types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -46,4 +46,8 @@ export function runVr(accountId: string): Promise<VRResult> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ account_id: accountId }),
   });
+}
+
+export function getBenchmarkSummary(): Promise<BenchmarkSummary> {
+  return requestJson<BenchmarkSummary>("/api/v1/benchmarks/summary");
 }

@@ -75,7 +75,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px s
 }
 .topbar nav button:hover { color: #f5f5f5; }
 .topbar nav button.active { color: var(--lime); border-bottom-color: var(--lime); }
-.topbar nav button.disabled { color: var(--faint); cursor: not-allowed; }
 .top-status { margin-left: auto; display: flex; align-items: center; gap: 16px; white-space: nowrap; font: 11px/1 var(--mono); }
 .top-status span { display: flex; align-items: center; gap: 7px; color: var(--muted); letter-spacing: .1em; }
 .top-status i { width: 6px; height: 6px; display: block; background: var(--lime); }
@@ -534,7 +533,10 @@ td.tone-muted { color: var(--muted); }
   .topbar { padding: 0 12px; gap: 12px; overflow-x: auto; }
   .brand { font-size: 15px; }
   .topbar nav button { padding: 0 10px; letter-spacing: .08em; }
-  .topbar nav button.disabled, .top-status { display: none; }
+  .top-status { display: none; }
+  .topbar nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav button { white-space: nowrap; flex: none; }
   .run-toolbar, .strategy-strip { position: static; }
   .run-toolbar { padding: 12px 16px; align-items: flex-start; }
   .toolbar-period { width: 100%; flex-wrap: wrap; }
@@ -675,3 +677,23 @@ td.tone-muted { color: var(--muted); }
 /* 보유 물량 매도: 손절(0%) → 익절(100%) 진행도. 종가 기준 점선은 의미가 없어 숨긴다 */
 .ladder-row.lot .ladder-note::before { display: none; }
 .ladder-progress { position: relative; z-index: 1; margin-left: auto; padding-left: 8px; color: var(--blue); font: 700 11px/1 var(--mono); white-space: nowrap; }
+
+/* BENCHMARK 탭: benchmarks/results/summary.json 보기 전용 */
+.benchmark-header { justify-content: space-between; }
+.benchmark-note { margin: 0; padding: 14px 24px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.benchmark-note code { color: var(--lime); font: 12px var(--mono); }
+.benchmark-windows { margin-left: 0; align-self: flex-start; max-width: 100%; overflow-x: auto; }
+.benchmark-table { max-height: none; }
+.benchmark-table td:last-child { white-space: normal; min-width: 240px; }
+.bench-swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; background: currentColor; }
+.bench-swatch.off { opacity: .2; }
+.bench-line { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linejoin: round; }
+.bench-line.dashed { stroke-width: 1.25; stroke-dasharray: 4 3; }
+.c0 { color: var(--lime); }
+.c1 { color: var(--magenta); }
+.c2 { color: #f5f5f5; }
+.c3 { color: var(--blue); }
+.c4 { color: #ff9f1c; }
+.c5 { color: #2ee6d6; }
+.c6 { color: var(--muted); }
+.benchmark-windows button { white-space: nowrap; flex: none; }

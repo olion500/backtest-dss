@@ -4,6 +4,10 @@
 - [ ] 레포 정리 (시작 2026-10-15)
   - [x] main 머지·푸시(694d0a5) + 배포 리비전 dongpa-viewer-00023-lwf (2026-10-16)
   - [x] 매수 지정가 반올림 수정 푸시(b3bbcd7) + 배포 리비전 dongpa-viewer-00024-zzn (2026-10-16)
+  - [x] scipy 복구 (2026-10-16): 정리 때 뺐더니 yfinance repair=True가 실패해 "SOXL 가격 데이터가 비어 있습니다". 리비전 00025-m94
+  - [x] 웹 BENCHMARK 탭 (2026-10-16, 비활성 OPTIMIZER 자리): `python -m benchmarks summary` → `benchmarks/results/summary.json`을 보기 전용으로
+    - 구간(2021~·2022·2023~·2011~·2002~ 합성) × 전략(현행·추세VIX·50:50·A·B·C·보유) CAGR/MDD 표 + 주간 자산곡선(로그 축). 표 행 클릭으로 곡선 켜고 끄기
+    - 결과 갱신은 suite 다시 돌려 커밋·배포
   - [x] 1. Streamlit 앱 삭제 (main.py, pages/, ui/, Dockerfile·Dockerfile.dev, dongpa_optuna.py, docs/dongpa_visualize.md), streamlit·scipy 의존성 제거, optuna는 `bench` 그룹
   - [x] 2. research/ → benchmarks/ 패키지로 재구성 (2026-10-16): `python -m benchmarks <suite>`, lib/ + suites/. 기존 결과와 숫자 전부 일치 확인
   - [x] 3. 안 쓰는 코드 정리 (1차): explain_mode, 설정 쓰기 함수(save_strategy 등), trend_vix 표시용 지표

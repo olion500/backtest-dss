@@ -40,6 +40,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 **`benchmarks/`** - Strategy research: runs the real engine with injected mode series (see `benchmarks/README.md`)
 - `python -m benchmarks` lists suites; one file per suite in `benchmarks/suites/`, shared code in `benchmarks/lib/`
 - After engine changes, run `verify_harness` and `verify_trend_vix` (needs `fetch` data first)
+- Web BENCHMARK tab is read only: it shows `benchmarks/results/summary.json` (`python -m benchmarks summary`, then commit + deploy)
 
 ### Data Flow
 

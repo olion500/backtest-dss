@@ -28,6 +28,7 @@ COPY config/strategy.json ./config/
 COPY config/accounts ./config/accounts
 COPY config/vr ./config/vr
 COPY config/presets ./config/presets
+COPY benchmarks/results/summary.json ./benchmarks/results/summary.json
 COPY engines ./engines
 COPY scripts/update_market_data.py ./scripts/update_market_data.py
 COPY data ./data

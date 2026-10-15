@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from web.api.app.schemas import BacktestRequest
+from web.api.app.services.benchmarks import load_benchmark_summary
 from web.api.app.services.accounts import load_accounts
 from web.api.app.services.backtest import default_request, list_presets, run_backtest_view, run_order_book_view
 from web.api.app.services.market_data import MarketDataError
@@ -121,6 +122,14 @@ def vr_preview(request: VRRequest) -> dict:
         raise HTTPException(status_code=404, detail="VR 계좌를 찾을 수 없습니다.")
     return _run_view(run_vr_view, account)
 
+
+
+@app.get("/api/v1/benchmarks/summary")
+def benchmark_summary() -> dict:
+    summary = load_benchmark_summary()
+    if summary is None:
+        raise HTTPException(status_code=404, detail="벤치마크 결과가 없습니다. python -m benchmarks summary로 만드세요.")
+    return summary
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if FRONTEND_DIST.exists():
