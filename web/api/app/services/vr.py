@@ -33,23 +33,6 @@ class Adjustment(BaseModel):
     v: float | None = Field(default=None, gt=0)
 
 
-class HistoryCycle(BaseModel):
-    """A cycle before start_date as the VR sheet recorded it (scripts/import_vr_sheet.py)."""
-    week: int
-    start: date
-    end: date
-    v: float
-    v_min: float
-    v_max: float
-    shares: int = Field(ge=0)
-    close: float
-    stock_value: float
-    pool: float
-    deposit: float = 0.0
-    principal: float
-    traded_qty: int = 0  # net: buys positive, sells negative
-
-
 class VRAccount(BaseModel):
     id: str
     name: str = Field(min_length=1, max_length=40)
@@ -74,7 +57,6 @@ class VRAccount(BaseModel):
     sell_unit: int = Field(default=1, ge=1, le=1000)
     sell_cap_pct: float = Field(default=40, gt=0, le=1000)
     adjustments: list[Adjustment] = []
-    history: list[HistoryCycle] = []
 
     @model_validator(mode="before")
     @classmethod
@@ -86,7 +68,7 @@ class VRAccount(BaseModel):
         return data
 
     def engine_config(self) -> VRConfig:
-        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "deposit_changes", "adjustments", "history"})
+        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "deposit_changes", "adjustments"})
         return VRConfig(
             **fields,
             deposit_changes=[{"from": item.from_, "deposit": item.deposit} for item in self.deposit_changes],
@@ -143,38 +125,7 @@ def _cycle_row(cycle: Cycle) -> dict:
         "total": round(total, 2) if total is not None else None,
         "principal": round(cycle.principal, 2),
         "return_pct": round((total / cycle.principal - 1) * 100, 2) if total and cycle.principal else None,
-        "source": "web",
     }
-
-
-def _history_rows(account: VRAccount, prices: pd.DataFrame) -> tuple[list[dict], list[dict]]:
-    """Sheet cycles before start_date: table rows and daily rows (recorded holdings × daily close)."""
-    closes = prices["Close"]
-    if isinstance(closes, pd.DataFrame):
-        closes = closes.iloc[:, 0]
-    cycles, daily = [], []
-    shares_start = 0
-    for k, h in enumerate(account.history):
-        index = k - len(account.history)
-        total = h.stock_value + h.pool
-        cycles.append({
-            "index": index, "week": h.week, "start": h.start, "end": h.end, "g": None,
-            "v": h.v, "v_min": h.v_min, "v_max": h.v_max, "deposit": h.deposit,
-            "shares_start": shares_start, "pool_start": None,
-            "bought": max(h.traded_qty, 0), "sold": max(-h.traded_qty, 0), "shares": h.shares,
-            "close": h.close, "close_date": h.end, "stock_value": h.stock_value, "pool": h.pool,
-            "total": round(total, 2), "principal": h.principal,
-            "return_pct": round((total / h.principal - 1) * 100, 2) if h.principal else None,
-            "source": "sheet",
-        })
-        window = closes[(closes.index >= pd.Timestamp(h.start)) & (closes.index <= pd.Timestamp(h.end))].dropna()
-        for day, close in window.items():
-            close = round(float(close), 2)
-            daily.append({"date": day.date(), "close": close, "shares": h.shares, "pool": h.pool,
-                          "stock_value": round(h.shares * close, 2), "cycle": index,
-                          "v": h.v, "v_min": h.v_min, "v_max": h.v_max, "source": "sheet"})
-        shares_start = h.shares
-    return cycles, daily
 
 
 def _outlook(account: VRAccount, config: VRConfig, cycle: Cycle, as_of: date) -> dict:
@@ -206,24 +157,22 @@ def run_vr_view(account: VRAccount, provider: PriceProvider | None = None, today
     # An account starting later still shows its first cycle's orders.
     as_of = max(today, account.start_date)
     download = provider or market_data_client.download
-    first = min([account.start_date, *(h.start for h in account.history)])
-    prices = download(account.ticker, first - timedelta(days=10), as_of + timedelta(days=1))
+    prices = download(account.ticker, account.start_date - timedelta(days=10), as_of + timedelta(days=1))
     config = account.engine_config()
     cycles = run_vr(prices, config, as_of)
     current = cycles[-1]
-    history_cycles, history_daily = _history_rows(account, prices)
     return json_value({
-        "account": account.model_dump(mode="json", by_alias=True, exclude={"history"}),
+        "account": account.model_dump(mode="json", by_alias=True),
         "today": today,
         "current": _cycle_row(current),
         "orders": _order_rows(current),
         "outlook": _outlook(account, config, current, today),
-        "daily": history_daily + [
-            {**day, "source": "web", "stock_value": round(day["shares"] * day["close"], 2), "cycle": cycle.index,
+        "daily": [
+            {**day, "stock_value": round(day["shares"] * day["close"], 2), "cycle": cycle.index,
              "v": cycle.v, "v_min": round(cycle.v_min, 2), "v_max": round(cycle.v_max, 2)}
             for cycle in cycles for day in cycle.days
         ],
-        "cycles": history_cycles + [_cycle_row(cycle) for cycle in cycles],
+        "cycles": [_cycle_row(cycle) for cycle in cycles],
         "fills": [
             {"cycle": cycle.index, "date": order.filled_on, "side": order.side, "qty": order.qty, "price": order.fill_price}
             for cycle in cycles for order in cycle.orders if order.filled_on

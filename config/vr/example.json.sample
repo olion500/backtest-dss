@@ -3,13 +3,17 @@
   "order": 1,
   "ticker": "TQQQ",
   "origin_date": "2023-07-01",
-  "start_date": "2026-10-03",
-  "start_shares": 800,
-  "start_pool": 15112.35,
-  "start_v": 67915.68,
-  "principal": 38248.34,
-  "deposit": 500,
-  "deposit_changes": [],
+  "start_date": "2023-07-01",
+  "start_shares": 34,
+  "start_pool": 0.0,
+  "principal": 748.34,
+  "deposit": 250,
+  "deposit_changes": [
+    {
+      "from": "2024-04-20",
+      "deposit": 500
+    }
+  ],
   "g": 10,
   "g_step_cycles": 26,
   "g_step": 1,

@@ -68,11 +68,9 @@ export function VrBandChart({ result }: { result: VRResult }) {
       const i = index.get(f.date);
       return i == null ? [] : [{ ...f, cx: x(i), cy: y(days[i].stock_value) }];
     });
-    const webStart = days.findIndex((d) => d.source === "web");
     return {
       x, y, band: `${top}${bottom}Z`, top, bottom: stepPath(days, x, y, (d) => d.v_min),
       v: stepPath(days, x, y, (d) => d.v), value, fills, ticks: niceTicks(lo, hi, 4),
-      webStart: webStart > 0 ? x(webStart) : null,
     };
   }, [days, result.fills, W, H]);
 
@@ -130,13 +128,6 @@ export function VrBandChart({ result }: { result: VRResult }) {
         <path d={chart.band} className="vr-chart-band" />
         <path d={chart.top} className="vr-chart-edge max" />
         <path d={chart.bottom} className="vr-chart-edge min" />
-        {chart.webStart != null && (
-          <g>
-            <line x1={chart.webStart} x2={chart.webStart} y1={PAD.top} y2={H - PAD.bottom} className="vr-chart-split" />
-            <text x={chart.webStart - 6} y={PAD.top + 12} textAnchor="end" className="vr-chart-tick">시트 기록</text>
-            <text x={chart.webStart + 6} y={PAD.top + 12} className="vr-chart-tick">웹 계산</text>
-          </g>
-        )}
         <path d={chart.v} className="vr-chart-v" />
         <path d={chart.value} className="vr-chart-value" />
         {chart.fills.map((f, k) => (

@@ -644,7 +644,6 @@ td.tone-muted { color: var(--muted); }
 .vr-chart-edge { fill: none; stroke-width: 1.25; }
 .vr-chart-edge.max { stroke: var(--blue); }
 .vr-chart-edge.min { stroke: var(--red); }
-.vr-chart-split { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 3 3; }
 .vr-chart-v { fill: none; stroke: var(--lime); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .vr-chart-value { fill: none; stroke: #f5f5f5; stroke-width: 1.75; stroke-linejoin: round; }
 .vr-chart-fill.buy { fill: var(--red); }
