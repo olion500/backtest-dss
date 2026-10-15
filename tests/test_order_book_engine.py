@@ -639,6 +639,17 @@ class TestExtractState:
         assert state.tranche_budget == 1000.0
 
 
+    def test_fully_invested_cash_stays_zero(self):
+        # 0.00 cash means fully invested; it must not fall back to the initial cash.
+        from engines.order_book_engine import extract_state
+        state = extract_state(self._journal(현금=0.0), self._indicators(), {"defense_slices": 7, "offense_slices": 4}, 10_000)
+        assert state.current_cash == 0.0
+
+    def test_missing_cash_falls_back_to_initial_cash(self):
+        from engines.order_book_engine import extract_state
+        state = extract_state(self._journal(현금=None), self._indicators(), {"defense_slices": 7, "offense_slices": 4}, 10_000)
+        assert state.current_cash == 10_000
+
 # --------------- holdings values / netting edges ---------------
 
 def _lot(**overrides):

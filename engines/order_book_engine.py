@@ -90,7 +90,9 @@ def extract_state(
 
     # The next session trades in "다음모드": it already reflects the last close's indicators.
     current_mode = normalize_mode(last_row.get("다음모드", last_row.get("모드", "안전")))
-    current_cash = safe_float(last_row.get("현금")) or init_cash
+    # Fully invested is cash 0.00, not "missing": only fall back to init_cash when there is no value.
+    journal_cash = safe_float(last_row.get("현금"))
+    current_cash = init_cash if journal_cash is None else journal_cash
     current_position_qty = safe_int(last_row.get("보유수량"))
     prev_close = safe_float(last_row.get("종가"))
 
