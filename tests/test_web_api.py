@@ -88,12 +88,13 @@ def test_order_book_view_returns_read_only_preview():
     assert state["tranche_budget"] == last["트렌치기반현금"] / 7
     prices = [row["주문가"] for row in book["orders"]["rows"]]
     assert prices and prices == sorted(prices, reverse=True)
-    # The base buy (limit = close × 1.03) nets fully against a cheaper TP sell, so it only
-    # shows up as the mirror sell one cent above the limit.
+    # The base buy (limit = close × 1.03, rounded to the cent like the backtest) nets fully
+    # against a cheaper TP sell, so it only shows up as the mirror sell one cent above the limit.
     assert state["current_mode"] == "defense"
     ceiling = [row for row in book["orders"]["rows"] if row["구분"] == "매도 (퉁치기)"]
     assert len(ceiling) == 1
-    assert ceiling[0]["주문가"] == pytest.approx(last["종가"] * 1.03 + 0.01)
+    assert last["종가"] == 54.95  # 54.95 × 1.03 = 56.5985 → limit 56.60
+    assert ceiling[0]["주문가"] == pytest.approx(56.61)
     assert book["netting_message"].startswith("퉁치기 적용")
     # Holdings and TP sells come from the open lots only: three 18-share lots, and the cheapest
     # (TP 54.96, below the 56.60 buy limit) is consumed by netting, so two TP sells remain.

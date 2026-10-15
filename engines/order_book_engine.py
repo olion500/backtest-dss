@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from engines.dongpa_engine import spread_ladder
+from engines.dongpa_engine import HUNDRED, ONE, money, shares, spread_ladder, to_decimal
 
 
 # --------------- small helpers ---------------
@@ -278,7 +278,10 @@ def build_order_sheet(
         mode_params_pct = (
             ui_values["defense_buy"] if current_mode == "defense" else ui_values["offense_buy"]
         )
-        buy_limit_price = prev_close * (1 + mode_params_pct / 100) if prev_close else None
+        # Rounded to the cent and sized in Decimal exactly like the backtest
+        # (float // can drop a share: 5660.0 // 56.6 == 99.0).
+        buy_limit = money(to_decimal(prev_close) * (ONE + to_decimal(mode_params_pct) / HUNDRED)) if prev_close else None
+        buy_limit_price = float(buy_limit) if buy_limit is not None else None
 
         if buy_limit_price and buy_limit_price > 0:
             # Same budget rule as the backtest (StrategyParams.cash_limited_buy):
@@ -289,15 +292,13 @@ def build_order_sheet(
             tp_pct = ui_values["defense_tp"] if current_mode == "defense" else ui_values["offense_tp"]
             sl_pct = ui_values["defense_sl"] if current_mode == "defense" else ui_values["offense_sl"]
 
-            if allow_fractional:
-                base_qty = effective_budget / buy_limit_price
-            else:
-                base_qty = int(effective_budget // buy_limit_price)
+            qty = shares(to_decimal(effective_budget) / buy_limit, allow_fractional)
+            base_qty = float(qty) if allow_fractional else int(qty)
 
             # The backtest skips the whole buy when the fill value exceeds cash
             # (buys run before the day's sells, so sell proceeds never fund it).
             # An order the cash can't cover even at its own limit is left out.
-            if base_qty > 0 and base_qty * buy_limit_price > current_cash:
+            if base_qty > 0 and qty * buy_limit > to_decimal(current_cash):
                 base_qty = 0
 
             if base_qty > 0:

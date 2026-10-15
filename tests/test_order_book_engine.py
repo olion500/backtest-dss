@@ -227,6 +227,18 @@ class TestBuildOrderSheet:
         assert buy_rows[0]["수량"] == 9
         assert ctx["base_qty"] == 9 and ctx["tp_pct"] == 0.2
 
+    def test_buy_limit_is_rounded_to_the_cent_like_the_backtest(self):
+        # 54.95 × 1.03 = 56.5985 → 56.60. Budget 5659.90: 100 shares at 56.5985, but 99 at 56.60.
+        sheet, ctx = build_order_sheet(pd.DataFrame(), 54.95, 10_000.0, 5659.90, "defense", _DEFAULT_UI, False)
+        buy = next(r for r in sheet if r["구분"] == "매수")
+        assert buy["주문가"] == 56.60 and ctx["buy_limit_price"] == 56.60
+        assert buy["수량"] == 99
+
+    def test_budget_exactly_buying_whole_shares_is_not_floored_down(self):
+        # 5660 / 56.60 = 100 exactly; float 5660.0 // 56.6 gives 99.
+        sheet, _ = build_order_sheet(pd.DataFrame(), 54.95, 10_000.0, 5660.0, "defense", _DEFAULT_UI, False)
+        assert next(r for r in sheet if r["구분"] == "매수")["수량"] == 100
+
     def test_offense_buy_uses_offense_params(self):
         sheet, ctx = build_order_sheet(
             pd.DataFrame(), 100.0, 5000.0, 1000.0, "offense", {**_DEFAULT_UI, "offense_sl": 4.0}, False,
