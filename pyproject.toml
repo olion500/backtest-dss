@@ -8,6 +8,7 @@ dependencies = [
     "yfinance",
     "pandas",
     "numpy",
+    "scipy",  # yfinance download(repair=True) needs it; without it every fetch comes back empty
     "uvicorn",
 ]
 

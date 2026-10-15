@@ -87,3 +87,8 @@ def test_no_gap_fetch_when_dataset_is_current(client, monkeypatch):
     monkeypatch.setattr(MarketDataClient, "_from_yahoo", unexpected_yahoo)
     result = instance.download("SOXL", date.today() - timedelta(days=10), date.today() + timedelta(days=1))
     assert result.index.max().date() == date.today()
+
+
+def test_yfinance_price_repair_dependency_is_installed():
+    # download(repair=True) imports scipy; without it yfinance returns an empty frame for every ticker.
+    import scipy  # noqa: F401
