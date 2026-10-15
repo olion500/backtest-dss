@@ -1,6 +1,12 @@
 # Tasks
 
 ## In Progress
+- [ ] 레포 정리 (시작 2026-10-15, 브랜치 `repo-cleanup`)
+  - [x] 1. Streamlit 앱 삭제 (main.py, pages/, ui/, Dockerfile·Dockerfile.dev, dongpa_optuna.py, docs/dongpa_visualize.md), streamlit·scipy 의존성 제거, optuna는 `bench` 그룹
+  - [ ] 2. research/ → benchmarks/ 패키지로 재구성 (새 벤치마크 추가·실행 쉽게)
+  - [x] 3. 안 쓰는 코드 정리 (1차): explain_mode, 설정 쓰기 함수(save_strategy 등), trend_vix 표시용 지표
+  - [ ] 4. mutation testing으로 잘못된 테스트 찾아 고치기
+  - [ ] 5. README 쉽게 다시 쓰기 (쉬운 README 사례 먼저 조사)
 - [ ] 웹에 VR(라오어 밸류리밸런싱) 추가, 구글 시트 운용 대체 (시작 2026-10-12)
   - 효율은 따지지 않고 기능으로 수용. 연구 구현 `research/vr.py`, 비교 결과 research/README.md (커밋 035321a)
   - [x] 사용자 구글 시트 규칙 확인 (2026-10-12): `docs/vr_sheet.md`

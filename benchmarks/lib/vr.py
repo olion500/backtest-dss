@@ -1,4 +1,7 @@
-"""Value Rebalancing (라오어 VR 5.0), lump-sum (거치식) version.
+"""Value Rebalancing (라오어 VR 5.0) simulator for comparisons.
+
+The web VR tab uses ``engines/vr_engine.py``; this is the simpler research version
+(lump-sum or fixed deposits, close or limit fills).
 
 Every 2 weeks the target value V moves:
     basic:    V' = V + Pool/G
@@ -13,7 +16,8 @@ fill='limit': the real buy/sell tables, one share per level at floor/(Q+k) and c
 The cycle update uses the previous close, so nothing looks ahead.
 """
 import math
-import numpy as np, pandas as pd
+import numpy as np
+import pandas as pd
 
 # 상승률 표 (cafe.naver.com/infinitebuying/27118, 사용자 구글 시트 '상승률' 시트): P/V 하한 → (평가금<V, 평가금>V)
 RATE_TABLE = [(1.1, 1.11, 1.115), (1.05, 1.105, 1.11), (1.0, 1.1, 1.105), (0.95, 1.095, 1.1), (0.9, 1.09, 1.095),

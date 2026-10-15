@@ -1,0 +1,5 @@
+# regenerate with `python -m benchmarks fetch` + `synth`
+data/
+# Optuna journals (10~20MB each); the *.robust.json / *_results.json summaries are kept
+results/*.log*
+__pycache__/

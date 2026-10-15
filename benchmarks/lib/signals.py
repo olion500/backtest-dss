@@ -1,8 +1,12 @@
 """Daily mode series. Every signal is computed from closes up to the PREVIOUS trading day
 (shift(1)) unless lag=0, so the LOC order for day d is known before the close of d."""
-import numpy as np, pandas as pd
-from harness import load
+import numpy as np
+import pandas as pd
+
 import engines.dongpa_engine as E
+
+from .data import load
+
 
 def _daily(sig_bool_or_mode, idx, lag):
     s = sig_bool_or_mode

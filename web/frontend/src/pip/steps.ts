@@ -16,8 +16,8 @@ export interface PipOrder {
 export type PipStep = { kind: "single"; order: PipOrder } | { kind: "ladder"; orders: PipOrder[] };
 
 /** engines/order_book_engine.py의 MOC_SELL·SL_MOC_SELL과 같은 값 */
-export const MOC_SELL = "매도 (MOC)";
-export const SL_MOC_SELL = "매도 (손절)";
+const MOC_SELL = "매도 (MOC)";
+const SL_MOC_SELL = "매도 (손절)";
 export const isMocKind = (kind: string) => kind === MOC_SELL || kind === SL_MOC_SELL;
 
 function num(value: CellValue) {

@@ -1,36 +1,37 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `backtest.py` drives the Streamlit UI plus user inputs; keep view-layer helpers beside it and move shared logic into `dongpa_engine.py`.
-- `dongpa_engine.py` houses the backtesting engine, dataclasses, and signal helpers. Add future analytics as flat modules in the repo root and import directly.
-- Tooling (`pyproject.toml`, `Dockerfile`, `Makefile`) sits next to the source for quick builds. Store generated CSVs or notebooks under `outputs/` and ignore that directory in git.
-- Put automated checks in `tests/` with filenames such as `tests/test_engine.py` so ownership remains obvious.
+## Project Structure
+- `engines/` holds the pure business logic (backtest, order book, VR, config reading). Keep it free of web code.
+- `web/api/` (FastAPI) calls the engines and serves `web/frontend/` (React + TypeScript, Vite).
+- `benchmarks/` runs the real engine for strategy research. One suite per file in `benchmarks/suites/`; see `benchmarks/README.md`.
+- `tests/` holds pytest files named `test_*.py`.
 
 ## Build, Test, and Development Commands
-- `uv sync`: install dependencies for local runs.
-- `streamlit run backtest.py`: launch the dashboard without Docker for fast iteration.
-- `make build`: produce the `dongpa:latest` image; re-run after dependency or system changes.
-- `make run`: serve the container on `http://localhost:8501`; use `make bash` for an interactive container shell and `make clean` to remove the image when done.
+- `make install` / `make web-install`: install Python (uv) and frontend dependencies.
+- `make web-api` + `make web-frontend`: run the API on :8000 and the Vite dev server on :5173.
+- `make web`: build the production image and run it on :8000. `make deploy`: Cloud Run.
+- `make test`: run pytest. `uv run --group bench python -m benchmarks`: list benchmark suites.
 
 ## Coding Style & Naming Conventions
 - Follow PEP 8 with four-space indentation, `snake_case` names, and the existing type hints/docstrings.
 - Keep helpers pure where possible and reserve brief comments for non-obvious math or data handling.
-- Match upstream field names in payloads and align widget labels with the Korean terminology already present.
+- Use `money()` / `to_decimal()` for trade amounts and integer shares; keep the Korean journal column names.
 
 ## Testing Guidelines
-- Use `pytest` for new unit coverage. Name files `test_*.py`, prefer deterministic fixtures, and run via `python -m pytest`.
-- For manual verification, run `streamlit run backtest.py` with representative tickers and note inputs/outputs.
-- Document manual steps in PRs until the automated suite matures.
+- Use `pytest` with deterministic fixtures (`tests/conftest.py`, `_make_price_df`); expected values come from the documented rules, not from current output.
+- After engine changes, also run `python -m benchmarks verify_harness` and `verify_trend_vix`.
 
 ## Commit & Pull Request Guidelines
-- Mirror the Conventional Commit style in history (`feat:`, `docs:`, `chore:`) with imperative subjects under 72 characters.
-- Bundle related edits, explain behavioural shifts or migrations in the body, and reference linked issues.
-- PRs should summarise intent, list key commands executed (e.g., `make run`), and attach screenshots or metrics when the UI changes.
+- Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `test:`) with imperative subjects under 72 characters.
+- Explain behavioural changes in the body. Attach screenshots or metrics when the UI changes.
 
 ## Security & Configuration Tips
-- Keep credentials out of source and configs; rely on environment variables if secrets become necessary.
-- Be mindful of Yahoo Finance rate limits and avoid committing large CSV exports or proprietary datasets.
+- Keep credentials out of source; deploy settings live in `.env` (see `.env.example`).
+- Account files (`config/accounts/*.json`, `config/vr/*.json`) are gitignored; commit only `*.sample`.
+- Be mindful of Yahoo Finance rate limits.
 
 ## Documentation Map
-- `docs/dongpa_strategy.md`: 전략 로직과 파라미터, 위험관리 규칙을 정리한 참고 문서.
-- `docs/dongpa_visualize.md`: Streamlit 대시보드 구성, 요약 지표 배치, 출력 컬럼 정의 등 UI 관련 지침.
+- `docs/dongpa_strategy.md`: 전략 규칙, 모드 전환, 파라미터.
+- `docs/loc_netting.md`, `docs/loc_spread_buy_strategy.md`: 퉁치기, 스프레드 매수.
+- `docs/vr_sheet.md`: VR 구글 시트 규칙과 웹 VR 탭.
+- `benchmarks/README.md`: 벤치마크 실행·추가 방법과 연구 결과.

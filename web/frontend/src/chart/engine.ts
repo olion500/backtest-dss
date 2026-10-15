@@ -2,7 +2,7 @@
 // chart-engine 기법을 참고해 의존성 없이 다시 작성했다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export interface XY { x: number; y: number }
+interface XY { x: number; y: number }
 
 /** lo~hi 구간을 사람이 읽기 좋은 간격(1·2·2.5·5·10 배수)으로 나눈 눈금 */
 export function niceTicks(lo: number, hi: number, target = 5): number[] {

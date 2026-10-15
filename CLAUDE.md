@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa Method) trading strategy. The strategy applies **daily N-tranche LOC (Limit-On-Close) purchases** to leveraged ETFs with **weekly RSI-based mode switching** between safe and aggressive modes.
+Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `web/`) for the "동파법" (Dongpa Method) trading strategy. The strategy applies **daily N-tranche LOC (Limit-On-Close) purchases** to leveraged ETFs with **weekly RSI-based mode switching** between safe and aggressive modes.
 
 **Key Characteristics:**
 - All orders execute at **LOC (Limit-On-Close)** - no intraday execution
@@ -16,8 +16,6 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 ## Core Architecture
 
 ### Main Modules
-
-**`main.py`** - Streamlit entry point (landing page)
 
 **`engines/dongpa_engine.py`** - Backtesting engine and core logic
 - `run_backtest()`: Main backtest entry point (pure function)
@@ -34,29 +32,19 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 - `run_vr()`: 2-week cycles from a config + daily bars; buy/sell ladders placed per cycle, fills estimated from Low/High (limit) or Close (LOC)
 - Rules mirror the user's VR Google Sheet (`docs/vr_sheet.md`); accounts in `config/vr/<id>.json`, web tab "VR"
 
-**`engines/dongpa_optuna.py`** - Optuna optimizer engine
-- `OptunaConfig`, `run_optuna()`, `extract_results()`, `narrow_config()`
+**`engines/config_store.py`** - Reads `config/` (strategy, accounts, presets, VR accounts). The web never writes config.
 
-**`ui/common.py`** - Shared UI utilities (navigation, settings I/O, strategy params builder)
+**`web/api/`** - FastAPI service (backtest, order book, VR, presets); serves the built frontend
+**`web/frontend/`** - React + TypeScript UI (Vite)
 
-**`ui/charts.py`** - Equity vs price chart building
-
-**`pages/1_backtest.py`** - Main Streamlit backtest dashboard
-- User interface for configuring strategy parameters
-- Displays equity curves, trade journals, and summary metrics
-- Handles data download from Yahoo Finance via yfinance
-
-**`pages/2_order_book.py`** - LOC order schedule generator
-- Real-time order planning based on latest market data
-- Persists the strategy to `config/strategy.json` and the selected account to `config/accounts/<id>.json`
-- Displays next-day LOC order schedule
-
-**`pages/3_optuna.py`** - Optuna optimizer UI
+**`benchmarks/`** - Strategy research: runs the real engine with injected mode series (see `benchmarks/README.md`)
+- `python -m benchmarks` lists suites; one file per suite in `benchmarks/suites/`, shared code in `benchmarks/lib/`
+- After engine changes, run `verify_harness` and `verify_trend_vix` (needs `fetch` data first)
 
 ### Data Flow
 
 1. **Input**: User specifies tickers (target, momentum, benchmark) and date range
-2. **Download**: yfinance fetches daily OHLCV data, saved to `outputs/`
+2. **Data**: daily OHLCV from `data/*.csv` (committed; `scripts/update_market_data.py` appends new bars), live yfinance only as a fallback
 3. **Mode Decision**: Weekly RSI calculated from momentum ticker (QQQ), mode determined by RSI delta and thresholds
 4. **Execution Logic**:
    - Daily LOC buy if `close <= prev_close * (1 + buy_cond_pct)`
@@ -69,30 +57,17 @@ Dongpa is a Streamlit-based backtesting application for the "동파법" (Dongpa 
 
 ### Local Development
 ```bash
-make install          # Install Python dependencies (uv sync)
-make run-local        # Run Streamlit on localhost:8501 (no Docker)
-streamlit run main.py --server.address=0.0.0.0 --server.port=8501
-```
-
-### Docker Workflows
-```bash
-make build           # Build production image (dongpa:latest)
-make run             # Run containerized app on port 8501
-make shell           # Open bash shell inside container
-make build-dev       # Build dev image with live-reload (dongpa-dev:latest)
-make dev             # Run dev container with source mounted
+make install          # Python dependencies (uv sync)
+make web-install      # Frontend dependencies
+make web-api          # FastAPI on :8000 (reload)
+make web-frontend     # Vite dev server on :5173
+make web              # Build the image and run the app on :8000
+make deploy           # Cloud Run (needs .env, see .env.example)
 ```
 
 ### Testing
 ```bash
 python -m pytest                    # Run test suite
-```
-
-### Port Configuration
-Override default port 8501:
-```bash
-PORT=9000 make run-local
-PORT=9000 make run
 ```
 
 ## Strategy Logic (동파법)
@@ -120,8 +95,7 @@ PORT=9000 make run
 (`^VIX`, passed as `vix_data`). Momentum above `SMA × (1 + band)` and VIX below `vix_low` → **defense**;
 momentum below `SMA × (1 − band)` or VIX above `vix_high` → **offense**; inside either band the
 previous state holds. The labels are deliberately inverted vs RSI: "offense" buys weakness with few,
-large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Web only (not wired into the
-Streamlit pages or `dongpa_optuna.py`). Research and validation: `research/README.md`.
+large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Research and validation: `benchmarks/README.md`.
 
 ### LOC Order Execution Rules
 
@@ -166,53 +140,44 @@ Streamlit pages or `dongpa_optuna.py`). Research and validation: `research/READM
 
 ```
 backtest-dss/
-├── main.py                  # Streamlit entry point (landing page)
 ├── engines/
-│   ├── __init__.py
 │   ├── dongpa_engine.py     # Core backtest engine
 │   ├── order_book_engine.py # LOC order book logic
 │   ├── vr_engine.py         # Value rebalancing (VR) cycles, ladders, estimated fills
-│   ├── config_store.py      # config/ file I/O shared by web and Streamlit
-│   └── dongpa_optuna.py     # Optuna optimizer engine
-├── ui/
-│   ├── __init__.py
-│   ├── common.py            # Shared UI utilities
-│   └── charts.py            # Chart building
-├── pages/
-│   ├── 1_backtest.py        # Backtest dashboard
-│   ├── 2_order_book.py      # LOC order scheduler
-│   └── 3_optuna.py          # Optuna optimizer UI
+│   └── config_store.py      # Reads config/
+├── web/
+│   ├── api/                 # FastAPI app (app/main.py, app/services/)
+│   └── frontend/            # React + TypeScript (Vite)
+├── benchmarks/              # Strategy research suites (python -m benchmarks)
+│   ├── lib/                 # data, engine injection, windows, signals, Optuna search
+│   ├── suites/              # one benchmark per file
+│   └── results/             # saved summaries (Optuna *.log gitignored)
+├── scripts/update_market_data.py  # Appends new daily bars to data/
+├── data/                    # Committed daily OHLCV (data/tickers.txt)
 ├── tests/                   # pytest suite
 ├── config/
 │   ├── strategy.json        # Shared strategy (all accounts trade it)
 │   ├── accounts/            # Per-account name/start_date/init_cash/spread (*.json gitignored, *.sample committed)
-│   └── presets/             # Saved strategy candidates (backups, Optuna results)
-├── docs/                    # Documentation
-│   ├── dongpa_strategy.md   # Strategy rules (Korean)
-│   └── dongpa_visualize.md  # UI layout guide
-├── outputs/                 # Downloaded price data & results (gitignored)
-├── pyproject.toml           # Dependencies & project metadata
-├── Makefile                 # Build & run helpers
-├── Dockerfile               # Production container
-├── Dockerfile.dev           # Dev container with mount
-├── CLAUDE.md                # Claude Code instructions
-├── AGENTS.md                # Repository guidelines
-└── strategy_performance.md  # Optimizer output (generated)
+│   ├── vr/                  # VR accounts (*.json gitignored)
+│   └── presets/             # Saved strategy candidates
+├── docs/                    # Strategy, netting, spread, VR sheet notes (Korean)
+├── Dockerfile.web           # Production image (frontend build + API)
+├── Makefile
+└── pyproject.toml           # uv; groups: dev (pytest), bench (optuna)
 ```
 
 ## Important Notes
 
 ### Data Handling
 - Yahoo Finance rate limits apply - avoid excessive downloads
-- Downloaded data cached in `outputs/` - delete to regenerate
 - All pricing data is daily OHLCV (no intraday)
 - Weekly resampling uses Friday close (`'W-FRI'`)
 
 ### Testing Strategy Changes
-1. Modify parameters in UI or code
-2. Run backtest on historical period (2020-2025 typical)
+1. Modify parameters in the web settings panel or code
+2. Run backtest on historical period (2021~ typical)
 3. Compare equity curve, CAGR, MDD, win rate
-4. For systematic testing, use optimizer with custom grid
+4. For systematic testing, add a suite under `benchmarks/suites/`
 
 ### Known Constraints
 - **No slippage modeling**: Engine assumes exact LOC fills at close price
@@ -230,6 +195,5 @@ backtest-dss/
 
 - **docs/dongpa_strategy.md**: Complete strategy rules, mode logic, parameter definitions (Korean)
 - **docs/vr_sheet.md**: VR Google Sheet rules and how the web VR tab maps them
-- **docs/dongpa_visualize.md**: UI layout, metric descriptions, output column definitions
+- **benchmarks/README.md**: How to run/add benchmarks, research results
 - **AGENTS.md**: Repository conventions, commit style, testing guidelines
-- **strategy_performance.md**: Latest optimizer results (auto-generated)

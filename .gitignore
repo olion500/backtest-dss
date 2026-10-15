@@ -1,9 +1,9 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-results/
-market_data/
-outputs/
+/results/
+/market_data/
+/outputs/
 *.log
 .coverage
 .ruff_cache/
@@ -17,3 +17,6 @@ web/frontend/node_modules/
 # 계좌별 설정 (계좌 이름·금액은 공개 저장소에 올리지 않음). 예시는 *.sample
 config/accounts/*.json
 config/vr/*.json
+
+# Claude Code agent worktrees
+.claude/worktrees/

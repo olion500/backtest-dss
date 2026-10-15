@@ -210,7 +210,6 @@ export default function App() {
         <nav aria-label="주요 화면">
           {navItems.slice(0, 2).map(([name, label]) => <button key={name} className={view === name ? "active" : ""} type="button" onClick={() => setView(name)}>{label}</button>)}
           <button className={view === "vr" ? "active" : ""} type="button" onClick={() => setView("vr")}>VR</button>
-          <button type="button" className="disabled" disabled>OPTIMIZER</button>
           <button className={view === "settings" ? "active" : ""} type="button" onClick={() => setView("settings")}>SETTINGS</button>
         </nav>
         <div className="top-status"><span><i />API READY // VIEWER</span><b>{presetLabel}</b><em>v0.4</em></div>
