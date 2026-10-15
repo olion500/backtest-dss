@@ -311,3 +311,61 @@ def test_cycle_without_a_session_uses_the_latest_close():
     assert (cycle.close, cycle.close_date) == (81.28, date(2026, 10, 2))
     assert cycle.days == []
     assert cycle.stock_value == pytest.approx(800 * 81.28)
+
+
+def test_sheet_history_comes_before_the_web_cycles():
+    history = [
+        {"week": 166, "start": "2026-09-05", "end": "2026-09-18", "v": 64307.65, "v_min": 51446.12, "v_max": 80384.56,
+         "shares": 800, "close": 72.64, "stock_value": 58112.0, "pool": 14112.35, "deposit": 500, "principal": 37248.34,
+         "traded_qty": -40},
+        {"week": 168, "start": "2026-09-19", "end": "2026-10-02", "v": 66093.80, "v_min": 52875.04, "v_max": 82617.25,
+         "shares": 800, "close": 81.01, "stock_value": 64808.0, "pool": 14612.35, "deposit": 500, "principal": 37748.34},
+    ]
+    account = VRAccount(id="a", name="a", start_date=date(2026, 10, 3), start_shares=800, start_pool=15112.35,
+                        start_v=67915.68, history=history)
+    asked = []
+    bars = _bars([("2026-09-08", 70, 71, 69, 70.0), ("2026-09-22", 80, 81, 79, 80.0), ("2026-10-02", 81, 82, 80, 81.28)])
+
+    def provider(ticker, start, end):
+        asked.append(start)
+        return bars
+
+    view = run_vr_view(account, provider=provider, today=date(2026, 10, 5))
+    assert asked == [date(2026, 8, 26)]  # prices from 10 days before the first sheet cycle
+    sheet = [c for c in view["cycles"] if c["source"] == "sheet"]
+    assert [c["week"] for c in sheet] == [166, 168] and [c["index"] for c in sheet] == [-2, -1]
+    assert sheet[0]["sold"] == 40 and sheet[0]["bought"] == 0 and sheet[0]["g"] is None
+    assert sheet[1]["shares_start"] == 800 and sheet[1]["total"] == pytest.approx(64808.0 + 14612.35)
+    assert view["cycles"][-1]["source"] == "web" and view["current"]["v"] == 67915.68
+    days = [d for d in view["daily"] if d["source"] == "sheet"]
+    # recorded holdings × that day's close, with the sheet's band
+    assert [(d["date"], d["stock_value"], d["v_max"]) for d in days] == [
+        ("2026-09-08", 56000.0, 80384.56), ("2026-09-22", 64000.0, 82617.25), ("2026-10-02", 65024.0, 82617.25)]
+    assert "history" not in view["account"]
+
+
+def test_import_vr_sheet_parses_cycle_rows():
+    from scripts.import_vr_sheet import parse_history
+
+    def row(**cells):
+        out = [""] * 30
+        for letters, value in cells.items():
+            n = 0
+            for ch in letters:
+                n = n * 26 + ord(ch) - 64
+            out[n - 1] = value
+        return out
+
+    rows = [[""]] * 6 + [
+        row(E="0", F="23.07.01.", G="23.07.14.", H="697.00 ", I="557.60 ", J="871.25 ", M="748.34 ", N="34 ",
+            O="22.01 ", S="748.34 ", T="34 ", U="748.34 ", X="0.00 ", Y="0.00 "),
+        row(E="2", F="23.07.15.", G="23.07.28.", H="1,947.70 ", N="30", T="-4", X="250.00 ", Y="1,250.00 "),
+        row(E="4", F="23.07.29.", G="23.08.11."),  # on/after start_date: not copied
+        row(),
+    ]
+    history = parse_history(rows, before=date(2023, 7, 29))
+    assert [h["week"] for h in history] == [0, 2]
+    assert history[0] == {"week": 0, "start": "2023-07-01", "end": "2023-07-14", "v": 697.0, "v_min": 557.6,
+                          "v_max": 871.25, "stock_value": 748.34, "close": 22.01, "principal": 748.34,
+                          "traded_amount": 748.34, "deposit": 0.0, "pool": 0.0, "shares": 34, "traded_qty": 34}
+    assert history[1]["v"] == 1947.7 and history[1]["pool"] == 1250.0 and history[1]["traded_qty"] == -4

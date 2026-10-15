@@ -66,11 +66,12 @@ function ladderPayload(result: VRResult, showAll: boolean): OrderBookPayload {
 }
 
 function cycleTable(cycles: VRCycle[]): TablePayload {
-  const columns = ["주차", "시작", "종료", "G", "V", "V최소", "V최대", "적립", "매수", "매도", "보유", "종가", "평가금", "Pool", "계좌총액", "투자원금", "수익률"];
+  const columns = ["주차", "기록", "시작", "종료", "G", "V", "V최소", "V최대", "적립", "매수", "매도", "보유", "종가", "평가금", "Pool", "계좌총액", "투자원금", "수익률"];
   return {
     columns,
     rows: cycles.map((c) => ({
       주차: c.week,
+      기록: c.source === "sheet" ? "시트" : "웹",
       시작: c.start,
       종료: c.end,
       G: c.g,

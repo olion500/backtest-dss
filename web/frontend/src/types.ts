@@ -151,13 +151,14 @@ export interface VRCycle {
   week: number;
   start: string;
   end: string;
-  g: number;
+  /** 시트 기록(source: "sheet")은 상승률 표 방식이라 G가 없다 */
+  g: number | null;
   v: number;
   v_min: number;
   v_max: number;
   deposit: number;
   shares_start: number;
-  pool_start: number;
+  pool_start: number | null;
   bought: number;
   sold: number;
   shares: number;
@@ -168,6 +169,8 @@ export interface VRCycle {
   total: number | null;
   principal: number;
   return_pct: number | null;
+  /** sheet: start_date 이전 구글 시트 기록 · web: 웹에서 계산한 사이클 */
+  source: "sheet" | "web";
 }
 
 export interface VROrder {
@@ -204,6 +207,7 @@ export interface VRDay {
   v: number;
   v_min: number;
   v_max: number;
+  source: "sheet" | "web";
 }
 
 export interface VRResult {

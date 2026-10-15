@@ -49,8 +49,10 @@ export function VrBandChart({ result }: { result: VRResult }) {
   const chart = useMemo(() => {
     if (days.length < 2) return null;
     const values = days.flatMap((d) => [d.v_min, d.v_max, d.stock_value]);
-    const lo = Math.min(...values) * 0.98;
-    const hi = Math.max(...values) * 1.02;
+    // 밴드가 차트를 꽉 채우면 상한·하한이 테두리에 묻힌다: 위아래로 여백을 둔다
+    const span = Math.max(...values) - Math.min(...values);
+    const lo = Math.max(0, Math.min(...values) - span * 0.12);
+    const hi = Math.max(...values) + span * 0.12;
     const n = days.length;
     const x = (i: number) => PAD.left + (i / (n - 1)) * (W - PAD.left - PAD.right);
     const y = (v: number) => PAD.top + ((hi - v) / (hi - lo)) * (H - PAD.top - PAD.bottom);
@@ -66,7 +68,12 @@ export function VrBandChart({ result }: { result: VRResult }) {
       const i = index.get(f.date);
       return i == null ? [] : [{ ...f, cx: x(i), cy: y(days[i].stock_value) }];
     });
-    return { x, y, band: `${top}${bottom}Z`, v: stepPath(days, x, y, (d) => d.v), value, fills, ticks: niceTicks(lo, hi, 4) };
+    const webStart = days.findIndex((d) => d.source === "web");
+    return {
+      x, y, band: `${top}${bottom}Z`, top, bottom: stepPath(days, x, y, (d) => d.v_min),
+      v: stepPath(days, x, y, (d) => d.v), value, fills, ticks: niceTicks(lo, hi, 4),
+      webStart: webStart > 0 ? x(webStart) : null,
+    };
   }, [days, result.fills, W, H]);
 
   if (!chart) {
@@ -121,6 +128,15 @@ export function VrBandChart({ result }: { result: VRResult }) {
           </g>
         ))}
         <path d={chart.band} className="vr-chart-band" />
+        <path d={chart.top} className="vr-chart-edge max" />
+        <path d={chart.bottom} className="vr-chart-edge min" />
+        {chart.webStart != null && (
+          <g>
+            <line x1={chart.webStart} x2={chart.webStart} y1={PAD.top} y2={H - PAD.bottom} className="vr-chart-split" />
+            <text x={chart.webStart - 6} y={PAD.top + 12} textAnchor="end" className="vr-chart-tick">시트 기록</text>
+            <text x={chart.webStart + 6} y={PAD.top + 12} className="vr-chart-tick">웹 계산</text>
+          </g>
+        )}
         <path d={chart.v} className="vr-chart-v" />
         <path d={chart.value} className="vr-chart-value" />
         {chart.fills.map((f, k) => (
@@ -134,7 +150,8 @@ export function VrBandChart({ result }: { result: VRResult }) {
         <text x={W - PAD.right} y={H - 6} textAnchor="end" className="vr-chart-tick">{days[days.length - 1].date}</text>
       </svg>
       <footer className="vr-chart-legend">
-        <span><i className="swatch band" />V최소 ~ V최대</span>
+        <span><i className="swatch vmax" />V최대 (넘으면 매도)</span>
+        <span><i className="swatch vmin" />V최소 (밑돌면 매수)</span>
         <span><i className="swatch v" />V</span>
         <span><i className="swatch value" />평가금 (종가)</span>
         <span><i className="swatch buy" />매수 체결</span>

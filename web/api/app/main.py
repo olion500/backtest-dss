@@ -108,7 +108,7 @@ def order_book(request: BacktestRequest) -> dict:
 
 @app.get("/api/v1/vr/accounts")
 def vr_accounts() -> dict:
-    return {"accounts": [account.model_dump(mode="json", by_alias=True) for account in load_vr_account_models()]}
+    return {"accounts": [account.model_dump(mode="json", by_alias=True, exclude={"history"}) for account in load_vr_account_models()]}
 
 
 class VRRequest(BaseModel):
