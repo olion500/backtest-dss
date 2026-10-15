@@ -56,3 +56,10 @@ def test_vr_accounts_skip_empty_files_and_sort_by_order(tmp_path):
     (tmp_path / "b.json").write_text('{"name": "B", "order": 0}')
     (tmp_path / "empty.json").write_text("{}")
     assert [a["id"] for a in load_vr_accounts(tmp_path)] == ["b", "a"]
+    assert load_vr_accounts(tmp_path / "missing") == []
+
+
+def test_non_dict_account_file_falls_back_to_defaults(tmp_path):
+    (tmp_path / "c.json").write_text("[1, 2]")
+    [account] = load_accounts(tmp_path)
+    assert account["name"] == "c" and account["order"] is None and account["init_cash"] == 10_000.0

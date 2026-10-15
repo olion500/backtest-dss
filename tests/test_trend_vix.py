@@ -124,3 +124,39 @@ def test_web_views_fetch_vix_for_trend_vix():
 def test_schema_rejects_inverted_vix_band():
     with pytest.raises(ValueError):
         StrategySettings(mode_switch_strategy="trend_vix", vix_low=40, vix_high=30)
+
+
+def _indicators(params, momo_prices, vix_prices):
+    target = _make_price_df([50.0] * len(momo_prices), start="2024-01-02")
+    _, ind = compute_indicators(
+        target, _make_price_df(momo_prices, start="2024-01-02"), params,
+        vix_data=_make_price_df(vix_prices, start="2024-01-02"),
+    )
+    return ind
+
+
+def test_trend_band_edges_are_exclusive(params):
+    # Flat momentum: ratio = 1 exactly. Inside ±2% → never decided.
+    ind = _indicators(params, [100.0] * 30, [15.0] * 30)
+    assert ind.daily_trend_up.isna().all()
+    # With a 0% band, ratio = 1 is still neither above nor below the SMA.
+    from dataclasses import replace
+    flat_band = replace(params, trend_band_pct=0.0)
+    assert _indicators(flat_band, [100.0] * 30, [15.0] * 30).daily_trend_up.isna().all()
+
+
+def test_trend_turns_up_above_the_band_and_down_below_it(params):
+    # 10-day SMA of nine 100s and one 103 = 100.3 → ratio 1.027 > 1.02 → up;
+    # then 97 after nine 100s: SMA 99.7 → ratio 0.973 < 0.98 → down
+    up = _indicators(params, [100.0] * 15 + [103.0], [15.0] * 16)
+    assert up.daily_trend_up.iloc[-1] == 1.0
+    down = _indicators(params, [100.0] * 15 + [97.0], [15.0] * 16)
+    assert down.daily_trend_up.iloc[-1] == 0.0
+
+
+def test_vix_band_edges_are_exclusive(params):
+    # vix_low 20 / vix_high 30. Exactly 20 is not calm; exactly 30 is not stressed.
+    ind = _indicators(params, [100.0] * 5, [20.0] * 5)
+    assert ind.daily_vix_calm.isna().all()
+    ind = _indicators(params, [100.0] * 5, [19.0, 30.0, 30.0, 31.0, 30.0])
+    assert ind.daily_vix_calm.tolist() == [1.0, 1.0, 1.0, 0.0, 0.0]

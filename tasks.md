@@ -3,10 +3,14 @@
 ## In Progress
 - [ ] 레포 정리 (시작 2026-10-15, 브랜치 `repo-cleanup`)
   - [x] 1. Streamlit 앱 삭제 (main.py, pages/, ui/, Dockerfile·Dockerfile.dev, dongpa_optuna.py, docs/dongpa_visualize.md), streamlit·scipy 의존성 제거, optuna는 `bench` 그룹
-  - [ ] 2. research/ → benchmarks/ 패키지로 재구성 (새 벤치마크 추가·실행 쉽게)
+  - [x] 2. research/ → benchmarks/ 패키지로 재구성 (2026-10-16): `python -m benchmarks <suite>`, lib/ + suites/. 기존 결과와 숫자 전부 일치 확인
   - [x] 3. 안 쓰는 코드 정리 (1차): explain_mode, 설정 쓰기 함수(save_strategy 등), trend_vix 표시용 지표
-  - [ ] 4. mutation testing으로 잘못된 테스트 찾아 고치기
-  - [ ] 5. README 쉽게 다시 쓰기 (쉬운 README 사례 먼저 조사)
+  - [x] 3b. 프론트 OPTIMIZER 비활성 버튼, 안 쓰는 export 제거
+  - [x] 4. mutation testing (2026-10-16): 직접 만든 AST 뮤테이터(스크래치패드), 테스트 165 → 265. 느슨한 단언·no-op 테스트 수정, `tests/test_loc_rules.py` 추가
+    - 죽인 변이: dongpa_engine 377 → 693 / 1156, order_book 220 → 308 / 459, vr_engine 173 → 231 / 266
+    - [x] 버그: `extract_state`가 현금 0.00을 `or init_cash`로 초기 현금으로 바꿈 → 전액 투자 상태에서 오더북이 없는 돈으로 매수 주문. 수정
+    - [ ] 확인 필요: 오더북 매수 지정가를 센트로 반올림하지 않음 (54.95×1.03 = 56.5985, 백테스트는 56.60)
+  - [x] 5. README 쉽게 다시 쓰기 (2026-10-16): 쉬운 README 사례(makeareadme, httpie, uv, 토스 테크니컬 라이팅) 조사 후 작성
 - [ ] 웹에 VR(라오어 밸류리밸런싱) 추가, 구글 시트 운용 대체 (시작 2026-10-12)
   - 효율은 따지지 않고 기능으로 수용. 연구 구현 `research/vr.py`, 비교 결과 research/README.md (커밋 035321a)
   - [x] 사용자 구글 시트 규칙 확인 (2026-10-12): `docs/vr_sheet.md`

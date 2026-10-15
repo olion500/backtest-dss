@@ -49,9 +49,9 @@ class TestRunBacktest:
 
     def test_equity_length_matches_dates(self, long_prices, long_momo, default_params, default_cap):
         result = run_backtest(long_prices, long_momo, default_params, default_cap)
-        # Equity should have one entry per trading day
-        assert len(result.equity) > 0
-        assert len(result.equity) <= len(long_prices)
+        # One equity point and one journal row per trading day
+        assert list(result.equity.index) == list(long_prices.index)
+        assert len(result.journal) == len(long_prices)
 
     def test_initial_equity_equals_cash(self, long_prices, long_momo, default_params, default_cap):
         result = run_backtest(long_prices, long_momo, default_params, default_cap)
@@ -66,9 +66,15 @@ class TestRunBacktest:
         assert result.equity.empty
         assert result.journal.empty
 
-    def test_cash_end_nonnegative(self, long_prices, long_momo, default_params, default_cap):
+    def test_end_state_matches_last_journal_row(self, long_prices, long_momo, default_params, default_cap):
         result = run_backtest(long_prices, long_momo, default_params, default_cap)
+        last = result.journal.iloc[-1]
         assert result.cash_end >= 0
+        assert result.cash_end == last["현금"]
+        assert result.equity.iloc[-1] == pytest.approx(last["현금"] + last["평가금액"])
+        open_lots = result.trade_log[result.trade_log["상태"] == "보유중"]
+        assert result.open_positions == len(open_lots)
+        assert last["보유수량"] == open_lots["매수수량"].sum()
 
 
 class TestComputeIndicators:
@@ -77,6 +83,23 @@ class TestComputeIndicators:
         assert isinstance(df, pd.DataFrame)
         assert isinstance(ind, Indicators)
         assert ind.strategy == "rsi"
+
+    def test_target_trimmed_to_momentum_period(self, default_params):
+        target = _make_price_df([50.0] * 20, start="2024-01-02")   # Jan 2 – Jan 29
+        momo = _make_price_df([400.0] * 10, start="2024-01-09")    # Jan 9 – Jan 22
+        df, ind = compute_indicators(target, momo, default_params)
+        assert df.index[0] == pd.Timestamp("2024-01-09")
+        assert df.index[-1] == pd.Timestamp("2024-01-22")
+        assert ind.daily_rsi.index.equals(df.index)
+
+    def test_daily_rsi_is_last_completed_week(self, long_prices, long_momo, default_params):
+        _, ind = compute_indicators(long_prices, long_momo, default_params)
+        # Thursday 2024-02-08 still carries the RSI stamped on Friday 2024-02-02
+        assert ind.daily_rsi.loc["2024-02-08"] == ind.weekly_rsi.loc["2024-02-02"]
+        assert ind.daily_prev_week.loc["2024-02-08"] == ind.weekly_rsi.loc["2024-01-26"]
+        assert ind.daily_rsi_delta.loc["2024-02-08"] == pytest.approx(
+            ind.weekly_rsi.loc["2024-02-02"] - ind.weekly_rsi.loc["2024-01-26"]
+        )
 
     def test_rsi_indicators_populated(self, long_prices, long_momo, default_params):
         _, ind = compute_indicators(long_prices, long_momo, default_params)
