@@ -8,8 +8,10 @@ dependencies = [
     "yfinance",
     "pandas",
     "numpy",
-    "scipy",  # yfinance download(repair=True) needs it; without it every fetch comes back empty
+    "scipy", # yfinance download(repair=True) needs it; without it every fetch comes back empty
     "uvicorn",
+    "exchange-calendars>=4.13.2",
+    "requests>=2.32.5",
 ]
 
 [dependency-groups]

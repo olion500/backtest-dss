@@ -20,7 +20,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 **`engines/dongpa_engine.py`** - Backtesting engine and core logic
 - `run_backtest()`: Main backtest entry point (pure function)
 - `ModeParams`: Mode-specific parameters (buy_cond_pct, tp_pct, max_hold_days, slices, stop_loss_pct)
-- `CapitalParams`: Capital management (`initial_cash` only)
+- `CapitalParams`: Capital management (`initial_cash`, broker costs `fee_pct` / `sec_fee_pct`)
 - `StrategyParams`: Complete strategy configuration
 - Signal helpers: `wilder_rsi()`, `to_weekly_close()`, `cross_up()`, `cross_down()`
 - Monetary precision helpers: `money()`, `to_decimal()` for 2-decimal rounding
@@ -33,6 +33,13 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 - Rules mirror the user's VR Google Sheet (`docs/vr_sheet.md`); accounts in `config/vr/<id>.json`, web tab "VR"
 
 **`engines/config_store.py`** - Reads `config/` (strategy, accounts, presets, VR accounts). The web never writes config.
+
+**`trader/`** - Automated orders per account, broker-neutral (now read only: `python -m trader check --account main`)
+- `broker/base.py`: the `Broker` protocol + neutral types (Position, Cash, Order, LOC/MOC); `broker/meritz.py` is one adapter, registered in `broker/__init__.py` `BROKERS`
+- `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker; any failed check halts the run
+- `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min
+- Settings `config/trader/<id>.json` (broker, credentials file path, `auto_trade`; gitignored, not in the web image). Secrets live outside the repo (`~/.config/dongpa/*.env`)
+- Run records: `var/trader/<account>/<date>/<HHMMSS>-<step>.json` (gitignored), for the order book timeline
 
 **`web/api/`** - FastAPI service (backtest, order book, VR, presets); serves the built frontend
 **`web/frontend/`** - React + TypeScript UI (Vite)
@@ -121,6 +128,12 @@ large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Research and
 - Recalculated every day based on current tranche base and mode's N_slices
 - Tranche base resets to current cash after every sell (no ratchet behavior)
 
+**Broker costs** (per account: `fee_pct`, `sec_fee_pct` in `config/accounts/<id>.json`, default 0):
+- Commission `fee_pct` % on buys and sells, SEC fee `sec_fee_pct` % on sells (at least $0.01), each rounded to the cent
+- With netting on, costs are charged on the day's **net** fill (the broker only fills the net shares); lots and cash still settle gross
+- A buy needs cash for its value plus commission (engine and order book). Realized P&L includes the lot's buy cost and its share of the sell cost
+- Journal `수수료`, trade log `매수수수료` / `매도수수료`. Meritz Super365: 0.07% / 0.00206% for accounts opened from 2026-01-05; older ones free through 2026
+
 ### Recommended Parameter Ranges
 
 | Mode | N_slices | buy_cond_pct | tp_pct | max_hold_days | stop_loss_pct |
@@ -149,6 +162,7 @@ backtest-dss/
 ├── web/
 │   ├── api/                 # FastAPI app (app/main.py, app/services/)
 │   └── frontend/            # React + TypeScript (Vite)
+├── trader/                  # Auto trading: broker adapters, ledger reconcile, run records (python -m trader)
 ├── benchmarks/              # Strategy research suites (python -m benchmarks)
 │   ├── lib/                 # data, engine injection, windows, signals, Optuna search
 │   ├── suites/              # one benchmark per file
@@ -160,6 +174,7 @@ backtest-dss/
 │   ├── strategy.json        # Shared strategy (all accounts trade it)
 │   ├── accounts/            # Per-account name/start_date/init_cash/spread (*.json gitignored, *.sample committed)
 │   ├── vr/                  # VR accounts (*.json gitignored)
+│   ├── trader/              # Auto-trading settings per account (*.json gitignored, *.sample committed)
 │   └── presets/             # Saved strategy candidates
 ├── docs/                    # Strategy, netting, spread, VR sheet notes (Korean)
 ├── Dockerfile.web           # Production image (frontend build + API)
@@ -181,7 +196,7 @@ backtest-dss/
 4. For systematic testing, add a suite under `benchmarks/suites/`
 
 ### Known Constraints
-- **No slippage modeling**: Engine assumes exact LOC fills at close price
+- **No slippage modeling**: Engine assumes exact LOC fills at close price (broker costs are modeled, see Capital Management)
 - **Integer shares only**: May leave small cash remainder unused
 - **Leveraged ETF decay**: Long holding periods (>30 days) risk volatility drag
 - **Single position per tranche**: No pyramiding within a tranche

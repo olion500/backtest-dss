@@ -1,0 +1,6 @@
+{
+  "broker": "meritz",
+  "credentials": "~/.config/dongpa/meritz-<account>.env",
+  "auto_trade": false,
+  "listings": {"SOXL": "AMEX"}
+}
