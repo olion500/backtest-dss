@@ -86,6 +86,8 @@ class BacktestRequest(BaseModel):
     log_scale: bool = True
     spread_buy_levels: int = Field(default=5, ge=0, le=20)
     spread_buy_step: int = Field(default=1, ge=1, le=1000)
+    # >0: the order book lays steps down to prev close × (1 − this %) instead of spread_buy_levels
+    spread_floor_pct: float = Field(default=0.0, ge=0, le=90)
     # Broker costs, % of the filled amount (commission both ways, SEC fee on sells)
     fee_pct: float = Field(default=0.0, ge=0, le=1)
     sec_fee_pct: float = Field(default=0.0, ge=0, le=1)

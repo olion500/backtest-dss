@@ -23,10 +23,10 @@ ACCOUNTS_DIR = CONFIG_DIR / "accounts"
 PRESETS_DIR = CONFIG_DIR / "presets"
 VR_DIR = CONFIG_DIR / "vr"
 
-ACCOUNT_KEYS = ("start_date", "init_cash", "spread_buy_levels", "spread_buy_step", "fee_pct", "sec_fee_pct")
+ACCOUNT_KEYS = ("start_date", "init_cash", "spread_buy_levels", "spread_buy_step", "spread_floor_pct", "fee_pct", "sec_fee_pct")
 ACCOUNT_DEFAULTS = {
     "start_date": None, "init_cash": 10_000.0, "spread_buy_levels": 5, "spread_buy_step": 1,
-    "fee_pct": 0.0, "sec_fee_pct": 0.0,
+    "spread_floor_pct": 0.0, "fee_pct": 0.0, "sec_fee_pct": 0.0,
 }
 DEFAULT_ACCOUNT_ID = "main"
 

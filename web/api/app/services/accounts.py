@@ -22,6 +22,7 @@ class Account(BaseModel):
     initial_cash: float = Field(gt=0, le=100_000_000)
     spread_buy_levels: int = Field(default=5, ge=0, le=20)
     spread_buy_step: int = Field(default=1, ge=1, le=1000)
+    spread_floor_pct: float = Field(default=0.0, ge=0, le=90)
     fee_pct: float = Field(default=0.0, ge=0, le=1)
     sec_fee_pct: float = Field(default=0.0, ge=0, le=1)
 
@@ -39,6 +40,7 @@ def load_accounts(accounts_dir: Path = ACCOUNTS_DIR) -> list[Account]:
                 initial_cash=raw["init_cash"],
                 spread_buy_levels=raw["spread_buy_levels"],
                 spread_buy_step=raw["spread_buy_step"],
+                spread_floor_pct=raw["spread_floor_pct"],
                 fee_pct=raw["fee_pct"],
                 sec_fee_pct=raw["sec_fee_pct"],
             ))

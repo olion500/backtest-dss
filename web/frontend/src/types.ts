@@ -44,6 +44,8 @@ export interface BacktestRequest {
   log_scale: boolean;
   spread_buy_levels: number;
   spread_buy_step: number;
+  /** >0: ladder runs down to prev close × (1 − this %), replacing spread_buy_levels */
+  spread_floor_pct: number;
   /** Broker costs, % of the filled amount: commission both ways, SEC fee on sells. */
   fee_pct: number;
   sec_fee_pct: number;
@@ -67,6 +69,8 @@ export interface Account {
   initial_cash: number;
   spread_buy_levels: number;
   spread_buy_step: number;
+  /** >0: ladder runs down to prev close × (1 − this %), replacing spread_buy_levels */
+  spread_floor_pct: number;
   fee_pct: number;
   sec_fee_pct: number;
 }

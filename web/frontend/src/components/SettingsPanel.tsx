@@ -218,9 +218,10 @@ export function SettingsPanel({ request, presets, vrAccounts, onChange, onReset,
           </SettingCard>
 
           <SettingCard title="스프레드 매수 // SPREAD">
-            <FieldRow label="레벨 수" value={request.spread_buy_levels} min={0} onChange={(next) => updateRequest("spread_buy_levels", Number(next))} />
+            <FieldRow label={<>사다리 바닥 % <small>0이면 레벨 수</small></>} value={request.spread_floor_pct} step={1} min={0} onChange={(next) => updateRequest("spread_floor_pct", Number(next))} />
+            <FieldRow label="레벨 수" value={request.spread_buy_levels} min={0} disabled={request.spread_floor_pct > 0} onChange={(next) => updateRequest("spread_buy_levels", Number(next))} />
             <FieldRow label="레벨당 수량" value={request.spread_buy_step} min={1} onChange={(next) => updateRequest("spread_buy_step", Number(next))} />
-            <p className="setting-help">레벨 간격은 매수조건 구간을 등분합니다. 스프레드는 신규 트랜치 예산 안에서 체결됩니다.</p>
+            <p className="setting-help">n번째 단계는 트랜치 예산으로 기본 수량 + n × 레벨당 수량을 살 수 있는 가격입니다. 바닥 %를 쓰면 전일 종가 대비 그만큼 아래까지 전부 겁니다 (백테스트는 단계 제한 없이 체결).</p>
           </SettingCard>
         </section>
           </>

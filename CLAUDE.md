@@ -121,7 +121,8 @@ large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Research and
 - Each tranche sets TP = `fill_price × (1 + tp_pct/100)`
 - With `spread_buy_step` set (web API always sets it from the order book settings), the fill is
   the base qty `budget ÷ limit` plus `spread_buy_step` shares per step price the close reached
-  (`spread_fill_qty`, no level cap — the order book's level count is display-only). `None` = legacy `budget ÷ close`
+  (`spread_fill_qty`, no level cap). The order book lays steps down to `prev_close × (1 − spread_floor_pct%)`
+  (accounts use 20, 1-share steps; `spread_floor_pct` 0 falls back to `spread_buy_levels`). `None` = legacy `budget ÷ close`
 
 **Sell LOC**:
 - If `today_close ≥ TP`: sell at `today_close`

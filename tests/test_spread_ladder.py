@@ -130,3 +130,25 @@ class TestNettingFloorPrice:
         assert netting_floor_price([self._lot(99.0, days=5, max_hold=7)], Decimal("101")) == Decimal("98.99")
         # max_hold 0 means no expiry
         assert netting_floor_price([self._lot(99.0, days=50, max_hold=0)], Decimal("101")) == Decimal("98.99")
+
+
+def test_floor_bounds_the_ladder_instead_of_a_level_count():
+    from engines.dongpa_engine import spread_ladder
+
+    # budget 1000 at ref 100 → 10 shares; step n sits at 1000 / (10 + n)
+    rows = spread_ladder(1000, 100, 400, 1, floor_price=80)
+    prices = [float(p) for p, _ in rows]
+    assert prices[0] == 90.91 and prices[-1] == 83.33  # 1000/12; 1000/13 = 76.92 is below the floor
+    assert len(rows) == 2 and min(prices) >= 80
+    assert len(spread_ladder(1000, 100, 1, 1, floor_price=50)) == 1  # levels still caps
+
+
+def test_order_book_floor_mode_lays_every_step_down_to_the_floor():
+    ctx = {"buy_limit_price": 100.0, "effective_budget": 2000.0, "base_qty": 20, "cash": 10_000.0, "tp_pct": 2.0, "sl_pct": 0.0}
+    rows = build_spread_orders(ctx, None, 100.0, {"spread_buy_levels": 3, "spread_buy_step": 1, "spread_floor_pct": 20}, False)
+    prices = [r["주문가"] for r in rows]
+    # 2000 / (20 + n) down to the floor 80.00: n = 1 … 5 (2000/25 = 80.00 is on it)
+    assert prices == [95.24, 90.91, 86.96, 83.33, 80.0]
+    assert all(r["수량"] == 1 for r in rows)
+    legacy = build_spread_orders(ctx, None, 100.0, {"spread_buy_levels": 3, "spread_buy_step": 1, "spread_floor_pct": 0}, False)
+    assert len(legacy) == 3

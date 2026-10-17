@@ -215,6 +215,7 @@ def _order_ui_values(request: BacktestRequest) -> dict:
         "offense_hold": strategy.offense.max_hold_days,
         "spread_buy_levels": request.spread_buy_levels,
         "spread_buy_step": request.spread_buy_step,
+        "spread_floor_pct": request.spread_floor_pct,
         "cash_limited_buy": strategy.cash_limited_buy,
         "fee_pct": request.fee_pct,
     }
@@ -409,6 +410,7 @@ def default_request() -> BacktestRequest:
         log_scale=True,
         spread_buy_levels=account.spread_buy_levels if account else 5,
         spread_buy_step=account.spread_buy_step if account else 1,
+        spread_floor_pct=account.spread_floor_pct if account else 0.0,
         fee_pct=account.fee_pct if account else 0.0,
         sec_fee_pct=account.sec_fee_pct if account else 0.0,
         strategy=strategy,

@@ -237,6 +237,7 @@ class StrategyParams:
 # ---------------------- Step (spread) buy ladder ----------------------
 
 SPREAD_MIN_DROP_PCT = Decimal("-50")
+SPREAD_MAX_LEVELS = 400  # safety cap for a floor-bounded ladder
 
 
 def _spread_step_price(budget: Decimal, ref_qty: Decimal, n: int, step: int) -> Decimal:
@@ -250,12 +251,14 @@ def spread_ladder(
     levels: int,
     step: int,
     allow_fractional: bool = False,
+    floor_price=None,
 ) -> list[tuple[Decimal, Decimal]]:
     """Lower LOC buy steps below the base buy: [(price, qty), ...] high → low.
 
     Step ``n`` is placed at the price where ``budget`` would buy
     ``ref_qty + n * step`` shares. The backtest fills against the same
-    prices via :func:`spread_fill_qty`.
+    prices via :func:`spread_fill_qty`. With ``floor_price`` the ladder runs
+    down to that price (``levels`` is then only a safety cap).
     """
     budget = to_decimal(budget)
     ref_price = to_decimal(ref_price)
@@ -264,10 +267,13 @@ def spread_ladder(
     ref_qty = shares(budget / ref_price, allow_fractional)
     if ref_qty <= 0:
         return []
+    floor = to_decimal(floor_price) if floor_price else None
     rows: list[tuple[Decimal, Decimal]] = []
     for n in range(1, levels + 1):
         price = _spread_step_price(budget, ref_qty, n, step)
         if (price / ref_price - ONE) * HUNDRED < SPREAD_MIN_DROP_PCT or price <= 0:
+            break
+        if floor is not None and price < floor:
             break
         rows.append((price, Decimal(step)))
     return rows

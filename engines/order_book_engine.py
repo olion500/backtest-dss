@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from engines.dongpa_engine import HUNDRED, ONE, buy_fee, money, shares, spread_ladder, to_decimal
+from engines.dongpa_engine import HUNDRED, ONE, SPREAD_MAX_LEVELS, buy_fee, money, shares, spread_ladder, to_decimal
 
 
 # --------------- small helpers ---------------
@@ -610,9 +610,16 @@ def build_spread_orders(
 
     max_spread = ui_values.get("spread_buy_levels", 5)
     s_step = ui_values.get("spread_buy_step", 1)
+    # Floor mode: every step down to prev_close × (1 − floor%). The backtest has no level cap,
+    # so a deeper close only misses the steps below the floor (the trader adds those near the close).
+    floor_pct = ui_values.get("spread_floor_pct", 0.0) or 0.0
+    floor_price = None
+    if floor_pct > 0 and prev_close:
+        floor_price = money(to_decimal(prev_close) * (ONE - to_decimal(floor_pct) / HUNDRED))
+        max_spread = SPREAD_MAX_LEVELS
 
     # Same ladder the backtest fills against (engines.dongpa_engine.spread_ladder).
-    ladder = spread_ladder(eff_budget, ref_price, max_spread, s_step, allow_fractional)
+    ladder = spread_ladder(eff_budget, ref_price, max_spread, s_step, allow_fractional, floor_price=floor_price)
     cash = spread_ctx.get("cash")
     rows: list[dict] = []
     for n, (step_price, _step_qty) in enumerate(ladder, start=1):
