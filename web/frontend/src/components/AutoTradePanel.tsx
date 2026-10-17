@@ -227,7 +227,14 @@ export function AutoTradePanel({
         <Step at={checkAt.ny} kst={checkAt.kst} state={checkState} title="전날 체결 대조" badge={check ? STATUS_TEXT[check.status] : "기록 없음"}>
           {check ? (
             <>
-              <p className="at-note">{check.message}{!check.current ? <> · <b>최근 대조 {check.session}{check.forced ? " (시험 실행)" : ""}</b></> : null}</p>
+              {/* The table already says what differs; the message line only stands in when there is no table. */}
+              {!check.checks.length || !check.current ? (
+                <p className="at-note">
+                  {!check.checks.length ? check.message : null}
+                  {!check.checks.length && !check.current ? " · " : null}
+                  {!check.current ? <b>최근 대조 {check.session}{check.forced ? " (시험 실행)" : ""}</b> : null}
+                </p>
+              ) : null}
               {check.checks.length ? <CheckTable checks={check.checks} /> : null}
             </>
           ) : (
