@@ -2,7 +2,9 @@
 
 Layout: ``<root>/<account>/<session date>/<HHMMSS>-<step>.json``. ``DONGPA_TRADER_RUNS``
 picks the root: ``gs://<bucket>/<prefix>`` for Cloud Storage (so the deployed web
-sees runs made anywhere), a directory path, or nothing for ``var/trader`` (gitignored).
+sees runs made anywhere) or a directory path. Unset, it follows the Makefile:
+``gs://<TRADER_BUCKET or GCP_PROJECT-dongpa-trader>/runs`` when a GCP project is
+configured, else ``var/trader`` (gitignored).
 """
 
 from __future__ import annotations
@@ -100,8 +102,17 @@ class GcsRunStore:
         return out
 
 
+def default_target() -> str:
+    explicit = os.environ.get(ENV_VAR, "").strip()
+    if explicit:
+        return explicit
+    project = os.environ.get("GCP_PROJECT", "").strip()
+    bucket = os.environ.get("TRADER_BUCKET", "").strip() or (f"{project}-dongpa-trader" if project else "")
+    return f"gs://{bucket}/runs" if bucket else ""
+
+
 def run_store(target: str | None = None) -> RunStore:
-    target = (target if target is not None else os.environ.get(ENV_VAR, "")).strip()
+    target = (target if target is not None else default_target()).strip()
     if target.startswith("gs://"):
         return _gcs_store(target)
     return LocalRunStore(target or None)

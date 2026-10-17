@@ -6,7 +6,7 @@ import argparse
 import json
 
 from trader.broker import BROKERS
-from trader.config import trader_account_ids
+from trader.config import load_repo_env, trader_account_ids
 from trader.runner import run_check
 
 MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!"}
@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--json", action="store_true", help="기록 전체를 JSON으로 출력")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
+    load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
 
     if args.command == "brokers":
         print("\n".join(sorted(BROKERS)))

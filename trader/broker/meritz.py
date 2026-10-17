@@ -71,7 +71,7 @@ def _dec(value: object, default: Decimal | None = None) -> Decimal | None:
 
 class MeritzBroker:
     name = "meritz"
-    required_credentials = ("MERITZ_APP_KEY", "MERITZ_APP_SECRET")
+    required_credentials = ("APP_KEY", "APP_SECRET")  # read as <credentials_env>_APP_KEY …
 
     def __init__(
         self,
@@ -86,8 +86,8 @@ class MeritzBroker:
         missing = [key for key in self.required_credentials if not credentials.get(key)]
         if missing:
             raise BrokerError(f"메리츠 자격증명이 없습니다: {', '.join(missing)}", code="NO_CREDENTIALS")
-        self._key = credentials["MERITZ_APP_KEY"]
-        self._secret = credentials["MERITZ_APP_SECRET"]
+        self._key = credentials["APP_KEY"]
+        self._secret = credentials["APP_SECRET"]
         self._listings = dict(listings)
         self._base = base_url.rstrip("/")
         self._http = http or requests.Session()

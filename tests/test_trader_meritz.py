@@ -7,7 +7,7 @@ from trader.broker import BROKERS, make_broker
 from trader.broker.base import Broker, BrokerError, OrderRequest, OrderState, OrderType, Side
 from trader.broker.meritz import MeritzBroker
 
-CREDS = {"MERITZ_APP_KEY": "k", "MERITZ_APP_SECRET": "s"}
+CREDS = {"APP_KEY": "k", "APP_SECRET": "s"}
 LISTINGS = {"SOXL": "AMEX"}
 
 
@@ -66,7 +66,7 @@ def test_registry_builds_meritz_and_it_implements_the_protocol():
 
 def test_missing_credentials_are_refused():
     with pytest.raises(BrokerError) as err:
-        MeritzBroker({"MERITZ_APP_KEY": "k"}, LISTINGS)
+        MeritzBroker({"APP_KEY": "k"}, LISTINGS)
     assert err.value.code == "NO_CREDENTIALS"
 
 

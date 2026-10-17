@@ -157,7 +157,12 @@ def test_run_store_picks_gcs_directory_or_default(tmp_path, monkeypatch):
     runlog._gcs_store.cache_clear()
     assert runlog.run_store("gs://bkt/trader/runs") == ("gcs", "bkt", "trader/runs")
     assert runlog.run_store(str(tmp_path)).root == tmp_path
-    monkeypatch.delenv(runlog.ENV_VAR, raising=False)
+    for name in (runlog.ENV_VAR, "GCP_PROJECT", "TRADER_BUCKET"):
+        monkeypatch.delenv(name, raising=False)
     assert runlog.run_store().root == runlog.DEFAULT_ROOT
+    monkeypatch.setenv("GCP_PROJECT", "proj")
+    assert runlog.default_target() == "gs://proj-dongpa-trader/runs"
+    monkeypatch.setenv("TRADER_BUCKET", "mine")
+    assert runlog.default_target() == "gs://mine/runs"
     with pytest.raises(ValueError):
         runlog.run_store("gs://")
