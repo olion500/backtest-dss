@@ -18,6 +18,7 @@ from web.api.app.services.benchmarks import load_benchmark_summary
 from web.api.app.services.accounts import load_accounts
 from web.api.app.services.backtest import default_request, list_presets, run_backtest_view, run_order_book_view
 from web.api.app.services.market_data import MarketDataError
+from web.api.app.services.trader import trader_status
 from web.api.app.services.vr import load_vr_account_models, run_vr_view
 
 
@@ -104,6 +105,14 @@ def backtest(request: BacktestRequest) -> dict:
 @app.post("/api/v1/order-book/preview")
 def order_book(request: BacktestRequest) -> dict:
     return _run_view(run_order_book_view, request)
+
+
+@app.get("/api/v1/trader/status")
+def trader(account: str) -> dict:
+    # Only configured account ids reach the run-record store (no free-form paths).
+    if account not in {item.id for item in load_accounts()}:
+        raise HTTPException(status_code=404, detail="계좌를 찾을 수 없습니다.")
+    return trader_status(account)
 
 
 @app.get("/api/v1/vr/accounts")

@@ -23,7 +23,7 @@ from trader.calendar import Session, last_closed_session, ny_now, us_session
 from trader.config import TraderAccount, TraderConfigError, load_trader_account
 from trader.expected import Expected, UnknownAccount, expected_state
 from trader.reconcile import DEFAULT_CASH_TOLERANCE, reconcile
-from trader.runlog import LocalRunStore, RunStore
+from trader.runlog import LocalRunStore, RunStore, run_store
 
 BrokerBuilder = Callable[[TraderAccount], Broker]
 ExpectedBuilder = Callable[[str, date], Expected]
@@ -34,15 +34,7 @@ def _default_broker(account: TraderAccount) -> Broker:
 
 
 def _session_info(session: Session, broker_next: date | None) -> dict:
-    return {
-        "date": session.day.isoformat(),
-        "is_open": session.is_open,
-        "close": session.close.isoformat() if session.close else None,
-        "early_close": session.early_close,
-        "stop_check_at": session.stop_check_at.isoformat() if session.stop_check_at else None,
-        "order_cutoff": session.close_order_cutoff.isoformat() if session.close_order_cutoff else None,
-        "broker_next_session": broker_next.isoformat() if broker_next else None,
-    }
+    return {**session.to_dict(), "broker_next_session": broker_next.isoformat() if broker_next else None}
 
 
 def _expected_payload(expected: Expected) -> dict:
@@ -113,7 +105,11 @@ def _finish(record: dict, store: RunStore | None, status: str, message: str) -> 
     record["status"] = status
     record["message"] = message
     record["finished_at"] = ny_now().isoformat()
-    record["path"] = (store or LocalRunStore()).save(record["account"], _jsonable(record))
+    try:
+        record["path"] = (store or run_store()).save(record["account"], _jsonable(record))
+    except Exception as exc:  # e.g. GCS unreachable: the run must still leave a record and not stop --all
+        record["store_error"] = f"{type(exc).__name__}: {exc}"
+        record["path"] = LocalRunStore().save(record["account"], _jsonable(record))
     return record
 
 

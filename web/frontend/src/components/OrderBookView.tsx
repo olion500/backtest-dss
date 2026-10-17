@@ -1,4 +1,8 @@
-import type { BacktestRequest, OrderBookPayload, ViewerResult } from "../types";
+import { useEffect, useState } from "react";
+
+import { getTraderStatus } from "../api/client";
+import type { BacktestRequest, OrderBookPayload, TraderStatus, ViewerResult } from "../types";
+import { AutoTradePanel } from "./AutoTradePanel";
 import { DailyLog } from "./DailyLog";
 import { DataTable } from "./DataTable";
 import { EquityChart } from "./EquityChart";
@@ -19,9 +23,21 @@ export function OrderBookView({
 }) {
   const state = orderBook.state;
   const period = `${result.meta.start_date} – ${result.meta.end_date}`;
+  const [trader, setTrader] = useState<{ status: TraderStatus | null; error: string | null }>({ status: null, error: null });
+
+  // Re-read the run records whenever the account or its order book changes.
+  useEffect(() => {
+    if (!accountId) return;
+    let live = true;
+    getTraderStatus(accountId)
+      .then((status) => live && setTrader({ status, error: null }))
+      .catch((reason: Error) => live && setTrader({ status: null, error: reason.message }));
+    return () => { live = false; };
+  }, [accountId, orderBook]);
 
   return (
     <div className="result-stack orderbook-stack">
+      {accountId ? <AutoTradePanel status={trader.status?.account === accountId ? trader.status : null} error={trader.error} orderBook={orderBook} tradeLog={result.trade_log} ticker={result.meta.target_ticker} /> : null}
       <section className="order-overview-grid">
         <article className="current-mode-card">
           <header><span className="eyebrow">현재 모드 // CURRENT MODE</span><small>{request.strategy.mode_switch_strategy.toUpperCase()} ({request.strategy.momentum_ticker})</small></header>

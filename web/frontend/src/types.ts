@@ -122,6 +122,50 @@ export interface ViewerResult {
   order_book?: OrderBookPayload;
 }
 
+export type TraderRunStatus = "ok" | "halted" | "closed" | "error";
+
+/** One run record of `python -m trader` (var/trader), summarized. */
+export interface TraderRun {
+  step: string;
+  session: string;
+  status: TraderRunStatus;
+  message: string;
+  started_at: string;
+  forced: boolean | null;
+}
+
+/** One line of the engine-ledger vs broker comparison. ok=null: shown for context, never blocks. */
+export interface TraderCheck {
+  key: string;
+  label: string;
+  expected: string;
+  actual: string;
+  diff: string;
+  ok: boolean | null;
+  note: string;
+}
+
+/** GET /api/v1/trader/status — the order book's auto-trading timeline. */
+export interface TraderStatus {
+  account: string;
+  now: string;
+  /** Any run record exists for this account (no records = manual account). */
+  configured: boolean;
+  auto_trade: boolean | null;
+  broker: string | null;
+  session: {
+    date: string;
+    is_today: boolean;
+    close: string | null;
+    early_close: boolean;
+    stop_check_at: string | null;
+    order_cutoff: string | null;
+  };
+  /** current: the check ran for this session (else it is the latest real comparison). */
+  check: (TraderRun & { current: boolean; checks: TraderCheck[] }) | null;
+  recent: TraderRun[];
+}
+
 /** config/vr/<id>.json — 밸류리밸런싱(VR) 계좌. 체결은 일별 가격으로 추정한다. */
 export interface VRAccount {
   id: string;

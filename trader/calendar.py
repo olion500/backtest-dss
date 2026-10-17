@@ -45,6 +45,19 @@ class Session:
     def stop_check_at(self) -> datetime | None:
         return self.close - STOP_CHECK_LEAD if self.close else None
 
+    def to_dict(self) -> dict:
+        def iso(at: datetime | None) -> str | None:
+            return at.isoformat() if at else None
+
+        return {
+            "date": self.day.isoformat(),
+            "is_open": self.is_open,
+            "close": iso(self.close),
+            "early_close": self.early_close,
+            "stop_check_at": iso(self.stop_check_at),
+            "order_cutoff": iso(self.close_order_cutoff),
+        }
+
 
 def us_session(day: date) -> Session:
     calendar = _nyse()
@@ -62,6 +75,19 @@ def last_closed_session(day: date) -> date:
     if calendar.is_session(stamp):
         return calendar.previous_session(stamp).date()
     return calendar.date_to_session(stamp, direction="previous").date()
+
+
+def upcoming_session(now: datetime) -> Session:
+    """The session the order book trades next: today until its close, then the next one."""
+    today = now.astimezone(NY).date()
+    session = us_session(today)
+    if session.is_open and now < session.close:
+        return session
+    calendar = _nyse()
+    nxt = calendar.date_to_session(today.isoformat(), direction="next").date()
+    if nxt == today:
+        nxt = calendar.next_session(today.isoformat()).date()
+    return us_session(nxt)
 
 
 def ny_now() -> datetime:

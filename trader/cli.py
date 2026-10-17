@@ -18,6 +18,8 @@ def _print_check(record: dict) -> None:
         state = {True: "✓", False: "✗", None: " "}[check["ok"]]
         print(f"   {state} {check['label']:<18} 엔진 {check['expected']:>14}  실제 {check['actual']:>14}  {check['diff']:>12}  {check['note']}")
     print(f"   기록: {record['path']}")
+    if record.get("store_error"):
+        print(f"   ! 기록 저장소에 못 써서 로컬에 남김: {record['store_error']}")
 
 
 def main(argv: list[str] | None = None) -> int:

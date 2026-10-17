@@ -1,4 +1,4 @@
-import type { Account, BacktestRequest, BenchmarkSummary, Preset, RunView, ViewerResult, VRAccount, VRResult } from "../types";
+import type { Account, BacktestRequest, BenchmarkSummary, Preset, RunView, TraderStatus, ViewerResult, VRAccount, VRResult } from "../types";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -50,4 +50,8 @@ export function runVr(accountId: string): Promise<VRResult> {
 
 export function getBenchmarkSummary(): Promise<BenchmarkSummary> {
   return requestJson<BenchmarkSummary>("/api/v1/benchmarks/summary");
+}
+
+export function getTraderStatus(accountId: string): Promise<TraderStatus> {
+  return requestJson<TraderStatus>(`/api/v1/trader/status?account=${encodeURIComponent(accountId)}`);
 }
