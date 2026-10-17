@@ -86,6 +86,9 @@ class BacktestRequest(BaseModel):
     log_scale: bool = True
     spread_buy_levels: int = Field(default=5, ge=0, le=20)
     spread_buy_step: int = Field(default=1, ge=1, le=1000)
+    # Broker costs, % of the filled amount (commission both ways, SEC fee on sells)
+    fee_pct: float = Field(default=0.0, ge=0, le=1)
+    sec_fee_pct: float = Field(default=0.0, ge=0, le=1)
     strategy: StrategySettings
 
     @model_validator(mode="after")

@@ -32,6 +32,8 @@ function withAccount(request: BacktestRequest, account?: Account): BacktestReque
     initial_cash: account.initial_cash,
     spread_buy_levels: account.spread_buy_levels,
     spread_buy_step: account.spread_buy_step,
+    fee_pct: account.fee_pct,
+    sec_fee_pct: account.sec_fee_pct,
   };
 }
 

@@ -183,6 +183,11 @@ class ModeParams:
 @dataclass(frozen=True)
 class CapitalParams:
     initial_cash: float
+    # Broker costs, % of the filled amount (Meritz US: 0.07 commission both ways,
+    # SEC fee 0.00206 on sells with a $0.01 minimum). With netting on, the broker
+    # only fills the net shares, so a day's costs are charged on the net amounts.
+    fee_pct: float = 0.0
+    sec_fee_pct: float = 0.0
 
 @dataclass(frozen=True)
 class StrategyParams:
@@ -282,6 +287,39 @@ def spread_fill_qty(budget, ref_price, close, step: int, allow_fractional: bool 
     while close <= _spread_step_price(budget, ref_qty, n + 1, step):
         n += 1
     return Decimal(n * step)
+
+
+SEC_FEE_MIN = Decimal("0.01")
+
+
+def buy_fee(amount: Decimal, fee_pct: float) -> Decimal:
+    """Commission on a filled buy amount, rounded to the cent."""
+    if amount <= 0 or not fee_pct:
+        return Decimal("0")
+    return money(amount * to_decimal(fee_pct) / HUNDRED)
+
+
+def sell_fee(amount: Decimal, fee_pct: float, sec_fee_pct: float) -> Decimal:
+    """Commission plus SEC fee (at least a cent) on a filled sell amount."""
+    if amount <= 0:
+        return Decimal("0")
+    sec = max(SEC_FEE_MIN, money(amount * to_decimal(sec_fee_pct) / HUNDRED)) if sec_fee_pct else Decimal("0")
+    return money(buy_fee(amount, fee_pct) + sec)
+
+
+def net_fills(buy_qty: Decimal, buy_amt: Decimal, sell_qty: Decimal, sell_amt: Decimal, close: Decimal, netting: bool):
+    """(net_buy_qty, net_buy_amt, net_sell_qty, net_sell_amt): what the broker fills once
+    a same-close buy and sell offset each other (both fill at the close)."""
+    if not netting or buy_qty <= 0 or sell_qty <= 0:
+        return buy_qty, buy_amt, sell_qty, sell_amt
+    offset_qty = min(buy_qty, sell_qty)
+    offset_amt = money(offset_qty * close)
+    return (
+        buy_qty - offset_qty,
+        money(max(Decimal("0"), buy_amt - offset_amt)),
+        sell_qty - offset_qty,
+        money(max(Decimal("0"), sell_amt - offset_amt)),
+    )
 
 
 def netting_floor_price(lots: list[dict], buy_limit: Decimal) -> Decimal | None:
@@ -695,6 +733,7 @@ def run_backtest(
         # LOC Buy (once per day) with share quantity enforcement
         buy_limit = money(prev_close * (ONE + to_decimal(m.buy_cond_pct) / HUNDRED)) if i > 0 else None
         buy_trade_id = None
+        new_lot = None
         buy_qty_executed = Decimal("0")
         buy_amt_value = Decimal("0")
         planned_buy_qty = Decimal("0")
@@ -730,7 +769,8 @@ def run_backtest(
                         params.allow_fractional_shares,
                     )
             trade_value = money(share_qty * close)
-            if share_qty > Decimal("0") and trade_value <= cash:
+            # The broker wants the commission in cash too (charged at the day's end, below).
+            if share_qty > Decimal("0") and trade_value + buy_fee(trade_value, cap.fee_pct) <= cash:
                     cash = money(cash - trade_value)
                     tp = money(close * (ONE + to_decimal(m.tp_pct) / HUNDRED))
                     sl = None
@@ -748,6 +788,7 @@ def run_backtest(
                         "매수체결가": money_to_float(close),
                         "매수수량": shares_to_float(share_qty, params.allow_fractional_shares),
                         "매수금액": money_to_float(trade_value),
+                        "매수수수료": 0.0,
                         "TP목표가": money_to_float(tp),
                         "SL목표가": money_to_float(sl) if sl is not None else None,
                         "최대보유일": int(m.max_hold_days),
@@ -756,6 +797,7 @@ def run_backtest(
                         "매도평균": None,
                         "매도수량": 0,
                         "매도금액": None,
+                        "매도수수료": None,
                         "보유기간(일)": None,
                         "실현손익": None,
                         "청산사유": None,
@@ -763,7 +805,7 @@ def run_backtest(
                         "_buy_timestamp": d,
                     }
                     trades.append(trade_entry)
-                    lots.append({
+                    new_lot = {
                         'qty': share_qty,
                         'fill': close,
                         'tp': tp,
@@ -773,7 +815,9 @@ def run_backtest(
                         'trade_idx': len(trades) - 1,
                         'max_hold': int(m.max_hold_days),
                         'buy_idx': i,
-                    })
+                        'fee': Decimal("0"),
+                    }
+                    lots.append(new_lot)
                     buy_trade_id = trade_entry["거래ID"]
                     buy_qty_executed = share_qty
                     buy_amt_value = trade_value
@@ -784,6 +828,7 @@ def run_backtest(
         sell_qty_total = Decimal("0")
         sell_amt_total = Decimal("0")
         sell_trade_ids: list[int] = []
+        sold: list[tuple[dict, Decimal]] = []
         for lot in lots:
             sell_now = False
             sell_reason = None
@@ -800,13 +845,6 @@ def run_backtest(
             if sell_now:
                 proceeds = money(Decimal(lot['qty']) * close)
                 cash = money(cash + proceeds)
-                cost_basis = money(Decimal(lot['qty']) * lot['fill'])
-                pnl = money(proceeds - cost_basis)
-                realized_today = money(realized_today + pnl)
-                pnl_pct = None
-                if cost_basis > Decimal("0"):
-                    pnl_pct = round(float((pnl / cost_basis) * Decimal("100")), 2)
-
                 trade_entry = trades[lot['trade_idx']]
                 hold_days = int((i - lot['buy_idx']) + 1)
                 trade_entry.update({
@@ -815,11 +853,10 @@ def run_backtest(
                     "매도수량": shares_to_float(lot['qty'], params.allow_fractional_shares),
                     "매도금액": money_to_float(proceeds),
                     "보유기간(일)": hold_days,
-                    "실현손익": money_to_float(pnl),
-                    "수익률(%)": pnl_pct,
                     "청산사유": sell_reason,
                     "상태": "완료",
                 })
+                sold.append((lot, proceeds))
                 sell_qty_total = sell_qty_total + lot['qty']
                 sell_amt_total = money(sell_amt_total + proceeds)
                 sell_trade_ids.append(trade_entry["거래ID"])
@@ -827,6 +864,40 @@ def run_backtest(
                 lot['days'] += 1
                 remaining.append(lot)
         lots = remaining
+
+        # Costs on what the broker actually fills: the net shares when netting offsets them.
+        net_buy_qty, net_buy_amt, net_sell_qty, net_sell_amt = net_fills(
+            buy_qty_executed, buy_amt_value, sell_qty_total, sell_amt_total, close, params.enable_netting,
+        )
+        day_buy_fee = buy_fee(net_buy_amt, cap.fee_pct)
+        day_sell_fee = sell_fee(net_sell_amt, cap.fee_pct, cap.sec_fee_pct)
+        fees_today = money(day_buy_fee + day_sell_fee)
+        if fees_today > Decimal("0"):
+            cash = money(cash - fees_today)
+        if new_lot is not None:
+            # One buy a day: the whole buy-side cost belongs to this lot, realized when it sells.
+            new_lot['fee'] = day_buy_fee
+            trades[new_lot['trade_idx']]["매수수수료"] = money_to_float(day_buy_fee)
+
+        # Split the sell-side cost over the lots sold today by proceeds; the last takes the remainder.
+        sell_fee_left = day_sell_fee
+        for n, (lot, proceeds) in enumerate(sold):
+            if n == len(sold) - 1:
+                lot_sell_fee = sell_fee_left
+            else:
+                lot_sell_fee = money(day_sell_fee * proceeds / sell_amt_total) if sell_amt_total > 0 else Decimal("0")
+                sell_fee_left = money(sell_fee_left - lot_sell_fee)
+            cost_basis = money(money(Decimal(lot['qty']) * lot['fill']) + lot['fee'])
+            pnl = money(proceeds - cost_basis - lot_sell_fee)
+            realized_today = money(realized_today + pnl)
+            pnl_pct = None
+            if cost_basis > Decimal("0"):
+                pnl_pct = round(float((pnl / cost_basis) * Decimal("100")), 2)
+            trades[lot['trade_idx']].update({
+                "매도수수료": money_to_float(lot_sell_fee),
+                "실현손익": money_to_float(pnl),
+                "수익률(%)": pnl_pct,
+            })
 
         realized_cumulative = money(realized_cumulative + realized_today)
 
@@ -880,22 +951,13 @@ def run_backtest(
         raw_sell_qty = sell_qty_total
         raw_sell_amt = sell_amt_total
 
-        # Netting is display-only
-        net_buy_qty = raw_buy_qty
-        net_sell_qty = raw_sell_qty
-        net_buy_amt = raw_buy_amt
-        net_sell_amt = raw_sell_amt
+        # Netting settles lots and cash gross; only the reported fills and the costs are net
+        # (net_buy_qty … net_sell_amt come from net_fills above).
         netting_applied = False
         netting_detail = None
 
         if params.enable_netting and raw_buy_qty > Decimal("0") and raw_sell_qty > Decimal("0"):
-            offset_qty = min(raw_buy_qty, raw_sell_qty)
-            if offset_qty > Decimal("0"):
-                offset_amt = money(offset_qty * close)
-                net_buy_qty = raw_buy_qty - offset_qty
-                net_sell_qty = raw_sell_qty - offset_qty
-                net_buy_amt = money(max(Decimal("0"), net_buy_amt - offset_amt))
-                net_sell_amt = money(max(Decimal("0"), net_sell_amt - offset_amt))
+            if min(raw_buy_qty, raw_sell_qty) > Decimal("0"):
                 netting_applied = True
                 raw_buy_display = shares_text(raw_buy_qty, params.allow_fractional_shares)
                 raw_sell_display = shares_text(raw_sell_qty, params.allow_fractional_shares)
@@ -935,6 +997,7 @@ def run_backtest(
             "매도금액": money_to_float(net_sell_amt) if net_sell_qty > Decimal("0") else 0.0,
             "매도거래ID목록": ",".join(str(tid) for tid in sell_trade_ids) if sell_trade_ids else None,
             "실현손익": money_to_float(realized_today),
+            "수수료": money_to_float(fees_today),
             "현금": money_to_float(cash),
             "보유수량": shares_to_float(position_qty, params.allow_fractional_shares),
             "평가금액": money_to_float(position_val),

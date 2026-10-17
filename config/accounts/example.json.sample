@@ -4,5 +4,7 @@
   "start_date": "2026-09-01",
   "init_cash": 20000.0,
   "spread_buy_levels": 5,
-  "spread_buy_step": 1
+  "spread_buy_step": 1,
+  "fee_pct": 0.0,
+  "sec_fee_pct": 0.0
 }

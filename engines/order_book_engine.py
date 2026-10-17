@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from engines.dongpa_engine import HUNDRED, ONE, money, shares, spread_ladder, to_decimal
+from engines.dongpa_engine import HUNDRED, ONE, buy_fee, money, shares, spread_ladder, to_decimal
 
 
 # --------------- small helpers ---------------
@@ -202,6 +202,12 @@ def _netting_price(row: dict) -> float:
     return 0.0 if is_moc(row) else float(row["주문가"])
 
 
+def _with_fee(value, fee_pct: float):
+    """Fill value plus the commission the broker holds back for it (as the backtest checks)."""
+    value = money(to_decimal(value))
+    return value + buy_fee(value, fee_pct)
+
+
 def build_order_sheet(
     open_trades: pd.DataFrame,
     prev_close: float | None,
@@ -295,10 +301,11 @@ def build_order_sheet(
             qty = shares(to_decimal(effective_budget) / buy_limit, allow_fractional)
             base_qty = float(qty) if allow_fractional else int(qty)
 
-            # The backtest skips the whole buy when the fill value exceeds cash
-            # (buys run before the day's sells, so sell proceeds never fund it).
-            # An order the cash can't cover even at its own limit is left out.
-            if base_qty > 0 and qty * buy_limit > to_decimal(current_cash):
+            # The backtest skips the whole buy when the fill value plus commission
+            # exceeds cash (buys run before the day's sells, so sell proceeds never
+            # fund it). An order the cash can't cover even at its own limit is left out.
+            fee_pct = ui_values.get("fee_pct", 0.0)
+            if base_qty > 0 and _with_fee(qty * buy_limit, fee_pct) > to_decimal(current_cash):
                 base_qty = 0
 
             if base_qty > 0:
@@ -326,6 +333,7 @@ def build_order_sheet(
                     "cash": current_cash,
                     "tp_pct": tp_pct,
                     "sl_pct": sl_pct,
+                    "fee_pct": fee_pct,
                 }
 
     return order_sheet, spread_ctx
@@ -612,7 +620,8 @@ def build_spread_orders(
         sp_price = float(step_price)
         # A close at this step fills base + every step above it in one buy;
         # the backtest skips that buy when it costs more than the cash.
-        if cash is not None and (spread_ctx["base_qty"] + incr) * sp_price > cash:
+        fill_value = to_decimal(spread_ctx["base_qty"] + incr) * step_price
+        if cash is not None and _with_fee(fill_value, spread_ctx.get("fee_pct", 0.0)) > to_decimal(cash):
             continue
 
         sp_tp = sp_price * (1 + s_tp_pct / 100)

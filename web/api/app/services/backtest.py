@@ -66,6 +66,8 @@ def build_engine_params(
     settings: StrategySettings,
     initial_cash: float,
     spread_buy_step: int | None = None,
+    fee_pct: float = 0.0,
+    sec_fee_pct: float = 0.0,
 ) -> tuple[StrategyParams, CapitalParams]:
     params = StrategyParams(
         target_ticker=settings.target_ticker,
@@ -92,7 +94,7 @@ def build_engine_params(
         defense=_mode_params(settings.defense),
         offense=_mode_params(settings.offense),
     )
-    return params, CapitalParams(initial_cash=initial_cash)
+    return params, CapitalParams(initial_cash=initial_cash, fee_pct=fee_pct, sec_fee_pct=sec_fee_pct)
 
 
 def _execute(
@@ -126,6 +128,8 @@ def _execute(
         strategy,
         request.initial_cash,
         spread_buy_step=request.spread_buy_step,
+        fee_pct=request.fee_pct,
+        sec_fee_pct=request.sec_fee_pct,
     )
     result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw, vix_data=vix_raw)
     indicators = None
@@ -212,6 +216,7 @@ def _order_ui_values(request: BacktestRequest) -> dict:
         "spread_buy_levels": request.spread_buy_levels,
         "spread_buy_step": request.spread_buy_step,
         "cash_limited_buy": strategy.cash_limited_buy,
+        "fee_pct": request.fee_pct,
     }
 
 
@@ -404,5 +409,7 @@ def default_request() -> BacktestRequest:
         log_scale=True,
         spread_buy_levels=account.spread_buy_levels if account else 5,
         spread_buy_step=account.spread_buy_step if account else 1,
+        fee_pct=account.fee_pct if account else 0.0,
+        sec_fee_pct=account.sec_fee_pct if account else 0.0,
         strategy=strategy,
     )

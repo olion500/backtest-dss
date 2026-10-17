@@ -44,6 +44,9 @@ export interface BacktestRequest {
   log_scale: boolean;
   spread_buy_levels: number;
   spread_buy_step: number;
+  /** Broker costs, % of the filled amount: commission both ways, SEC fee on sells. */
+  fee_pct: number;
+  sec_fee_pct: number;
   strategy: StrategySettings;
 }
 
@@ -64,6 +67,8 @@ export interface Account {
   initial_cash: number;
   spread_buy_levels: number;
   spread_buy_step: number;
+  fee_pct: number;
+  sec_fee_pct: number;
 }
 
 export type CellValue = string | number | boolean | null;

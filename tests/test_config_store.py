@@ -24,6 +24,7 @@ def test_accounts_fill_defaults_and_fall_back_to_file_name(tmp_path):
     assert account["id"] == "a" and account["name"] == "a"
     assert account["init_cash"] == 500
     assert account["spread_buy_step"] == 1 and account["spread_buy_levels"] == 5
+    assert account["fee_pct"] == 0.0 and account["sec_fee_pct"] == 0.0
 
 
 def test_no_account_files_gives_one_default_account(tmp_path):

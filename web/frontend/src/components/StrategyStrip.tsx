@@ -22,6 +22,7 @@ export function StrategyStrip({
     ["최대보유", `${params.max_hold_days}일`],
     ["트랜치 예산", orderBook?.state.tranche_budget ? `$${orderBook.state.tranche_budget.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"],
     ["퉁치기", request.strategy.enable_netting ? "ON" : "OFF"],
+    ["수수료", request.fee_pct ? `${request.fee_pct}%` : "없음"],
   ];
   return (
     <div className="strategy-strip">

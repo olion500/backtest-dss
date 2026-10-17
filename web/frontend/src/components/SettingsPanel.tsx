@@ -143,12 +143,14 @@ export function SettingsPanel({ request, presets, vrAccounts, onChange, onReset,
           <div className="local-settings-copy">
             <span className="eyebrow">개인 설정 // LOCAL · 서버 저장 없음</span>
             <p>현재 값은 이 브라우저에만 저장됩니다. 서버 설정 파일은 변경하지 않습니다.</p>
-            <p>오더북은 선택한 계좌(config/accounts)의 시작일 · 초기현금 · 스프레드 값을 씁니다. 여기 값은 백테스트 화면에만 적용됩니다.</p>
+            <p>오더북은 선택한 계좌(config/accounts)의 시작일 · 초기현금 · 스프레드 · 수수료 값을 씁니다. 여기 값은 백테스트 화면에만 적용됩니다.</p>
           </div>
           <div className="local-settings-fields">
             <FieldRow label="백테스트 시작일" value={request.start_date} type="date" onChange={(next) => updateRequest("start_date", String(next))} />
             <FieldRow label="종료일" value={request.end_date} type="date" onChange={(next) => updateRequest("end_date", String(next))} />
             <FieldRow label="초기 가용현금 $" value={request.initial_cash} step={1000} min={1} onChange={(next) => updateRequest("initial_cash", Number(next))} />
+            <FieldRow label={<>수수료 % <small>매수·매도</small></>} value={request.fee_pct} step={0.01} min={0} onChange={(next) => updateRequest("fee_pct", Number(next))} />
+            <FieldRow label={<>SEC fee % <small>매도만</small></>} value={request.sec_fee_pct} step={0.00001} min={0} onChange={(next) => updateRequest("sec_fee_pct", Number(next))} />
           </div>
         </section>
 
