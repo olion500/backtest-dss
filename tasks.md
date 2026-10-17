@@ -29,7 +29,9 @@
     - `make deploy`는 이미지만 (`--set-env-vars`가 env를 덮어써 Pulumi와 충돌하던 것 제거), `make infra-preview` / `infra-up` / `trader-check`
     - Pulumi 밖: IAP OAuth 클라이언트·iap settings, Cloudflare DNS, 상태 버킷, 같은 프로젝트의 budongsan-web
     - 사용자 지적 (2026-10-18): 개인 값은 .env에 → 프로젝트·리전·도메인·IAP 멤버·상태 버킷·trader 버킷 전부 .env(`.env.example`), Pulumi.yaml backend·Pulumi.prod.yaml 제거/gitignore, make infra-*가 env로 넘김. `make infra-init`·`image-push` 추가, infra/README에 다른 사람 첫 설정 순서. IAP 바인딩 state rename 후 preview 13 unchanged
-    - 남은 것: 새 웹 코드 배포 전이라 배포본은 아직 자동매매 패널 없음. 웹 전용 서비스 계정(지금은 기본 compute SA) 분리 검토
+    - [x] 코드 리뷰 반영 (2026-10-18): GCS 저장 실패 시 로컬 기록, 지난 멈춤은 맨 위 경고 안 띄움, IAP 바인딩 protect 해제, 계좌 전환 시 이전 상태 안 보임, GCS 클라이언트 캐시·최근 90일만 목록, .env 없으면 var/trader, 설정 오류 기록이 표시 덮지 않음, 세션 직렬화 하나로
+    - [x] main 병합(fast-forward 66f6347) + 배포 리비전 dongpa-viewer-00032-pzq (2026-10-18). env DONGPA_TRADER_RUNS 유지, infra preview 13 unchanged. origin push는 안 함
+    - 남은 것: 웹 전용 서비스 계정(지금은 기본 compute SA) 분리 검토
   - [ ] UI 설계 (2026-10-17 제안): 오더북 탭에 자동매매 상태 띠·대조 카드·주문표 상태 열(계획/접수/체결/거절)·손절 감시·실행 기록. 웹은 보기 전용, 실행 기록은 잡이 저장한 파일을 읽음
   - [x] 1단계 조회 전용 (2026-10-18): `trader/` 패키지, `python -m trader check --account main [--force]`
     - 사용자 요청: 메리츠 말고 다른 증권사도 붙일 수 있게 → `Broker` 프로토콜 + 중립 타입, 어댑터는 `trader/broker/<name>.py` + `BROKERS` 등록
