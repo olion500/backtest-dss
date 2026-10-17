@@ -1,0 +1,9 @@
+[project]
+name = "dongpa-infra"
+version = "0.1.0"
+description = "Pulumi program for the dongpa GCP resources"
+requires-python = ">=3.13"
+dependencies = [
+    "pulumi>=3",
+    "pulumi-gcp>=8",
+]

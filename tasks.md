@@ -18,6 +18,18 @@
   - 사용자 결정 (2026-10-17): 자동매매 켜기/끄기는 웹 스위치 없이 계좌 설정 파일(`auto_trade`)로
   - [x] UI 시안 3개 (2026-10-17, https://claude.ai/artifact/EGCEdjN52epHQKubPnm9mC): A 상태 띠+지금 화면 확장 · B 하루 타임라인+가격 지도 · C 장부 대조(멈춤 상태)
     - 사용자 결정 (2026-10-17): B 채택. 그 아래 보유 포지션·퉁치기·지표·자산곡선·일지는 지금처럼 유지
+  - [x] 오더북 B 화면 1차 (2026-10-18): `AutoTradePanel.tsx` 오더북 맨 위, 그 아래는 기존 화면 그대로
+    - 가격 지도(매도 위·매수 아래 라벨, 사다리 띠, 손절가 ▲, 전일 종가), 타임라인 09:40 대조 → 09:45 주문(준비 중) → 마감 15분 전 손절(준비 중, 손절 감시 목록) → 종가
+    - 멈춤·오류면 맨 위 경고 + 대조표. 기록 없는 계좌는 "수동". 조기 마감일은 손절 시각·제목 바뀜
+    - API `GET /api/v1/trader/status?account=` (설정된 계좌 id만), Dockerfile에 trader/ 코드만 복사 (config/trader·자격증명 없음)
+    - [x] GCS 기록 (2026-10-18): `GcsRunStore`, `DONGPA_TRADER_RUNS=gs://<TRADER_BUCKET>/runs` (.env, Cloud Run env). 메인 시험 실행 기록 1건 올림
+  - [x] infra/ Pulumi (2026-10-18, 사용자 요청: 기존 인프라도 같이)
+    - 상태 `gs://<GCP_PROJECT>-pulumi`(버전 관리), 스택 prod. API 4개·Artifact Registry·Cloud Run·invoker 2·IAP 접근·도메인 매핑 import + protect, 새 trader 버킷·웹 읽기 권한
+    - `pulumi up` 적용: Cloud Run에 DONGPA_TRADER_RUNS env (새 리비전, 이미지 그대로). 이후 preview 13 unchanged
+    - `make deploy`는 이미지만 (`--set-env-vars`가 env를 덮어써 Pulumi와 충돌하던 것 제거), `make infra-preview` / `infra-up` / `trader-check`
+    - Pulumi 밖: IAP OAuth 클라이언트·iap settings, Cloudflare DNS, 상태 버킷, 같은 프로젝트의 budongsan-web
+    - 사용자 지적 (2026-10-18): 개인 값은 .env에 → 프로젝트·리전·도메인·IAP 멤버·상태 버킷·trader 버킷 전부 .env(`.env.example`), Pulumi.yaml backend·Pulumi.prod.yaml 제거/gitignore, make infra-*가 env로 넘김. `make infra-init`·`image-push` 추가, infra/README에 다른 사람 첫 설정 순서. IAP 바인딩 state rename 후 preview 13 unchanged
+    - 남은 것: 새 웹 코드 배포 전이라 배포본은 아직 자동매매 패널 없음. 웹 전용 서비스 계정(지금은 기본 compute SA) 분리 검토
   - [ ] UI 설계 (2026-10-17 제안): 오더북 탭에 자동매매 상태 띠·대조 카드·주문표 상태 열(계획/접수/체결/거절)·손절 감시·실행 기록. 웹은 보기 전용, 실행 기록은 잡이 저장한 파일을 읽음
   - [x] 1단계 조회 전용 (2026-10-18): `trader/` 패키지, `python -m trader check --account main [--force]`
     - 사용자 요청: 메리츠 말고 다른 증권사도 붙일 수 있게 → `Broker` 프로토콜 + 중립 타입, 어댑터는 `trader/broker/<name>.py` + `BROKERS` 등록

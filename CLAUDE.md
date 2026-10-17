@@ -39,10 +39,14 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker; any failed check halts the run
 - `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min
 - Settings `config/trader/<id>.json` (broker, credentials file path, `auto_trade`; gitignored, not in the web image). Secrets live outside the repo (`~/.config/dongpa/*.env`)
-- Run records: `var/trader/<account>/<date>/<HHMMSS>-<step>.json` (gitignored), for the order book timeline
+- Run records: `<root>/<account>/<date>/<HHMMSS>-<step>.json`; root from `DONGPA_TRADER_RUNS` (`gs://<TRADER_BUCKET>/runs` from `.env` and on Cloud Run, default `var/trader`, gitignored). The web reads them (`GET /api/v1/trader/status?account=`, `web/api/app/services/trader.py`) for the order book's auto-trade panel (`AutoTradePanel.tsx`: price map + day timeline); it never sees broker settings
 
 **`web/api/`** - FastAPI service (backtest, order book, VR, presets); serves the built frontend
 **`web/frontend/`** - React + TypeScript UI (Vite)
+
+**`infra/`** - Pulumi (Python, uv) for the GCP resources: Cloud Run viewer, Artifact Registry, IAP access, domain mapping, trader bucket (`infra/README.md`)
+- Personal values (project, domain, IAP members, state bucket) come only from `.env` (`.env.example`); `make infra-*` passes them in. Stack files are gitignored. Resources are `protect`ed
+- Cloud Run env/scaling/IAP change only here (`make infra-preview` / `make infra-up`); `make deploy` only rolls the image
 
 **`benchmarks/`** - Strategy research: runs the real engine with injected mode series (see `benchmarks/README.md`)
 - `python -m benchmarks` lists suites; one file per suite in `benchmarks/suites/`, shared code in `benchmarks/lib/`
@@ -70,7 +74,9 @@ make web-install      # Frontend dependencies
 make web-api          # FastAPI on :8000 (reload)
 make web-frontend     # Vite dev server on :5173
 make web              # Build the image and run the app on :8000
-make deploy           # Cloud Run (needs .env, see .env.example)
+make deploy           # Push the image and roll it on Cloud Run (needs .env, see .env.example)
+make infra-preview    # Pulumi diff for GCP (infra/), make infra-up to apply
+make trader-check     # Read-only reconcile of every config/trader account, records to DONGPA_TRADER_RUNS
 ```
 
 ### Testing
@@ -163,6 +169,7 @@ backtest-dss/
 │   ├── api/                 # FastAPI app (app/main.py, app/services/)
 │   └── frontend/            # React + TypeScript (Vite)
 ├── trader/                  # Auto trading: broker adapters, ledger reconcile, run records (python -m trader)
+├── infra/                   # Pulumi program for GCP (Cloud Run, Artifact Registry, IAP, domain, trader bucket)
 ├── benchmarks/              # Strategy research suites (python -m benchmarks)
 │   ├── lib/                 # data, engine injection, windows, signals, Optuna search
 │   ├── suites/              # one benchmark per file

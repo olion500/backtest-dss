@@ -1,0 +1,4 @@
+.venv/
+__pycache__/
+# Stack files are per person (config + encryption salt); everything personal comes from .env
+Pulumi.*.yaml

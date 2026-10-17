@@ -1,0 +1,6 @@
+name: dongpa
+description: dongpa GCP resources (Cloud Run viewer, image repo, trader run records)
+runtime:
+  name: python
+  options:
+    toolchain: uv
