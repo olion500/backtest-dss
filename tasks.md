@@ -156,6 +156,7 @@
   - [ ] 실제 MTS 입력하면서 사용성 확인
   - [x] PWA 설치 (2026-10-18, 사용자 요청: 앱처럼 쓰기, PiP만 잘 돼도 성공): `public/manifest.json`(standalone, 아이콘 192·512·maskable, 바로가기 오더북·VR), index.html에 manifest `crossorigin="use-credentials"`(IAP 쿠키)
     - 서비스 워커 없음: 설치 조건에 필요 없고, IAP 세션 만료 때 캐시가 꼬일 수 있음. 오프라인 불가(데이터가 전부 API)
+    - 배포 리비전 dongpa-viewer-00036-qfl (2026-10-18, c4a8af0). 사용자: 삼성 인터넷도 영상 PiP(미디어 플레이어)로 뜸
     - [ ] 배포 후 확인: 데스크톱 Chrome 설치 앱에서 Document PiP, 안드로이드 Chrome 설치 앱에서 영상 PiP
 - [ ] 웹 뷰어 차트·주문 시트 고도화 (Spectrum UI 시장 블록 기법 참고, 우리 테마로 재구현) (시작 2026-09-23)
   - 참고: https://ui.spectrumhq.in/blocks/charts#market · 소스 github.com/arihantcodes/spectrum-ui `app/registry/charts/` (Apache-2.0)
