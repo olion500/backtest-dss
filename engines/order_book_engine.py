@@ -186,6 +186,13 @@ def build_holdings(
 
 # Expiry sell: placed as MOC (market on close), not LOC — it fills at any close.
 MOC_SELL = "매도 (MOC)"
+# Netting labels: a row the netting shrank is "퉁치기" (the net fill where the buy
+# and the sells overlap); the mirror rows it adds are the original buy / sells moved
+# a cent outside the overlap, so they keep the plain names.
+NETTED_SELL = "매도 (퉁치기)"
+NETTED_BUY = "매수 (퉁치기)"
+# Expiring lot that netting moved above the buy limit: a LOC there, not an MOC.
+EXPIRY_SELL = "매도 (만료)"
 # Stop loss: the backtest sells when close <= SL, which no LOC order can express
 # (a LOC sell fills when close >= its price) and the close is unknown when orders
 # go in. So the sheet lists the lots the backtest stop-lost on the last close,
@@ -448,6 +455,7 @@ def apply_netting(
     # Bottom-up consumption is required for the mirror rows below to
     # reproduce the correct net outcome in every closing-price range.
     consumed_by_price: dict[float, float] = defaultdict(float)
+    consumed_by_kind: dict[str, float] = defaultdict(float)
     consumed_amt = 0.0
     remaining = offset
     for i in sorted(nettable_sell_indices, key=lambda idx: _netting_price(order_sheet[idx])):
@@ -459,6 +467,7 @@ def apply_netting(
         reduction = min(row_qty, remaining)
         remaining -= reduction
         consumed_by_price[_netting_price(row)] += reduction
+        consumed_by_kind[EXPIRY_SELL if is_moc(row) else "매도 (익절)"] += reduction
         consumed_amt += reduction * row_price
         netting_details.append({
             "매도": row["구분"],
@@ -475,6 +484,8 @@ def apply_netting(
             new_qty = int(new_qty)
         if new_qty > 0:
             row["수량"] = new_qty
+            if not is_moc(row):
+                row["구분"] = NETTED_SELL
             prior_note = row.get("비고", "")
             note = f"퉁치기 {fmt_qty(reduction)}주 상쇄"
             row["비고"] = f"{prior_note} | {note}" if prior_note else note
@@ -487,6 +498,7 @@ def apply_netting(
         net_buy = int(net_buy)
     if net_buy > 0:
         order_sheet[buy_index]["수량"] = net_buy
+        order_sheet[buy_index]["구분"] = NETTED_BUY
         order_sheet[buy_index]["비고"] = f"퉁치기 후 순매수 ({fmt_qty(offset)}주 상쇄)"
     else:
         order_sheet[buy_index] = None  # type: ignore[assignment]
@@ -536,26 +548,31 @@ def apply_netting(
         mirror_price = price - 0.01
         pct = ((mirror_price / prev_close) - 1) * 100 if prev_close else 0
         order_sheet.append({
-            "구분": "매수 (퉁치기)",
+            "구분": "매수",
             "주문가": mirror_price,
             "수량": qty,
             "변화율": f"{pct:+.1f}%",
-            "비고": f"종가 < ${price:.2f} 시 매도미체결 → 매수",
+            "비고": f"종가 < ${price:.2f} 시 (매도 미체결) 매수 — 퉁치기로 옮긴 매수",
         })
     if mirrored:
         netting_floor_price = mirrored[0] - 0.01
 
-    # Consumed buy quantity → sell back just above the buy limit (buy would not fill).
-    ceiling_qty = offset if allow_fractional else int(offset)
+    # Consumed sells → sell back just above the buy limit (buy would not fill),
+    # one row per kind so a TP stays 익절 and an expiring lot stays 만료.
     ceiling_price = buy_price + 0.01
     pct = ((ceiling_price / prev_close) - 1) * 100 if prev_close else 0
-    order_sheet.append({
-        "구분": "매도 (퉁치기)",
-        "주문가": ceiling_price,
-        "수량": ceiling_qty,
-        "변화율": f"{pct:+.1f}%",
-        "비고": f"종가 > ${buy_price:.2f} 시 매수미체결 → 매도",
-    })
+    for kind, qty in consumed_by_kind.items():
+        if not allow_fractional:
+            qty = int(qty)
+        if qty <= 0:
+            continue
+        order_sheet.append({
+            "구분": kind,
+            "주문가": ceiling_price,
+            "수량": qty,
+            "변화율": f"{pct:+.1f}%",
+            "비고": f"종가 > ${buy_price:.2f} 시 (매수 미체결) 매도 — 퉁치기로 옮긴 매도",
+        })
 
     # --- per-closing-range outcome table (informational only) ---
     def _outcome(net: float) -> str:

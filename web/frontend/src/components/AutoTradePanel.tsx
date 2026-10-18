@@ -50,7 +50,7 @@ function priceMap(orders: TablePayload, tradeLog: TablePayload, prevClose: numbe
     if (kind === "매도 (MOC)" || kind === "매도 (손절)") {
       mocQty += qty;
     } else if (kind.startsWith("매도")) {
-      marks.push({ price, label: `${kind.includes("퉁치기") ? "퉁치기" : "익절"} ${qty}`, kind: "sell" });
+      marks.push({ price, label: `${kind.match(/\((.+)\)/)?.[1] ?? "매도"} ${qty}`, kind: "sell" });
     } else if (kind.startsWith("매수 (+")) {
       ladder.push(price);
     } else {

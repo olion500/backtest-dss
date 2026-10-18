@@ -403,8 +403,8 @@ class TestApplyNetting:
         # The TP sell and the buy cancel out; only the two mirror orders are placed:
         # buy back below the sell price, sell above the buy limit.
         assert [(r["구분"], r["주문가"], r["수량"]) for r in result.order_sheet] == [
-            ("매수 (퉁치기)", pytest.approx(97.99), 10),
-            ("매도 (퉁치기)", pytest.approx(100.01), 10),
+            ("매수", pytest.approx(97.99), 10),
+            ("매도 (익절)", pytest.approx(100.01), 10),
         ]
         assert result.netting_floor_price == pytest.approx(97.99)
         assert [r["순결과"] for r in result.scenario_rows] == ["순매수 10주", "±0주", "순매도 10주"]
@@ -417,9 +417,11 @@ class TestApplyNetting:
         ]
         result = apply_netting(sheet, 99.0, False)
         assert "순매수" in result.netting_msg
-        net_buy = [r for r in result.order_sheet if r["구분"] == "매수" and "퉁치기 후" in r.get("비고", "")]
+        net_buy = [r for r in result.order_sheet if r["구분"] == "매수 (퉁치기)"]
         assert len(net_buy) == 1
-        assert net_buy[0]["수량"] == 5
+        assert net_buy[0]["수량"] == 5 and net_buy[0]["주문가"] == 100.0
+        # The netted-away 5 shares come back as the plain buy below the sell
+        assert [(r["주문가"], r["수량"]) for r in result.order_sheet if r["구분"] == "매수"] == [(pytest.approx(97.99), 5)]
 
     def test_partial_netting_sell_larger(self):
         """Sell qty > buy qty → net sell remains."""
@@ -429,9 +431,13 @@ class TestApplyNetting:
         ]
         result = apply_netting(sheet, 99.0, False)
         assert "순매도 5주" in result.netting_msg
-        tp = [r for r in result.order_sheet if r["구분"] == "매도 (익절)"]
-        assert [r["수량"] for r in tp] == [5]
-        assert not any(r["구분"] == "매수" for r in result.order_sheet)
+        # 15-share TP − 10-share buy: the 5 left is the netted sell, the 10 move above
+        # the buy limit as the TP, and the buy moves below the TP price.
+        assert [(r["구분"], r["주문가"], r["수량"]) for r in result.order_sheet] == [
+            ("매도 (퉁치기)", 98.0, 5),
+            ("매수", pytest.approx(97.99), 10),
+            ("매도 (익절)", pytest.approx(100.01), 10),
+        ]
 
     def test_netting_produces_scenario_rows(self):
         """Netting should add floor (buy-only) and ceiling (sell-only) scenario rows."""
@@ -520,13 +526,17 @@ class TestNettingConsistency:
             ), f"net outcome mismatch at close={close}"
         mirror_prices = sorted(
             r["주문가"] for r in result.order_sheet
-            if r["구분"] == "매수 (퉁치기)"
+            if r["구분"] == "매수"
         )
         assert mirror_prices == [94.99, 97.99]
 
     def test_moc_sell_gets_no_mirror_buy(self):
         result = apply_netting(self._copy(), 135.47, False)
-        assert not any(r["구분"] == "매수 (퉁치기)" for r in result.order_sheet)
+        assert not any(r["구분"].startswith("매수") for r in result.order_sheet)
+        # The 20 MOC shares the buy absorbed sell above the limit as a LOC, not an MOC;
+        # the MOC row keeps its label for the 3 shares left.
+        assert [(r["구분"], r["수량"]) for r in result.order_sheet if r["주문가"] == pytest.approx(145.98)] == [("매도 (만료)", 20)]
+        assert [r["수량"] for r in result.order_sheet if r["구분"] == "매도 (MOC)"] == [3]
         assert result.netting_floor_price is None
 
     def test_scenario_rows_are_informational(self):
@@ -699,7 +709,7 @@ class TestNettingEdges:
         result = apply_netting(sheet, 99.0, False)
         assert result.netting_details[0]["상쇄 수량"] == 4
         assert result.netting_msg == "퉁치기 적용: 매도 4주 상쇄 → 순매수 6주 (순 유입 $0.00)"
-        assert next(r for r in result.order_sheet if r["구분"] == "매수")["수량"] == 6
+        assert next(r for r in result.order_sheet if r["구분"] == "매수 (퉁치기)")["수량"] == 6
 
     def test_cash_impact_and_unnettable_sells_in_message(self):
         sheet = [
@@ -721,9 +731,9 @@ class TestNettingEdges:
             {"구분": "매수", "주문가": 100.0, "수량": 10, "변화율": "", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, False)
-        tp = next(r for r in result.order_sheet if r["구분"] == "매도 (익절)")
-        assert tp["수량"] == 5
-        assert tp["비고"] == "lot A | 퉁치기 10주 상쇄"
+        netted = next(r for r in result.order_sheet if r["구분"] == "매도 (퉁치기)")
+        assert netted["수량"] == 5
+        assert netted["비고"] == "lot A | 퉁치기 10주 상쇄"
         assert result.netting_msg.startswith("퉁치기 적용: 매수 10주 상쇄 → 순매도 5주")
 
     def test_scenario_table_for_two_sell_groups(self):
@@ -740,7 +750,7 @@ class TestNettingEdges:
             ("> $100.00", "순매도 15주"),
         ]
         assert result.netting_floor_price == pytest.approx(94.99)
-        mirror = next(r for r in result.order_sheet if r["구분"] == "매도 (퉁치기)")
+        mirror = next(r for r in result.order_sheet if r["구분"] == "매도 (익절)")
         assert (mirror["주문가"], mirror["수량"], mirror["변화율"]) == (pytest.approx(100.01), 15, "+1.0%")
 
     def test_fractional_quantities_are_kept(self):
@@ -749,7 +759,7 @@ class TestNettingEdges:
             {"구분": "매수", "주문가": 100.0, "수량": 4.25, "변화율": "", "비고": ""},
         ]
         result = apply_netting(sheet, 99.0, True)
-        buy = next(r for r in result.order_sheet if r["구분"] == "매수")
+        buy = next(r for r in result.order_sheet if r["구분"] == "매수 (퉁치기)")
         assert buy["수량"] == pytest.approx(1.75)
-        mirror_buy = next(r for r in result.order_sheet if r["구분"] == "매수 (퉁치기)")
+        mirror_buy = next(r for r in result.order_sheet if r["구분"] == "매수")
         assert mirror_buy["수량"] == pytest.approx(2.5)

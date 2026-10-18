@@ -166,7 +166,21 @@ In the orderBook page, we display LOC orders for the next trading day:
 - Expiration: At `prev_close` when max holding period exceeded
 - SL (Stop Loss): `entry_price * (1 - sl_pct%)`
 
-### Order Sheet Display
+### Order Sheet Labels (current)
+
+퉁치기 후 각 줄은 실제 의미대로 부른다 (`apply_netting`):
+
+| 구분 | 주문가 | 의미 |
+|------|--------|------|
+| `매도 (퉁치기)` | 원래 익절가 | 퉁치기로 줄어든 익절 = 매도·매수가 둘 다 체결되는 구간의 순매도 |
+| `매수 (퉁치기)` | 원래 매수가 | 퉁치기로 줄어든 매수 = 그 구간의 순매수 |
+| `매도 (익절)` / `매도 (만료)` | 매수가 + $0.01 | 상쇄된 매도 물량. 매수가 안 들어갈 때만 팔린다 (만료분도 여기선 LOC) |
+| `매수` | 상쇄된 매도가 − $0.01 | 상쇄된 매수 물량. 매도가 안 들어갈 때만 산다 |
+
+예: 익절 96.86 × 79주, 매수 97.70 × 55주 → `매도 (익절)` 97.71 × 55, `매도 (퉁치기)` 96.86 × 24, `매수` 96.85 × 55.
+MOC 매도가 일부 상쇄되면 남은 줄은 `매도 (MOC)` 그대로.
+
+### Order Sheet Display (초기 설계)
 
 The order sheet shows three layers:
 
