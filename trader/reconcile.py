@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from engines.order_book_engine import SL_MOC_SELL
 from trader.broker.base import Cash, Order, OrderState, Position
 from trader.expected import Expected
 
@@ -57,8 +58,14 @@ def reconcile(
 ) -> Reconciliation:
     held = next((p for p in positions if p.symbol == expected.symbol), None)
     real_qty = held.qty if held else Decimal(0)
-    qty_diff = real_qty - expected.qty
-    cash_diff = cash.estimated - expected.cash
+    # Lots the engine stop-lost at the last close are still in the account until today's MOC:
+    # their shares are held and their proceeds (at that close, before sell costs) not yet in cash.
+    stops = [(int(row["수량"]), Decimal(str(row["주문가"]))) for row in expected.orders if row.get("구분") == SL_MOC_SELL]
+    want_qty = expected.qty + sum(qty for qty, _ in stops)
+    want_cash = expected.cash - sum((qty * price for qty, price in stops), Decimal(0))
+    stop_note = f", 손절 MOC {sum(qty for qty, _ in stops)}주 포함" if stops else ""
+    qty_diff = real_qty - want_qty
+    cash_diff = cash.estimated - want_cash
     lot_cost = sum((lot.buy_price * lot.qty for lot in expected.lots), Decimal(0))
     engine_avg = (lot_cost / expected.qty).quantize(Decimal("0.01")) if expected.qty else None
     pending = [o for o in orders_today if o.symbol == expected.symbol and o.state in (OrderState.OPEN, OrderState.PARTIAL)]
@@ -67,15 +74,15 @@ def reconcile(
     checks = [
         Check(
             key="qty", label=f"{expected.symbol} 수량",
-            expected=f"{expected.qty}주", actual=f"{real_qty.normalize():f}주",
+            expected=f"{want_qty}주", actual=f"{real_qty.normalize():f}주",
             diff=f"{qty_diff.normalize():+f}주" if qty_diff else "0",
-            ok=qty_diff == 0, note="허용 0주",
+            ok=qty_diff == 0, note="허용 0주" + stop_note,
         ),
         Check(
             key="cash", label=f"{cash.currency} 추정 예수금",
-            expected=_usd(expected.cash), actual=_usd(cash.estimated),
+            expected=_usd(want_cash), actual=_usd(cash.estimated),
             diff=_signed_usd(cash_diff) if cash_diff else "0",
-            ok=abs(cash_diff) <= cash_tolerance, note=f"허용 ±{_usd(cash_tolerance)}",
+            ok=abs(cash_diff) <= cash_tolerance, note=f"허용 ±{_usd(cash_tolerance)}" + stop_note,
         ),
         Check(
             key="open_orders", label="오늘 미체결 주문",

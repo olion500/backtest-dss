@@ -34,7 +34,9 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 
 **`engines/config_store.py`** - Reads `config/` (strategy, accounts, presets, VR accounts). The web never writes config.
 
-**`trader/`** - Automated orders per account, broker-neutral (now read only: `python -m trader check --account main`)
+**`trader/`** - Automated orders per account, broker-neutral (`python -m trader check --account main` reads only; `orders --account main` sends the sheet after a typed `y`)
+- `plan.py` (pure) maps the order book rows to orders: LOC at the row price, MOC for `매도 (MOC)` / `매도 (손절)`. `orders` re-checks, needs the regular session before the close cutoff (−10 min), sends in sheet order, stops at the first order not taken, never retries an order whose answer was lost
+- Reconcile counts lots the engine stop-lost at the last close as still held (shares in, proceeds not yet in cash) until their MOC
 - `broker/base.py`: the `Broker` protocol + neutral types (Position, Cash, Order, LOC/MOC); `broker/meritz.py` is one adapter, registered in `broker/__init__.py` `BROKERS`
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker; any failed check halts the run
 - `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min

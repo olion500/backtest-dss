@@ -10,7 +10,9 @@ Rules taken from the official examples (github.com/meritz-securities/open-api, M
 - Every call needs a 12-char ``mac_address`` header; each API allows 10 calls per second.
 - Tokens last 12 hours and are reused; asking for a new one per call is wrong.
 
-Orders are not wired yet: :meth:`submit` and :meth:`cancel` refuse.
+Orders: :meth:`submit` sends LOC/MOC/limit/market. Success is ``rsp_cd`` ``0001`` with
+``warn_cls_code`` ``0``; any other warning means the order was not taken. A dropped
+connection on an order is never retried (it may have been taken). :meth:`cancel` refuses.
 """
 
 from __future__ import annotations
@@ -51,6 +53,15 @@ EXCHANGES = {
 }
 
 US_MARKET = "01"  # ovrs_stck_mrkt_tr_cls_code for the US in market-hours
+
+ORDER_ACCEPTED = "0001"
+# oder_cls_code, oder_cond_cls_code for new orders
+_ORDER_CODES = {
+    OrderType.LIMIT: ("01", "0"),
+    OrderType.MARKET: ("05", "0"),
+    OrderType.LOC: ("32", "7"),
+    OrderType.MOC: ("34", "7"),
+}
 
 # aspr_type_code in order listings
 _ORDER_TYPES = {"1": OrderType.MARKET, "2": OrderType.LIMIT, "5": OrderType.LOC, "7": OrderType.MOC}
@@ -151,6 +162,25 @@ class MeritzBroker:
             )
         return body
 
+    def _post_order(self, path: str, body: Mapping[str, object]) -> dict:
+        self._throttle(path)
+        headers = {
+            "authorization": f"Bearer {self._access_token()}",
+            "mac_address": mac_address(),
+            "content-type": "application/json; charset=utf-8",
+        }
+        try:
+            response = self._http.post(f"{self._base}{path}", json=dict(body), headers=headers, timeout=self._timeout)
+        except requests.RequestException as exc:
+            # The order may have been taken: never resend blind, look at today's orders first.
+            raise BrokerError(f"메리츠 주문 응답을 못 받았습니다 (접수됐을 수 있음, 당일 주문 확인): {exc}", code="UNKNOWN_OUTCOME") from None
+        payload = _json(response)
+        code = payload.get("rsp_cd")
+        if code != ORDER_ACCEPTED:
+            detail = " / ".join(str(x) for x in (payload.get("rsp_msg"), payload.get("rsp_sub_msg")) if x)
+            raise BrokerError(f"메리츠 주문 거절 (HTTP {response.status_code}, {code}) {detail}".strip(), code=code)
+        return payload
+
     def _get_pages(self, path: str, params: Mapping[str, str] | None = None) -> list[dict]:
         rows: list[dict] = []
         seen: set[str] = set()
@@ -226,13 +256,50 @@ class MeritzBroker:
             raise BrokerError("메리츠 당일 주문 목록이 한 번에 다 오지 않았습니다", code="TRUNCATED")
         return [_order(row) for row in _rows(body) if str(row.get("oder_rctf_cncl_cls_code", "0")) == "0"]
 
-    # --- orders (not enabled yet) ---
+    # --- orders ---
 
     def submit(self, order: OrderRequest) -> Order:
-        raise BrokerError("주문 전송은 아직 켜지 않았습니다 (조회 전용 단계)", code="NOT_ENABLED")
+        vendor, _ = self._exchange(order.symbol)
+        if order.qty <= 0:
+            raise BrokerError(f"주문 수량이 0 이하입니다: {order.qty}", code="BAD_ORDER")
+        if order.type is OrderType.MOC and order.side is not Side.SELL:
+            raise BrokerError("메리츠 MOC는 매도만 됩니다", code="BAD_ORDER")
+        market = order.type in (OrderType.MOC, OrderType.MARKET)
+        if not market and (order.price is None or order.price <= 0):
+            raise BrokerError(f"{order.type.value} 주문에 가격이 없습니다", code="BAD_ORDER")
+        cls_code, cond_code = _ORDER_CODES[order.type]
+        side = "sell" if order.side is Side.SELL else "buy"
+        payload = self._post_order(f"/trading/v1/overseas/orders/{side}", {
+            "ovrs_stck_symb_iscd": order.symbol,
+            "ovrs_exch_vndr_idno": vendor,
+            "oder_cls_code": cls_code,
+            "oder_cond_cls_code": cond_code,
+            "odqt": order.qty,
+            "ovrs_stck_oder_prc": 0 if market else float(order.price),
+        })
+        rows = _rows(payload)
+        data = rows[0] if rows else {}
+        warn = str(data.get("warn_cls_code") or "0").strip()
+        if warn != "0":
+            # 1 warning / 3 PTP tax notice need warn_cnfr_yn=Y; 2 is on hold. Either way: not taken.
+            raise BrokerError(f"메리츠 주문 미접수 (경고 {warn}) {str(data.get('warn_msg') or '').strip()}".strip(), code=f"WARN_{warn}")
+        number = _dec(data.get("oder_no"))
+        if number is None:
+            raise BrokerError("메리츠 주문번호가 없습니다 (접수됐을 수 있음, 당일 주문 확인)", code="UNKNOWN_OUTCOME")
+        return Order(
+            order_id=str(int(number)),
+            symbol=order.symbol,
+            side=order.side,
+            type=order.type,
+            qty=Decimal(order.qty),
+            price=None if market else order.price,
+            filled_qty=Decimal(0),
+            fill_price=None,
+            state=OrderState.OPEN,
+        )
 
     def cancel(self, order_id: str) -> None:
-        raise BrokerError("주문 취소는 아직 켜지 않았습니다 (조회 전용 단계)", code="NOT_ENABLED")
+        raise BrokerError("주문 취소는 아직 켜지 않았습니다", code="NOT_ENABLED")
 
 
 def _json(response: requests.Response) -> dict:

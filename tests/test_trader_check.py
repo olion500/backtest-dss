@@ -11,7 +11,8 @@ from trader.config import DEFAULT_LISTINGS, TraderAccount, TraderConfigError, lo
 from trader.expected import Expected, Lot
 from trader.reconcile import reconcile
 from trader.runlog import LocalRunStore
-from trader.runner import run_check
+from trader.plan import PlanError, plan_orders
+from trader.runner import run_check, run_orders
 
 LOTS = (
     Lot("2026-10-14", 40, Decimal("110.54"), Decimal("114.31"), Decimal("90.53")),
@@ -91,6 +92,19 @@ def test_open_orders_for_the_target_block_a_second_send():
     assert reconcile(expected(), [soxl()], usd(), [order(OrderState.FILLED), order(symbol="AAPL")]).ok
 
 
+STOP_ROW = {"구분": "매도 (손절)", "주문가": 93.67, "수량": 71, "변화율": "-"}
+
+
+def test_stop_lost_lot_is_still_in_the_account_until_its_moc():
+    # The engine sold 71 at the last close; the account holds them and has not got the money.
+    ledger = expected(orders=(STOP_ROW,))
+    result = reconcile(ledger, [soxl("191")], usd("3349.43"), [])
+    assert result.ok
+    qty = next(c for c in result.checks if c.key == "qty")
+    assert qty.expected == "191주" and "손절 MOC 71주" in qty.note
+    assert not reconcile(ledger, [soxl("120")], usd(), []).ok
+
+
 def test_other_symbols_are_reported_but_never_block():
     other = Position("AAPL", Decimal(3), Decimal(3), Decimal(200))
     result = reconcile(expected(), [soxl(), other], usd(), [])
@@ -144,6 +158,8 @@ class FakeBroker:
     orders: list = field(default_factory=list)
     fail: bool = False
     name: str = "fake"
+    submitted: list = field(default_factory=list)
+    reject_at: int | None = None
 
     def market_open(self):
         if self.fail:
@@ -158,6 +174,13 @@ class FakeBroker:
 
     def orders_today(self):
         return self.orders
+
+    def submit(self, request):
+        self.submitted.append(request)
+        if len(self.submitted) == self.reject_at:
+            raise BrokerError("주문가격 오류", code="IGW50002")
+        return Order(str(len(self.submitted)), request.symbol, request.side, request.type, Decimal(request.qty),
+                     request.price, Decimal(0), None, OrderState.OPEN)
 
 
 def run(tmp_path, now, broker, expected_value=None, force=False):
@@ -220,3 +243,116 @@ def test_broker_error_is_recorded_not_raised(tmp_path):
     record = run(tmp_path, MONDAY, FakeBroker(True, fail=True))
     assert record["status"] == "error" and record["error_code"] == "UNREACHABLE"
     assert LocalRunStore(tmp_path).recent("main")[0]["status"] == "error"
+
+
+# --- order plan ---
+
+SHEET = (
+    {"구분": "매도 (익절)", "주문가": 114.31, "수량": 40},
+    {"구분": "매도 (퉁치기)", "주문가": 97.71000000000001, "수량": 20},
+    {"구분": "매수 (퉁치기)", "주문가": 96.85, "수량": 20},
+    {"구분": "매도 (MOC)", "주문가": 93.67, "수량": 30},
+    {"구분": "매수 (+3주)", "주문가": 93.1, "수량": 3},
+)
+
+
+def test_plan_maps_each_sheet_row_to_one_order():
+    plan = plan_orders(expected(orders=SHEET))
+    assert [(o.side, o.type, o.qty, o.price) for o in plan] == [
+        (Side.SELL, OrderType.LOC, 40, Decimal("114.31")),
+        (Side.SELL, OrderType.LOC, 20, Decimal("97.71")),
+        (Side.BUY, OrderType.LOC, 20, Decimal("96.85")),
+        (Side.SELL, OrderType.MOC, 30, None),
+        (Side.BUY, OrderType.LOC, 3, Decimal("93.10")),
+    ]
+    stop = plan_orders(expected(orders=(STOP_ROW,)))
+    assert [(o.side, o.type, o.qty) for o in stop] == [(Side.SELL, OrderType.MOC, 71)]
+
+
+@pytest.mark.parametrize("row, why", [
+    ({"구분": "정정", "주문가": 1, "수량": 1}, "구분"),
+    ({"구분": "매수", "주문가": 1, "수량": 1.5}, "정수"),
+    ({"구분": "매수", "주문가": 0, "수량": 1}, "주문가"),
+    ({"구분": "매도 (익절)", "주문가": 120, "수량": 121}, "보유"),
+])
+def test_plan_refuses_rows_it_cannot_send_as_shown(row, why):
+    with pytest.raises(PlanError, match=why):
+        plan_orders(expected(orders=(row,)))
+
+
+# --- orders step ---
+
+def send(tmp_path, broker, answer=True, now=MONDAY, clock=None, sheet=SHEET):
+    asked = []
+
+    def approve(plan, ledger):
+        asked.append(plan)
+        return answer
+
+    account = TraderAccount(id="main", broker="fake", credentials_path=None)
+    record = run_orders(
+        "main", approve, now=now, clock=clock or (lambda: now),
+        broker_builder=lambda _: broker,
+        expected_builder=lambda _id, _day: expected(orders=sheet),
+        load_account=lambda _id: account,
+        store=LocalRunStore(tmp_path),
+    )
+    return record, asked
+
+
+def test_approved_sheet_is_sent_in_order(tmp_path):
+    broker = FakeBroker(True)
+    record, asked = send(tmp_path, broker)
+    assert record["status"] == "sent" and len(asked) == 1
+    assert [o.qty for o in broker.submitted] == [40, 20, 20, 30, 3]
+    saved = LocalRunStore(tmp_path).recent("main")[0]
+    assert saved["step"] == "orders" and [s["order_id"] for s in saved["sent"]] == ["1", "2", "3", "4", "5"]
+
+
+def test_declined_sheet_sends_nothing(tmp_path):
+    broker = FakeBroker(True)
+    record, _ = send(tmp_path, broker, answer=False)
+    assert record["status"] == "declined" and broker.submitted == [] and len(record["plan"]) == 5
+
+
+def test_failed_check_never_asks(tmp_path):
+    broker = FakeBroker(True, held=[soxl("300")])
+    record, asked = send(tmp_path, broker)
+    assert record["status"] == "halted" and asked == [] and broker.submitted == []
+
+
+def test_orders_stop_at_the_close_cutoff(tmp_path):
+    late = datetime(2026, 10, 19, 15, 50, tzinfo=NY)
+    record, asked = send(tmp_path, FakeBroker(True), now=late)
+    assert record["status"] == "halted" and "15:50" in record["message"] and asked == []
+    # approved too late: still nothing goes out
+    broker = FakeBroker(True)
+    record, asked = send(tmp_path, broker, clock=lambda: late, now=MONDAY)
+    assert record["status"] == "halted" and asked and broker.submitted == []
+
+
+def test_orders_placed_meanwhile_block_the_send(tmp_path):
+    broker = FakeBroker(True)
+
+    def approve_and_place(plan, ledger):
+        broker.orders.append(order())
+        return True
+
+    account = TraderAccount(id="main", broker="fake", credentials_path=None)
+    record = run_orders("main", approve_and_place, now=MONDAY, clock=lambda: MONDAY, broker_builder=lambda _: broker,
+                        expected_builder=lambda _id, _day: expected(orders=SHEET), load_account=lambda _id: account,
+                        store=LocalRunStore(tmp_path))
+    assert record["status"] == "halted" and "미체결" in record["message"] and broker.submitted == []
+
+
+def test_first_rejection_stops_the_rest(tmp_path):
+    broker = FakeBroker(True, reject_at=2)
+    record, _ = send(tmp_path, broker)
+    assert record["status"] == "partial" and len(broker.submitted) == 2
+    assert record["sent"][0]["order_id"] == "1" and record["sent"][1]["error_code"] == "IGW50002"
+    assert record["message"].startswith("1/5건")
+
+
+def test_empty_sheet_asks_nothing(tmp_path):
+    record, asked = send(tmp_path, FakeBroker(True), sheet=())
+    assert record["status"] == "ok" and asked == []

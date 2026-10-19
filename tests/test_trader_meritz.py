@@ -28,10 +28,19 @@ class FakeHttp:
     def __init__(self, routes, token_status=200):
         self.routes = {path: list(items) for path, items in routes.items()}
         self.gets = []
+        self.posts = []
         self.token_calls = 0
         self.token_status = token_status
 
-    def post(self, url, data=None, headers=None, timeout=None):
+    def post(self, url, data=None, json=None, headers=None, timeout=None):
+        if not url.endswith("/oauth2/token"):
+            path = url.split(":9443", 1)[1]
+            assert headers["authorization"] == "Bearer tok" and len(headers["mac_address"]) == 12
+            self.posts.append((path, json))
+            answer = self.routes[path].pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
         self.token_calls += 1
         if self.token_status != 200:
             return FakeResponse(self.token_status, {"rsp_cd": "EGW00103", "rsp_msg": "유효하지 않은 client_id"})
@@ -189,14 +198,60 @@ def test_orders_today_that_claims_more_pages_is_refused():
     assert err.value.code == "TRUNCATED"
 
 
-def test_orders_are_not_enabled_yet():
-    b, http = broker({})
+BUY = "/trading/v1/overseas/orders/buy"
+SELL = "/trading/v1/overseas/orders/sell"
+
+
+def accepted(number=545361, warn="0", msg=""):
+    return FakeResponse(200, {"rsp_cd": "0001", "rsp_msg": "주문이 완료되었습니다.",
+                              "data": {"oder_no": number, "warn_cls_code": warn, "warn_msg": msg}})
+
+
+def test_loc_buy_and_moc_sell_use_the_close_codes():
+    b, http = broker({BUY: [accepted(545361)], SELL: [accepted(545362)]})
+    buy = b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 3, Decimal("93.10")))
+    assert buy.order_id == "545361" and buy.state is OrderState.OPEN and buy.price == Decimal("93.10")
+    assert http.posts[0] == (BUY, {"ovrs_stck_symb_iscd": "SOXL", "ovrs_exch_vndr_idno": "0066", "oder_cls_code": "32",
+                                   "oder_cond_cls_code": "7", "odqt": 3, "ovrs_stck_oder_prc": 93.1})
+    sell = b.submit(OrderRequest("SOXL", Side.SELL, OrderType.MOC, 71))
+    assert sell.order_id == "545362" and sell.price is None
+    assert http.posts[1][0] == SELL and http.posts[1][1]["oder_cls_code"] == "34" and http.posts[1][1]["ovrs_stck_oder_prc"] == 0
+
+
+def test_order_warning_or_rejection_is_not_taken():
+    b, _ = broker({BUY: [
+        accepted(warn="1", msg="가격 확인"),
+        FakeResponse(500, {"rsp_cd": "IGW50002", "rsp_msg": "주문가격 오류"}),
+        FakeResponse(200, {"rsp_cd": "0000", "rsp_msg": "?", "data": {}}),
+    ]})
+    request = OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10"))
+    for code in ("WARN_1", "IGW50002", "0000"):
+        with pytest.raises(BrokerError) as err:
+            b.submit(request)
+        assert err.value.code == code and not err.value.retryable
+
+
+def test_order_with_no_answer_is_unknown_not_retried():
+    import requests
+    b, http = broker({BUY: [requests.ConnectionError("reset")]})
     with pytest.raises(BrokerError) as err:
-        b.submit(OrderRequest(symbol="SOXL", side=Side.BUY, type=OrderType.LOC, qty=1, price=Decimal("1")))
-    assert err.value.code == "NOT_ENABLED"
+        b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10")))
+    assert err.value.code == "UNKNOWN_OUTCOME" and not err.value.retryable and len(http.posts) == 1
+
+
+def test_bad_orders_never_reach_the_broker():
+    b, http = broker({})
+    for request in (
+        OrderRequest("SOXL", Side.BUY, OrderType.MOC, 1),                       # Meritz MOC: sell only
+        OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1),                       # LOC without a price
+        OrderRequest("SOXL", Side.SELL, OrderType.LOC, 0, Decimal("90")),
+    ):
+        with pytest.raises(BrokerError) as err:
+            b.submit(request)
+        assert err.value.code == "BAD_ORDER"
     with pytest.raises(BrokerError):
         b.cancel("1")
-    assert http.token_calls == 0 and http.gets == []
+    assert http.token_calls == 0 and http.posts == []
 
 
 def test_calls_to_the_same_api_are_spaced():
