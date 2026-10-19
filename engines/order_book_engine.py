@@ -193,11 +193,8 @@ NETTED_SELL = "매도 (퉁치기)"
 NETTED_BUY = "매수 (퉁치기)"
 # Expiring lot that netting moved above the buy limit: a LOC there, not an MOC.
 EXPIRY_SELL = "매도 (만료)"
-# Stop loss: the backtest sells when close <= SL, which no LOC order can express
-# (a LOC sell fills when close >= its price) and the close is unknown when orders
-# go in. So the sheet lists the lots the backtest stop-lost on the last close,
-# and the account sells them by MOC one session late.
-SL_MOC_SELL = "매도 (손절)"
+# Stop loss has no row: the backtest sells when close <= SL, which no LOC sell can
+# express. The account sells those lots the same day, just before the close.
 
 
 def is_moc(row: dict) -> bool:
@@ -344,40 +341,6 @@ def build_order_sheet(
                 }
 
     return order_sheet, spread_ctx
-
-
-def build_stop_loss_orders(trade_log: pd.DataFrame, last_date) -> list[dict]:
-    """MOC sells for the lots the backtest stop-lost at ``last_date``'s close.
-
-    The order book already treats them as sold; the account still holds them
-    and sells at the next close. Kept out of netting.
-    """
-    if trade_log.empty or "청산사유" not in trade_log:
-        return []
-    sold = trade_log[
-        (trade_log["청산사유"] == "SL") & (trade_log["매도일자"] == str(last_date))
-    ]
-    rows: list[dict] = []
-    for _, trade in sold.iterrows():
-        qty = safe_float(trade.get("매도수량"))
-        sell_price = safe_float(trade.get("매도평균"))
-        sl_price = safe_float(trade.get("SL목표가"))
-        if not qty or not sell_price:
-            continue
-        rows.append({
-            "구분": SL_MOC_SELL,
-            "주문가": sell_price,
-            "수량": qty if qty != int(qty) else int(qty),
-            "변화율": "-",
-            "비고": (
-                f"{last_date} 종가 ${sell_price:.2f} ≤ 손절가 ${sl_price:.2f} → 백테스트는 매도 완료, 계좌는 MOC 매도"
-                if sl_price else f"{last_date} 손절 → 백테스트는 매도 완료, 계좌는 MOC 매도"
-            ) + f" | 매수일: {trade.get('매수일자', '')}",
-            "매수가": safe_float(trade.get("매수체결가")),
-            "익절가": safe_float(trade.get("TP목표가")),
-            "손절가": sl_price,
-        })
-    return rows
 
 
 # --------------- netting ---------------

@@ -92,19 +92,6 @@ def test_open_orders_for_the_target_block_a_second_send():
     assert reconcile(expected(), [soxl()], usd(), [order(OrderState.FILLED), order(symbol="AAPL")]).ok
 
 
-STOP_ROW = {"구분": "매도 (손절)", "주문가": 93.67, "수량": 71, "변화율": "-"}
-
-
-def test_stop_lost_lot_is_still_in_the_account_until_its_moc():
-    # The engine sold 71 at the last close; the account holds them and has not got the money.
-    ledger = expected(orders=(STOP_ROW,))
-    result = reconcile(ledger, [soxl("191")], usd("3349.43"), [])
-    assert result.ok
-    qty = next(c for c in result.checks if c.key == "qty")
-    assert qty.expected == "191주" and "손절 MOC 71주" in qty.note
-    assert not reconcile(ledger, [soxl("120")], usd(), []).ok
-
-
 def test_other_symbols_are_reported_but_never_block():
     other = Position("AAPL", Decimal(3), Decimal(3), Decimal(200))
     result = reconcile(expected(), [soxl(), other], usd(), [])
@@ -265,13 +252,10 @@ def test_plan_maps_each_sheet_row_to_one_order():
         (Side.SELL, OrderType.MOC, 30, None),
         (Side.BUY, OrderType.LOC, 3, Decimal("93.10")),
     ]
-    stop = plan_orders(expected(orders=(STOP_ROW,)))
-    assert [(o.side, o.type, o.qty) for o in stop] == [(Side.SELL, OrderType.MOC, 71)]
 
 
 @pytest.mark.parametrize("row, why", [
-    ({"구분": "정정", "주문가": 1, "수량": 1}, "구분"),
-    ({"구분": "매수", "주문가": 1, "수량": 1.5}, "정수"),
+    ({"구분": "정정", "주문가": 1, "수량": 1}, "구분"),    ({"구분": "매수", "주문가": 1, "수량": 1.5}, "정수"),
     ({"구분": "매수", "주문가": 0, "수량": 1}, "주문가"),
     ({"구분": "매도 (익절)", "주문가": 120, "수량": 121}, "보유"),
 ])

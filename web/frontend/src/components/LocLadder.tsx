@@ -18,23 +18,19 @@ interface LadderRow {
   total: number;
   distancePct: number | null;
   note: string;
-  /** 만료·손절 매도: 지정가 없이 MOC로 넣는다 (주문가는 참고용 직전 종가) */
+  /** 만료 매도: 지정가 없이 MOC로 넣는다 (주문가는 참고용 직전 종가) */
   moc: boolean;
   /** 보유 물량 매도: 종가가 손절가(없으면 매수가) 0% → 익절가 100% 사이 어디인지. 그 외는 null */
   progress: { value: number; floor: number; floorLabel: string; target: number } | null;
 }
 
-const STOP_LOSS_MOC = "매도 (손절)";
-
-function lotProgress(row: TablePayload["rows"][number], kind: string, close: number | null): LadderRow["progress"] {
+function lotProgress(row: TablePayload["rows"][number], close: number | null): LadderRow["progress"] {
   const target = num(row["익절가"]);
   const stop = num(row["손절가"]);
   const buy = num(row["매수가"]);
   const floor = stop ?? buy;
   if (target == null || floor == null || close == null) return null;
   const floorLabel = stop != null ? "손절가" : "매수가 (손절 없음)";
-  // 이미 손절선에 닿아 MOC로 파는 물량
-  if (kind === STOP_LOSS_MOC) return { value: 0, floor, floorLabel, target };
   if (target <= floor) return null;
   return { value: Math.min(1, Math.max(0, (close - floor) / (target - floor))), floor, floorLabel, target };
 }
@@ -67,7 +63,7 @@ function buildRows(table: TablePayload, prevClose: number | null) {
       distancePct: prevClose ? ((price - prevClose) / prevClose) * 100 : null,
       note: String(row["비고"] ?? ""),
       moc: isMocKind(kind),
-      progress: side === "sell" ? lotProgress(row, kind, prevClose) : null,
+      progress: side === "sell" ? lotProgress(row, prevClose) : null,
     } satisfies LadderRow];
   });
   // 매도는 종가에서 위로, 매수는 종가에서 아래로 누적한다
@@ -170,7 +166,7 @@ export function LocLadder({
     <section className="order-sheet-panel ladder-panel" onPointerLeave={() => setHovered(null)}>
       <header className="panel-header">
         <span className="eyebrow lime">{heading}</span>
-        <small>{subheading ?? `장 마감 30분 전 제출 · ${[...sells, ...buys].some((r) => r.moc) ? "만료·손절은 MOC, 나머지 LOC" : "전부 LOC"}`}</small>
+        <small>{subheading ?? `장 마감 30분 전 제출 · ${[...sells, ...buys].some((r) => r.moc) ? "만료는 MOC, 나머지 LOC" : "전부 LOC"}`}</small>
         <div className="ladder-summary">
           <span className="sell">매도 {sells.length}건 · {qtyText(sellQty)}주</span>
           <span className="buy">매수 {buys.length}건 · {qtyText(buyQty)}주</span>

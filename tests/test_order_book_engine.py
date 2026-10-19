@@ -12,7 +12,6 @@ from engines.order_book_engine import (
     apply_netting,
     build_holdings,
     build_order_sheet,
-    build_stop_loss_orders,
     build_spread_orders,
     normalize_mode,
     safe_float,
@@ -137,24 +136,6 @@ class TestBuildHoldings:
         }])
         holdings = build_holdings(trades, 102.0)
         assert "만료" in holdings[0]["상태"]
-
-
-# --------------- build_stop_loss_orders ---------------
-
-class TestBuildStopLossOrders:
-    _LOG = pd.DataFrame([
-        {"매수일자": "2024-01-02", "매도일자": "2024-01-10", "매도평균": 88.5, "매도수량": 10.0, "SL목표가": 90.0, "청산사유": "SL", "상태": "완료"},
-        {"매수일자": "2024-01-03", "매도일자": "2024-01-10", "매도평균": 88.5, "매도수량": 7.0, "SL목표가": None, "청산사유": "TP", "상태": "완료"},
-        {"매수일자": "2024-01-04", "매도일자": "2024-01-09", "매도평균": 89.0, "매도수량": 5.0, "SL목표가": 92.0, "청산사유": "SL", "상태": "완료"},
-    ])
-
-    def test_lists_only_last_day_stop_losses_as_moc(self):
-        rows = build_stop_loss_orders(self._LOG, date(2024, 1, 10))
-        assert [(r["구분"], r["수량"], r["주문가"]) for r in rows] == [("매도 (손절)", 10, 88.5)]
-        assert "MOC" in rows[0]["비고"]
-
-    def test_empty_log(self):
-        assert build_stop_loss_orders(pd.DataFrame(), date(2024, 1, 10)) == []
 
 
 # --------------- build_order_sheet ---------------

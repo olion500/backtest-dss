@@ -47,7 +47,7 @@ function priceMap(orders: TablePayload, tradeLog: TablePayload, prevClose: numbe
     const price = num(row["주문가"]);
     const qty = num(row["수량"]) ?? 0;
     if (price == null) continue;
-    if (kind === "매도 (MOC)" || kind === "매도 (손절)") {
+    if (kind === "매도 (MOC)") {
       mocQty += qty;
     } else if (kind.startsWith("매도")) {
       marks.push({ price, label: `${kind.match(/\((.+)\)/)?.[1] ?? "매도"} ${qty}`, kind: "sell" });

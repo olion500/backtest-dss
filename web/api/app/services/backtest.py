@@ -27,7 +27,6 @@ from engines.order_book_engine import (
     apply_netting,
     build_holdings,
     build_order_sheet,
-    build_stop_loss_orders,
     build_spread_orders,
     extract_state,
 )
@@ -315,8 +314,6 @@ def run_order_book_view(
             ui_values,
             request.strategy.allow_fractional_shares,
         ))
-    # Lots the backtest stop-lost on the last close: the account sells them by MOC.
-    order_sheet.extend(build_stop_loss_orders(result.trade_log, state.last_date))
     order_sheet.sort(key=lambda row: float(row.get("주문가", 0)), reverse=True)
 
     payload = _backtest_payload(request, execution)

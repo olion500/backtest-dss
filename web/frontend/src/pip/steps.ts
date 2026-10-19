@@ -8,17 +8,16 @@ export interface PipOrder {
   price: number;
   qty: number;
   note: string;
-  /** 만료·손절 매도: 지정가 없이 MOC(장마감 시장가)로 넣는다 */
+  /** 만료 매도: 지정가 없이 MOC(장마감 시장가)로 넣는다 */
   moc: boolean;
 }
 
 /** 한 번에 보여줄 단위. 1주짜리 스프레드 매수는 한 장으로 묶는다. */
 export type PipStep = { kind: "single"; order: PipOrder } | { kind: "ladder"; orders: PipOrder[] };
 
-/** engines/order_book_engine.py의 MOC_SELL·SL_MOC_SELL과 같은 값 */
+/** engines/order_book_engine.py의 MOC_SELL과 같은 값 */
 const MOC_SELL = "매도 (MOC)";
-const SL_MOC_SELL = "매도 (손절)";
-export const isMocKind = (kind: string) => kind === MOC_SELL || kind === SL_MOC_SELL;
+export const isMocKind = (kind: string) => kind === MOC_SELL;
 
 function num(value: CellValue) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
