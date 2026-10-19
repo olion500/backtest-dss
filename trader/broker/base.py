@@ -8,7 +8,7 @@ implements :class:`Broker`, plus an entry in ``trader.broker.BROKERS``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Mapping, Protocol, runtime_checkable
@@ -102,8 +102,8 @@ class Broker(Protocol):
 
     def quote(self, symbol: str) -> Quote: ...
 
-    def next_session(self) -> date:
-        """The broker's US trading day: today when the market trades today, else the next one."""
+    def market_open(self) -> bool:
+        """Whether the broker says the US regular session is trading right now."""
         ...
 
     def orders_today(self) -> list[Order]: ...

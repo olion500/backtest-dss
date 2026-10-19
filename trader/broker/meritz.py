@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Callable, Mapping
 from zoneinfo import ZoneInfo
@@ -49,6 +49,8 @@ EXCHANGES = {
     "NYSE": ("0321", "NY"),
     "AMEX": ("0066", "AX"),  # NYSE American and NYSE Arca (SOXL, most leveraged ETFs)
 }
+
+US_MARKET = "01"  # ovrs_stck_mrkt_tr_cls_code for the US in market-hours
 
 # aspr_type_code in order listings
 _ORDER_TYPES = {"1": OrderType.MARKET, "2": OrderType.LIMIT, "5": OrderType.LOC, "7": OrderType.MOC}
@@ -208,15 +210,14 @@ class MeritzBroker:
             raise BrokerError(f"메리츠 {symbol} 현재가가 비어 있습니다", code="NO_QUOTE")
         return Quote(symbol=symbol, last=last, prev_close=_dec(rows[0].get("prdy_clpr")), at=datetime.now(ZoneInfo("America/New_York")))
 
-    def next_session(self) -> date:
-        # Any US vendor id gives the US session; the target's own exchange is the natural pick.
-        vendor = EXCHANGES["AMEX"][0]
-        rows = _rows(self._get("/reference/v1/overseas/market-days", {"ovrs_exch_vndr_idno": vendor}))
-        raw = str(rows[0].get("bsop_date") or "") if rows else ""
-        try:
-            return datetime.strptime(raw, "%Y%m%d").date()
-        except ValueError:
-            raise BrokerError(f"메리츠 영업일 응답을 읽지 못했습니다: {raw!r}", code="BAD_RESPONSE") from None
+    def market_open(self) -> bool:
+        # Not market-days: its bsop_date already reads the next day during the US session
+        # (Mon 11:55 NY gave Tuesday), so it cannot say whether today trades.
+        rows = _rows(self._get("/reference/v1/overseas/market-hours", {"ovrs_stck_mrkt_tr_cls_code": US_MARKET}))
+        if not rows:
+            raise BrokerError("메리츠 장운영 응답이 비어 있습니다", code="BAD_RESPONSE")
+        # Times are "0000" while the market is closed (KST HHMM otherwise).
+        return str(rows[0].get("mrkt_begn_time") or "0000") != "0000"
 
     def orders_today(self) -> list[Order]:
         body = self._get("/trading/v1/overseas/orders/today", {"cntg_cls_code": "0", "seln_byov_clcd": "0"})

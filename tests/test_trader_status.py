@@ -53,6 +53,15 @@ def test_status_falls_back_to_the_latest_real_comparison_not_a_closed_day(tmp_pa
     assert check["checks"][0]["diff"] == "+180주"
 
 
+def test_status_skips_todays_out_of_hours_run(tmp_path):
+    store = LocalRunStore(tmp_path)
+    _save(store, "2026-10-19", "2026-10-19T09:40:00-04:00", "ok", [CHECK])
+    _save(store, "2026-10-19", "2026-10-19T09:20:00-04:00", "closed")
+    _save(store, "2026-10-19", "2026-10-19T09:50:00-04:00", "closed")
+    check = trader_status("main", store, datetime(2026, 10, 19, 10, 0, tzinfo=NY))["check"]
+    assert check["status"] == "ok" and check["current"] is True
+
+
 def test_route_rejects_unknown_accounts(monkeypatch):
     monkeypatch.setattr(api_main, "load_accounts", lambda: [Account(id="main", name="메인", start_date=date(2026, 6, 1), initial_cash=1)])
     monkeypatch.setattr(api_main, "trader_status", lambda account: {"account": account})
@@ -144,7 +153,7 @@ def test_a_failed_save_falls_back_to_a_local_record(tmp_path, monkeypatch):
     record = runner.run_check(
         "main", now=datetime(2026, 10, 17, 9, 40, tzinfo=NY), store=Broken(),
         load_account=lambda _id: TraderAccount(id="main", broker="x", credentials_path=None),
-        broker_builder=lambda _a: type("B", (), {"next_session": lambda self: date(2026, 10, 19)})(),
+        broker_builder=lambda _a: type("B", (), {"market_open": lambda self: False})(),
     )
     assert record["status"] == "closed" and "gcs down" in record["store_error"]
     assert LocalRunStore(tmp_path).recent("main")[0]["store_error"].startswith("ConnectionError")

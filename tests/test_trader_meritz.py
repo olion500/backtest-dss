@@ -152,10 +152,19 @@ def test_quote_uses_the_quote_market_code_not_the_vendor_id():
     assert err.value.code == "NO_LISTING"
 
 
-def test_next_session_reads_bsop_date():
-    from datetime import date
-    b, _ = broker({"/reference/v1/overseas/market-days": [ok({"bsop_date": "20261019"})]})
-    assert b.next_session() == date(2026, 10, 19)
+def test_market_open_reads_us_market_hours():
+    hours = "/reference/v1/overseas/market-hours"
+    b, http = broker({hours: [
+        ok({"ovrs_stck_mrkt_tr_cls_code": "01", "ovrs_mkop_cls_code": "004", "mrkt_begn_time": "2230", "mrkt_fin_time": "0500"}),
+        ok({"ovrs_stck_mrkt_tr_cls_code": "01", "ovrs_mkop_cls_code": "012", "mrkt_begn_time": "0000", "mrkt_fin_time": "0000"}),
+        ok([], code="5820"),
+    ]})
+    assert b.market_open() is True
+    assert http.gets[0][1]["ovrs_stck_mrkt_tr_cls_code"] == "01"
+    assert b.market_open() is False
+    with pytest.raises(BrokerError) as err:
+        b.market_open()
+    assert err.value.code == "BAD_RESPONSE"
 
 
 def test_orders_today_map_states_and_skip_change_rows():

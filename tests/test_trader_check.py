@@ -47,7 +47,12 @@ def test_holiday_early_close_and_regular_day():
     assert early.is_open and early.early_close
     assert early.stop_check_at == datetime(2026, 11, 27, 12, 45, tzinfo=NY)
     assert early.close_order_cutoff == datetime(2026, 11, 27, 12, 50, tzinfo=NY)
+    assert early.trading_at(datetime(2026, 11, 27, 12, 59, tzinfo=NY))
+    assert not early.trading_at(datetime(2026, 11, 27, 13, 0, tzinfo=NY))
     regular = us_session(date(2026, 10, 19))
+    assert regular.open == datetime(2026, 10, 19, 9, 30, tzinfo=NY)
+    assert not regular.trading_at(datetime(2026, 10, 19, 9, 29, tzinfo=NY))
+    assert not us_session(date(2026, 11, 26)).trading_at(datetime(2026, 11, 26, 12, 0, tzinfo=NY))
     assert not regular.early_close and regular.stop_check_at.hour == 15 and regular.stop_check_at.minute == 45
 
 
@@ -133,17 +138,17 @@ def test_trader_config_credentials_file_and_repo_env(tmp_path, monkeypatch):
 
 @dataclass
 class FakeBroker:
-    next_day: date
+    open_now: bool
     held: list = field(default_factory=lambda: [soxl()])
     money: Cash = field(default_factory=usd)
     orders: list = field(default_factory=list)
     fail: bool = False
     name: str = "fake"
 
-    def next_session(self):
+    def market_open(self):
         if self.fail:
             raise BrokerError("연결 실패", code="UNREACHABLE")
-        return self.next_day
+        return self.open_now
 
     def positions(self):
         return self.held
@@ -171,7 +176,7 @@ SATURDAY = datetime(2026, 10, 17, 9, 40, tzinfo=NY)
 
 
 def test_ok_run_is_recorded(tmp_path):
-    record = run(tmp_path, MONDAY, FakeBroker(date(2026, 10, 19)))
+    record = run(tmp_path, MONDAY, FakeBroker(True))
     assert record["status"] == "ok"
     [saved] = LocalRunStore(tmp_path).recent("main")
     assert saved["status"] == "ok" and saved["step"] == "check" and saved["session"] == "2026-10-19"
@@ -180,27 +185,38 @@ def test_ok_run_is_recorded(tmp_path):
 
 
 def test_closed_day_does_nothing_unless_forced(tmp_path):
-    assert run(tmp_path, SATURDAY, FakeBroker(date(2026, 10, 19)))["status"] == "closed"
-    forced = run(tmp_path, SATURDAY, FakeBroker(date(2026, 10, 19)), force=True)
+    assert run(tmp_path, SATURDAY, FakeBroker(False))["status"] == "closed"
+    forced = run(tmp_path, SATURDAY, FakeBroker(False), force=True)
     assert forced["status"] == "ok" and forced["forced"] is True
 
 
 def test_calendar_disagreement_halts(tmp_path):
-    record = run(tmp_path, MONDAY, FakeBroker(date(2026, 10, 20)))
+    record = run(tmp_path, MONDAY, FakeBroker(False))
+    assert record["status"] == "halted" and "달력" in record["message"]
+    record = run(tmp_path, SATURDAY, FakeBroker(True))
     assert record["status"] == "halted" and "달력" in record["message"]
 
 
+def test_session_day_outside_regular_hours_is_closed_without_asking_the_flag(tmp_path):
+    # Before the open the broker reports the market closed; that is no disagreement.
+    early = datetime(2026, 10, 19, 9, 0, tzinfo=NY)
+    record = run(tmp_path, early, FakeBroker(False))
+    assert record["status"] == "closed" and "09:30–16:00" in record["message"]
+    assert record["calendar"]["broker_open"] is False
+    assert run(tmp_path, early, FakeBroker(True), force=True)["status"] == "ok"
+
+
 def test_stale_engine_close_halts(tmp_path):
-    record = run(tmp_path, MONDAY, FakeBroker(date(2026, 10, 19)), expected(as_of="2026-10-15"))
+    record = run(tmp_path, MONDAY, FakeBroker(True), expected(as_of="2026-10-15"))
     assert record["status"] == "halted" and "2026-10-16" in record["message"]
 
 
 def test_mismatch_halts_and_names_the_check(tmp_path):
-    record = run(tmp_path, MONDAY, FakeBroker(date(2026, 10, 19), held=[soxl("300")]))
+    record = run(tmp_path, MONDAY, FakeBroker(True, held=[soxl("300")]))
     assert record["status"] == "halted" and "SOXL 수량" in record["message"]
 
 
 def test_broker_error_is_recorded_not_raised(tmp_path):
-    record = run(tmp_path, MONDAY, FakeBroker(date(2026, 10, 19), fail=True))
+    record = run(tmp_path, MONDAY, FakeBroker(True, fail=True))
     assert record["status"] == "error" and record["error_code"] == "UNREACHABLE"
     assert LocalRunStore(tmp_path).recent("main")[0]["status"] == "error"

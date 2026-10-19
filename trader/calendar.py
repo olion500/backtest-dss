@@ -1,8 +1,8 @@
 """US trading days and closes: holidays and early (13:00) closes from the NYSE calendar.
 
-A run trades only when the exchange calendar and the broker both say today is a
-session; if they disagree the run stops (one of them is wrong, and guessing could
-send orders on a closed day or skip a real one).
+A run trades only during the regular session, and only when the exchange calendar
+and the broker agree the market is trading right now; if they disagree the run stops
+(one of them is wrong, and guessing could send orders on a closed day or skip a real one).
 """
 
 from __future__ import annotations
@@ -32,10 +32,15 @@ class Session:
     day: date
     is_open: bool
     close: datetime | None = None  # NY time
+    open: datetime | None = None  # NY time
 
     @property
     def early_close(self) -> bool:
         return self.close is not None and self.close.hour < REGULAR_CLOSE_HOUR
+
+    def trading_at(self, now: datetime) -> bool:
+        """Whether the regular session is under way at ``now``."""
+        return self.is_open and self.open <= now < self.close
 
     @property
     def close_order_cutoff(self) -> datetime | None:
@@ -52,6 +57,7 @@ class Session:
         return {
             "date": self.day.isoformat(),
             "is_open": self.is_open,
+            "open": iso(self.open),
             "close": iso(self.close),
             "early_close": self.early_close,
             "stop_check_at": iso(self.stop_check_at),
@@ -65,7 +71,8 @@ def us_session(day: date) -> Session:
     if not calendar.is_session(stamp):
         return Session(day=day, is_open=False)
     close = calendar.session_close(stamp).tz_convert(NY).to_pydatetime()
-    return Session(day=day, is_open=True, close=close)
+    open_ = calendar.session_open(stamp).tz_convert(NY).to_pydatetime()
+    return Session(day=day, is_open=True, close=close, open=open_)
 
 
 def last_closed_session(day: date) -> date:

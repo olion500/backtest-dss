@@ -6,7 +6,7 @@ Steps (NY time):
   stop   close−15m  stop-loss check → MOC                   (not built yet)
 
 Record ``status``: ``ok`` (would trade), ``halted`` (a check failed, nothing sent),
-``closed`` (no session today), ``error`` (a call failed).
+``closed`` (no regular session under way), ``error`` (a call failed).
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ def _default_broker(account: TraderAccount) -> Broker:
     return make_broker(account.broker, account.credentials(), account.listings)
 
 
-def _session_info(session: Session, broker_next: date | None) -> dict:
-    return {**session.to_dict(), "broker_next_session": broker_next.isoformat() if broker_next else None}
+def _session_info(session: Session, broker_open: bool) -> dict:
+    return {**session.to_dict(), "broker_open": broker_open}
 
 
 def _expected_payload(expected: Expected) -> dict:
@@ -68,13 +68,17 @@ def run_check(
         broker = broker_builder(account)
 
         session = us_session(today)
-        broker_next = broker.next_session()
-        record["calendar"] = _session_info(session, broker_next)
-        broker_open = broker_next == today
-        if session.is_open != broker_open:
-            return _finish(record, store, "halted", f"달력이 다릅니다: 거래소 달력 {'영업일' if session.is_open else '휴장'}, 증권사 다음 영업일 {broker_next}")
-        if not session.is_open and not force:
-            return _finish(record, store, "closed", f"휴장 · 다음 영업일 {broker_next}")
+        trading = session.trading_at(now)
+        broker_open = broker.market_open()
+        record["calendar"] = _session_info(session, broker_open)
+        # Outside regular hours on a session day the broker's flag says nothing about today.
+        if (trading or not session.is_open) and broker_open != trading:
+            return _finish(record, store, "halted", f"달력이 다릅니다: 거래소 달력 {'장중' if trading else '휴장'}, 증권사 {'장중' if broker_open else '장 닫힘'}")
+        if not trading and not force:
+            if session.is_open:
+                hours = f"{session.open:%H:%M}–{session.close:%H:%M}"
+                return _finish(record, store, "closed", f"정규장 시간이 아닙니다 (뉴욕 {hours})")
+            return _finish(record, store, "closed", "휴장")
 
         expected = expected_builder(account_id, today)
         record["expected"] = _expected_payload(expected)

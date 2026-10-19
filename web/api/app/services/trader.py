@@ -29,9 +29,9 @@ def trader_status(account_id: str, store: RunStore | None = None, now: datetime 
     records = (store or run_store()).recent(account_id, limit=LOOKBACK)
     checks = [r for r in records if r.get("step") == "check"]
     # Today's check if it ran; otherwise the latest one that actually compared the ledger
-    # (a "closed" weekend run says nothing about the account).
+    # (a "closed" run, on a weekend or outside the session's hours, says nothing about the account).
     check = (
-        next((r for r in checks if r.get("session") == session.day.isoformat()), None)
+        next((r for r in checks if r.get("session") == session.day.isoformat() and r.get("status") != "closed"), None)
         or next((r for r in checks if r.get("checks")), None)
         or (checks[0] if checks else None)
     )
