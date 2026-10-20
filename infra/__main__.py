@@ -168,18 +168,19 @@ trader_sa = gcp.serviceaccount.Account(
     "trader-sa", project=PROJECT, account_id="dongpa-trader", display_name="dongpa auto trading jobs", opts=keep,
 )
 trader_member = trader_sa.email.apply(lambda email: f"serviceAccount:{email}")
-gcp.storage.BucketIAMMember(
+# The jobs check secret access when they are created: they wait for these grants.
+trader_grants = [gcp.storage.BucketIAMMember(
     "trader-runs-trader-write", bucket=trader_runs.name, role="roles/storage.objectUser", member=trader_member,
-)
+)]
 for name in TRADER_SECRET_ENVS:
-    gcp.secretmanager.SecretIamMember(
+    trader_grants.append(gcp.secretmanager.SecretIamMember(
         "trader-secret-" + name.lower().replace("_", "-"),
         project=PROJECT,
         secret_id=name.lower().replace("_", "-"),
         role="roles/secretmanager.secretAccessor",
         member=trader_member,
         opts=pulumi.ResourceOptions(depends_on=[apis["secretmanager"]]),
-    )
+    ))
 
 # Each step decides for itself whether it is time (holidays, early closes, its window)
 # and records "closed" when it is not, so the clock only has to wake it.
@@ -218,7 +219,7 @@ for step, (schedule, args) in TRADER_STEPS.items():
         deletion_policy="DELETE",
         opts=pulumi.ResourceOptions(
             protect=True,
-            depends_on=[apis["run"]],
+            depends_on=[apis["run"], *trader_grants],
             ignore_changes=["template.template.containers[0].image", "client", "clientVersion"],
         ),
     )
