@@ -12,7 +12,8 @@ Rules taken from the official examples (github.com/meritz-securities/open-api, M
 
 Orders: :meth:`submit` sends LOC/MOC/limit/market. Success is ``rsp_cd`` ``0001`` with
 ``warn_cls_code`` ``0``; any other warning means the order was not taken. A dropped
-connection on an order is never retried (it may have been taken). :meth:`cancel` refuses.
+connection on an order is never retried (it may have been taken). :meth:`cancel` looks the
+order up in today's list (the cancel needs its NY order date, type code and open quantity).
 """
 
 from __future__ import annotations
@@ -264,12 +265,16 @@ class MeritzBroker:
         # Times are "0000" while the market is closed (KST HHMM otherwise).
         return str(rows[0].get("mrkt_begn_time") or "0000") != "0000"
 
-    def orders_today(self) -> list[Order]:
+    def _today_rows(self) -> list[dict]:
         body = self._get("/trading/v1/overseas/orders/today", {"cntg_cls_code": "0", "seln_byov_clcd": "0"})
         if body.get("rsp_cd") == PAGE_MORE:
             # This API does not page; a partial list must not pass for the whole day.
             raise BrokerError("메리츠 당일 주문 목록이 한 번에 다 오지 않았습니다", code="TRUNCATED")
-        return [_order(row) for row in _rows(body) if str(row.get("oder_rctf_cncl_cls_code", "0")) == "0"]
+        # Change/cancel requests come back as rows of their own; the original row carries the result.
+        return [row for row in _rows(body) if str(row.get("oder_rctf_cncl_cls_code", "0")) == "0"]
+
+    def orders_today(self) -> list[Order]:
+        return [_order(row) for row in self._today_rows()]
 
     # --- orders ---
 
@@ -314,7 +319,27 @@ class MeritzBroker:
         )
 
     def cancel(self, order_id: str) -> None:
-        raise BrokerError("주문 취소는 아직 켜지 않았습니다", code="NOT_ENABLED")
+        """Cancel what is still open of a today's order. Returns once the broker took the request."""
+        row = next((r for r in self._today_rows() if str(r.get("oder_no") or "") == str(order_id)), None)
+        if row is None:
+            raise BrokerError(f"취소할 주문 {order_id}이 당일 주문에 없습니다", code="NO_ORDER")
+        order = _order(row)
+        if order.state not in (OrderState.OPEN, OrderState.PARTIAL):
+            raise BrokerError(f"주문 {order_id}은 취소할 수 없는 상태입니다 ({order.state.value})", code="NOT_OPEN")
+        open_qty = order.qty - order.filled_qty
+        order_date = str(row.get("oder_date") or "").strip()  # NY date, e.g. 20261019
+        if len(order_date) != 8:
+            raise BrokerError(f"주문 {order_id}의 주문일자가 없습니다", code="BAD_RESPONSE")
+        payload = self._post_order("/trading/v1/overseas/orders/cancel", {
+            "oder_date": order_date,
+            "orgl_oder_no": int(order_id),
+            "oder_cls_code": _ORDER_CODES[order.type][0],
+            "odqt": int(open_qty),
+        })
+        rows = _rows(payload)
+        warn = str((rows[0] if rows else {}).get("warn_cls_code") or "0").strip()
+        if warn != "0":
+            raise BrokerError(f"메리츠 취소 미접수 (경고 {warn}) {str(rows[0].get('warn_msg') or '').strip()}".strip(), code=f"WARN_{warn}")
 
 
 def _json(response: requests.Response) -> dict:

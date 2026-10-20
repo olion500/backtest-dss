@@ -249,8 +249,6 @@ def test_bad_orders_never_reach_the_broker():
         with pytest.raises(BrokerError) as err:
             b.submit(request)
         assert err.value.code == "BAD_ORDER"
-    with pytest.raises(BrokerError):
-        b.cancel("1")
     assert http.token_calls == 0 and http.posts == []
 
 
@@ -283,3 +281,37 @@ def test_rate_limited_order_is_resent_then_given_up():
     with pytest.raises(BrokerError) as err:
         b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10")))
     assert err.value.code == "EGW00200" and len(http.posts) == 4
+
+
+TODAY = "/trading/v1/overseas/orders/today"
+CANCEL = "/trading/v1/overseas/orders/cancel"
+ROW = {"ovrs_stck_symb_iscd": "SOXL", "seln_byov_clcd": "1", "aspr_type_code": "5", "ovrs_stck_oder_prc": "114.31",
+       "odqt": "82", "cntg_qty": "0", "cncl_cnfr_qty": "0", "ovrs_stck_oder_stat_cls_code": "0",
+       "oder_rctf_cncl_cls_code": "0", "oder_date": "20261020", "oder_no": 1213426}
+
+
+def test_cancel_sends_the_open_quantity_with_the_original_codes():
+    b, http = broker({TODAY: [ok([{**ROW, "cntg_qty": "2"}, {**ROW, "oder_no": 9, "oder_rctf_cncl_cls_code": "2"}])],
+                      CANCEL: [accepted(1300000)]})
+    b.cancel("1213426")
+    assert http.posts == [(CANCEL, {"oder_date": "20261020", "orgl_oder_no": 1213426, "oder_cls_code": "32", "odqt": 80})]
+
+
+@pytest.mark.parametrize("rows, code", [
+    ([], "NO_ORDER"),
+    ([{**ROW, "cntg_qty": "82"}], "NOT_OPEN"),              # already filled
+    ([{**ROW, "cncl_cnfr_qty": "82"}], "NOT_OPEN"),         # already cancelled
+    ([{**ROW, "oder_date": ""}], "BAD_RESPONSE"),
+])
+def test_cancel_refuses_what_it_cannot_cancel(rows, code):
+    b, http = broker({TODAY: [ok(rows)]})
+    with pytest.raises(BrokerError) as err:
+        b.cancel("1213426")
+    assert err.value.code == code and http.posts == []
+
+
+def test_cancel_rejection_is_raised():
+    b, _ = broker({TODAY: [ok([ROW])], CANCEL: [FakeResponse(500, {"rsp_cd": "IGW00001", "rsp_msg": "취소가능수량 없음"})]})
+    with pytest.raises(BrokerError) as err:
+        b.cancel("1213426")
+    assert err.value.code == "IGW00001"
