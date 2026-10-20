@@ -270,8 +270,21 @@ class MeritzBroker:
         if body.get("rsp_cd") == PAGE_MORE:
             # This API does not page; a partial list must not pass for the whole day.
             raise BrokerError("메리츠 당일 주문 목록이 한 번에 다 오지 않았습니다", code="TRUNCATED")
-        # Change/cancel requests come back as rows of their own; the original row carries the result.
-        return [row for row in _rows(body) if str(row.get("oder_rctf_cncl_cls_code", "0")) == "0"]
+        rows = _rows(body)
+        # A cancel comes back as a row of its own (oder_rctf_cncl_cls_code 2, orgl_oder_no = the
+        # original) carrying cncl_cnfr_qty; the original row keeps 0 there (seen 2026-10-20).
+        # Fold the confirmed cancels into the original so its state reads cancelled.
+        cancelled: dict[str, Decimal] = {}
+        for row in rows:
+            if str(row.get("oder_rctf_cncl_cls_code", "0")) == "2":
+                key = str(row.get("orgl_oder_no") or "")
+                cancelled[key] = cancelled.get(key, Decimal(0)) + (_dec(row.get("cncl_cnfr_qty"), Decimal(0)) or Decimal(0))
+        originals = [row for row in rows if str(row.get("oder_rctf_cncl_cls_code", "0")) == "0"]
+        return [
+            {**row, "cncl_cnfr_qty": _dec(row.get("cncl_cnfr_qty"), Decimal(0)) + cancelled[str(row.get("oder_no"))]}
+            if str(row.get("oder_no")) in cancelled else row
+            for row in originals
+        ]
 
     def orders_today(self) -> list[Order]:
         return [_order(row) for row in self._today_rows()]

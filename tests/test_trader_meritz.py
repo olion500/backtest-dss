@@ -315,3 +315,12 @@ def test_cancel_rejection_is_raised():
     with pytest.raises(BrokerError) as err:
         b.cancel("1213426")
     assert err.value.code == "IGW00001"
+
+
+def test_cancel_row_marks_the_original_cancelled():
+    # As seen live: the original keeps cncl_cnfr_qty 0, the cancel row (its own oder_no) carries it.
+    cancel_row = {**ROW, "oder_no": 1223071, "orgl_oder_no": 1213426, "oder_rctf_cncl_cls_code": "2", "cncl_cnfr_qty": "82"}
+    b, _ = broker({TODAY: [ok([cancel_row, {**ROW, "orgl_oder_no": 0}, {**ROW, "oder_no": 1213427, "orgl_oder_no": 0}])]})
+    cancelled, still_open = b.orders_today()
+    assert cancelled.order_id == "1213426" and cancelled.state is OrderState.CANCELLED
+    assert still_open.state is OrderState.OPEN
