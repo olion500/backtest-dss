@@ -71,6 +71,9 @@
     - 사용자 (2026-10-19): 3단계는 2026-10-20에 만들기. 할 일: auto_trade면 승인 없이 전송, 손절 단계(익절 LOC 취소/정정 → MOC, 취소는 사다리 1주로 실제 시험), Cloud Run Job + Scheduler + Secret Manager(Pulumi)
     - 사용자 (2026-10-21): 순서 ① 자동 전송 ② 손절 단계 ③ Job/Scheduler(auto_trade false로 먼저 배포, 하루이틀 기록 확인 후 메인부터 켜기). 사다리 추가는 이번 범위 밖. 10/20·10/21 주문은 아직 안 넣음
     - [x] ① 자동 전송 (2026-10-21): `python -m trader orders --all --auto` → 묻지 않고 auto_trade 켜진 계좌만 전송, 꺼져 있으면 주문안 기록 + declined. 기록에 `approved_by`(person/auto_trade). 두 번 깨워도 미체결 주문이 대조에서 막음. 테스트 341 통과
+    - 10/20 주문 (NY 11:16, Claude가 `orders`로 전송): 대조 ok(151주), 25건 중 8건 접수 후 9번째에서 EGW00200 초당 거래건수 초과로 멈춤 (주문번호 1213426~1213443)
+      - 수정: 매수·매도 주문이 한 간격(0.35초) 공유, EGW00200 거절은 최대 3번 재전송 (게이트웨이 거절이라 접수 안 된 것). 테스트 343
+      - 나머지 17건(9~25번)은 사용자가 직접 보내야 함 (자동 모드에서 실주문 스크립트 실행이 막힘)
     - [ ] ② 손절 단계 `stop`: 마감 15분 전 현재가로 손절 lot → 그 lot 익절 LOC 취소/정정 → MOC. `MeritzBroker.cancel()` 구현 + 장중 1주 사다리로 실제 취소 시험
     - [ ] ③ Cloud Run Job + Scheduler + Secret Manager (Pulumi)
 - [ ] 레포 정리 (시작 2026-10-15)

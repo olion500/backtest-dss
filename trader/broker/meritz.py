@@ -43,6 +43,11 @@ OK_CODES = frozenset({"0000", "0001", "5620", "5762", "5766", "5820", "5822"})
 PAGE_MORE = "5762"
 RATE_LIMITED = "EGW00200"
 MIN_INTERVAL = 0.11  # seconds between calls to the same API (limit: 10 per second)
+# Buy and sell posts share one clock: the limit was hit at 9 mixed posts in a row (2026-10-20).
+ORDER_INTERVAL = 0.35
+ORDER_KEY = "orders"
+RATE_LIMIT_RETRIES = 3  # a rate-limited post was refused at the gateway, not taken: safe to resend
+RATE_LIMIT_WAIT = 1.0
 MAX_PAGES = 50
 
 # Neutral exchange name -> (vendor id used by accounts/orders, market code used by quotes)
@@ -136,10 +141,10 @@ class MeritzBroker:
         self._token_expires = self._clock() + int(body.get("expires_in", 43200)) - 60
         return self._token
 
-    def _throttle(self, path: str) -> None:
+    def _throttle(self, path: str, interval: float = MIN_INTERVAL) -> None:
         last = self._last_call.get(path)
         if last is not None:
-            wait = MIN_INTERVAL - (self._clock() - last)
+            wait = interval - (self._clock() - last)
             if wait > 0:
                 self._sleep(wait)
         self._last_call[path] = self._clock()
@@ -163,7 +168,17 @@ class MeritzBroker:
         return body
 
     def _post_order(self, path: str, body: Mapping[str, object]) -> dict:
-        self._throttle(path)
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                return self._post_order_once(path, body)
+            except BrokerError as exc:
+                if exc.code != RATE_LIMITED or attempt == RATE_LIMIT_RETRIES:
+                    raise
+                self._sleep(RATE_LIMIT_WAIT * (attempt + 1))
+        raise AssertionError("unreachable")
+
+    def _post_order_once(self, path: str, body: Mapping[str, object]) -> dict:
+        self._throttle(ORDER_KEY, ORDER_INTERVAL)
         headers = {
             "authorization": f"Bearer {self._access_token()}",
             "mac_address": mac_address(),

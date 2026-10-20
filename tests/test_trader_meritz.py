@@ -262,3 +262,24 @@ def test_calls_to_the_same_api_are_spaced():
     b.cash()
     b.cash()
     assert waits and waits[0] == pytest.approx(0.11)
+
+
+def test_buy_and_sell_posts_share_one_spacing():
+    waits = []
+    now = [0.0]
+    http = FakeHttp({BUY: [accepted(1)], SELL: [accepted(2)]})
+    b = MeritzBroker(CREDS, LISTINGS, http=http, clock=lambda: now[0], sleep=waits.append)
+    b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10")))
+    b.submit(OrderRequest("SOXL", Side.SELL, OrderType.LOC, 1, Decimal("99.10")))
+    assert waits == [pytest.approx(0.35)]
+
+
+def test_rate_limited_order_is_resent_then_given_up():
+    limited = lambda: FakeResponse(500, {"rsp_cd": "EGW00200", "rsp_msg": "초당 거래건수를 초과하였습니다."})
+    b, http = broker({BUY: [limited(), limited(), accepted(7)]})
+    order = b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10")))
+    assert order.order_id == "7" and len(http.posts) == 3
+    b, http = broker({BUY: [limited() for _ in range(4)]})
+    with pytest.raises(BrokerError) as err:
+        b.submit(OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("93.10")))
+    assert err.value.code == "EGW00200" and len(http.posts) == 4
