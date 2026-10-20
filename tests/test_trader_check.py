@@ -266,16 +266,17 @@ def test_plan_refuses_rows_it_cannot_send_as_shown(row, why):
 
 # --- orders step ---
 
-def send(tmp_path, broker, answer=True, now=MONDAY, clock=None, sheet=SHEET):
+def send(tmp_path, broker, answer=True, now=MONDAY, clock=None, sheet=SHEET, auto_trade=None):
+    """``auto_trade`` set: an unattended run (no one asked) on an account with that setting."""
     asked = []
 
     def approve(plan, ledger):
         asked.append(plan)
         return answer
 
-    account = TraderAccount(id="main", broker="fake", credentials_path=None)
+    account = TraderAccount(id="main", broker="fake", credentials_path=None, auto_trade=bool(auto_trade))
     record = run_orders(
-        "main", approve, now=now, clock=clock or (lambda: now),
+        "main", None if auto_trade is not None else approve, now=now, clock=clock or (lambda: now),
         broker_builder=lambda _: broker,
         expected_builder=lambda _id, _day: expected(orders=sheet),
         load_account=lambda _id: account,
@@ -287,10 +288,34 @@ def send(tmp_path, broker, answer=True, now=MONDAY, clock=None, sheet=SHEET):
 def test_approved_sheet_is_sent_in_order(tmp_path):
     broker = FakeBroker(True)
     record, asked = send(tmp_path, broker)
-    assert record["status"] == "sent" and len(asked) == 1
+    assert record["status"] == "sent" and len(asked) == 1 and record["approved_by"] == "person"
     assert [o.qty for o in broker.submitted] == [40, 20, 20, 30, 3]
     saved = LocalRunStore(tmp_path).recent("main")[0]
     assert saved["step"] == "orders" and [s["order_id"] for s in saved["sent"]] == ["1", "2", "3", "4", "5"]
+
+
+def test_unattended_run_sends_only_when_auto_trade_is_on(tmp_path):
+    broker = FakeBroker(True)
+    record, asked = send(tmp_path, broker, auto_trade=True)
+    assert record["status"] == "sent" and record["approved_by"] == "auto_trade" and asked == []
+    assert [o.qty for o in broker.submitted] == [40, 20, 20, 30, 3]
+    broker = FakeBroker(True)
+    record, _ = send(tmp_path, broker, auto_trade=False)
+    assert record["status"] == "declined" and "auto_trade" in record["message"] and broker.submitted == []
+    assert len(record["plan"]) == 5
+
+
+def test_unattended_run_never_sends_twice(tmp_path):
+    # A second wake-up (or a manual send earlier) leaves open orders: the check halts.
+    broker = FakeBroker(True, orders=[order()])
+    record, _ = send(tmp_path, broker, auto_trade=True)
+    assert record["status"] == "halted" and broker.submitted == []
+
+
+def test_unattended_run_stops_at_the_cutoff(tmp_path):
+    broker = FakeBroker(True)
+    record, _ = send(tmp_path, broker, auto_trade=True, now=datetime(2026, 10, 19, 15, 50, tzinfo=NY))
+    assert record["status"] == "halted" and broker.submitted == []
 
 
 def test_declined_sheet_sends_nothing(tmp_path):

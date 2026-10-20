@@ -57,7 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--force", action="store_true", help="휴장일에도 대조 (시험용)")
     check.add_argument("--json", action="store_true", help="기록 전체를 JSON으로 출력")
     orders = sub.add_parser("orders", help="대조 후 오늘 주문안을 보여 주고, y로 승인하면 증권사로 전송")
-    orders.add_argument("--account", required=True, help="config/trader/<id>.json 의 id")
+    target = orders.add_mutually_exclusive_group(required=True)
+    target.add_argument("--account", help="config/trader/<id>.json 의 id")
+    target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
+    orders.add_argument("--auto", action="store_true", help="묻지 않음: auto_trade 가 켜진 계좌만 전송 (스케줄 실행용)")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
@@ -66,19 +69,22 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(sorted(BROKERS)))
         return 0
 
-    if args.command == "orders":
-        record = run_orders(args.account, approve=_ask)
-        if record["status"] == "halted" and record.get("checks"):
-            _print_check(record)
-        else:
-            _print_orders(record)
-        return EXIT.get(record["status"], 3)
-
     ids = trader_account_ids() if args.all else [args.account]
     if not ids:
         print("config/trader/*.json 이 없습니다")
         return 1
     worst = 0
+
+    if args.command == "orders":
+        for account_id in ids:
+            record = run_orders(account_id, approve=None if args.auto else _ask)
+            if record["status"] == "halted" and record.get("checks"):
+                _print_check(record)
+            else:
+                _print_orders(record)
+            worst = max(worst, EXIT.get(record["status"], 3))
+        return worst
+
     for account_id in ids:
         record = run_check(account_id, force=args.force)
         if args.json:

@@ -2,12 +2,13 @@
 
 Steps (NY time):
   check  09:40  calendar, engine ledger vs broker account  (read only)
-  orders 09:45  check again, then the order sheet as LOC/MOC once a person approves it
+  orders 09:45  check again, then the order sheet as LOC/MOC once a person approves it,
+                or unattended (``--auto``) when the account's ``auto_trade`` is on
   stop   close−15m  stop-loss check → MOC                   (not built yet)
 
 Record ``status``: ``ok`` (would trade), ``halted`` (a check failed, nothing sent),
 ``closed`` (no regular session under way), ``error`` (a call failed).
-The orders step adds ``declined`` (not approved, nothing sent), ``sent`` (every order
+The orders step adds ``declined`` (not approved or ``auto_trade`` off, nothing sent), ``sent`` (every order
 taken) and ``partial`` (stopped at the first order the broker did not take).
 """
 
@@ -121,7 +122,7 @@ def run_check(
 
 def run_orders(
     account_id: str,
-    approve: Approver,
+    approve: Approver | None = None,
     now: datetime | None = None,
     clock: Callable[[], datetime] = ny_now,
     broker_builder: BrokerBuilder = _default_broker,
@@ -129,7 +130,10 @@ def run_orders(
     load_account: Callable[[str], TraderAccount] = load_trader_account,
     store: RunStore | None = None,
 ) -> dict:
-    """Check, show the sheet, send it once ``approve`` says yes. Nothing goes out on a day the check fails."""
+    """Check, show the sheet, send it once ``approve`` says yes. Nothing goes out on a day the check fails.
+
+    Without ``approve`` the run is unattended: the account's ``auto_trade`` setting is the approval.
+    """
     now = now or clock()
     record = _new_record(account_id, "orders", now, False)
     try:
@@ -150,7 +154,13 @@ def run_orders(
         if not plan:
             return _finish(record, store, "ok", "보낼 주문이 없습니다")
 
-        if not approve(plan, expected):
+        if approve is None:
+            if not account.auto_trade:
+                return _finish(record, store, "declined", "auto_trade가 꺼져 있어 보내지 않았습니다")
+            record["approved_by"] = "auto_trade"
+        elif approve(plan, expected):
+            record["approved_by"] = "person"
+        else:
             return _finish(record, store, "declined", "승인하지 않아 보내지 않았습니다")
         approved_at = clock()
         record["approved_at"] = approved_at.isoformat()
