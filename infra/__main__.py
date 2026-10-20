@@ -1,4 +1,5 @@
-"""dongpa on GCP: the Cloud Run viewer, its image repo and domain, and the trader's run records.
+"""dongpa on GCP: the Cloud Run viewer, its image repo and domain, the trader's run records,
+and the auto-trading jobs (Cloud Run Jobs on a Cloud Scheduler clock).
 
 Every resource is ``protect``ed, so a stray ``pulumi destroy`` cannot take the site down.
 Not managed here (set once by hand, see infra/README.md): the IAP OAuth client and
@@ -10,6 +11,12 @@ the environment, which ``make infra-*`` fills from ``.env`` (see ``.env.example`
 Images: ``make deploy`` pushes a new image and rolls a revision with gcloud, so the
 container image and gcloud's client stamp are ignored below. Everything else about
 the service (env, scaling, IAP, IAM) changes only through this program.
+The trader jobs work the same way with ``make trader-deploy``.
+
+Broker keys: ``make trader-secrets`` creates one Secret Manager secret per key in .env
+(``MERITZ_MAIN_APP_KEY`` → ``meritz-main-app-key``) and adds the value with gcloud, so
+no key ever passes through Pulumi's state. This program only names the secrets
+(``TRADER_SECRET_ENVS``) and lets the trader's service account read them.
 """
 
 import os
@@ -35,6 +42,8 @@ DOMAIN = env("VIEWER_DOMAIN", "")          # empty: no custom domain mapping
 IAP_MEMBERS = [m.strip() for m in env("IAP_MEMBERS", "").split(",") if m.strip()]  # e.g. user:me@example.com
 TRADER_BUCKET = env("TRADER_BUCKET", f"{PROJECT}-dongpa-trader")
 RATE_LIMIT = env("DONGPA_RATE_LIMIT", "12")
+TRADER_IMAGE = env("TRADER_IMAGE", f"{REGION}-docker.pkg.dev/{PROJECT}/dongpa/dongpa-trader:latest")
+TRADER_SECRET_ENVS = [name.strip() for name in env("TRADER_SECRET_ENVS", "").split(",") if name.strip()]
 
 project_number = gcp.organizations.get_project(project_id=PROJECT).number
 VIEWER_SA = f"{project_number}-compute@developer.gserviceaccount.com"
@@ -48,7 +57,7 @@ apis = {
     name: gcp.projects.Service(
         f"api-{name}", project=PROJECT, service=f"{name}.googleapis.com", deletion_policy="ABANDON", opts=keep,
     )
-    for name in ("run", "artifactregistry", "iap", "storage")
+    for name in ("run", "artifactregistry", "iap", "storage", "secretmanager", "cloudscheduler")
 }
 
 # --- container images ---
@@ -152,6 +161,87 @@ if DOMAIN:
         spec={"route_name": viewer.name, "certificate_mode": ""},
         deletion_policy="DELETE",
         opts=keep,
+    )
+
+# --- auto trading: one job per step, run by Cloud Scheduler on NY time ---
+trader_sa = gcp.serviceaccount.Account(
+    "trader-sa", project=PROJECT, account_id="dongpa-trader", display_name="dongpa auto trading jobs", opts=keep,
+)
+trader_member = trader_sa.email.apply(lambda email: f"serviceAccount:{email}")
+gcp.storage.BucketIAMMember(
+    "trader-runs-trader-write", bucket=trader_runs.name, role="roles/storage.objectUser", member=trader_member,
+)
+for name in TRADER_SECRET_ENVS:
+    gcp.secretmanager.SecretIamMember(
+        "trader-secret-" + name.lower().replace("_", "-"),
+        project=PROJECT,
+        secret_id=name.lower().replace("_", "-"),
+        role="roles/secretmanager.secretAccessor",
+        member=trader_member,
+        opts=pulumi.ResourceOptions(depends_on=[apis["secretmanager"]]),
+    )
+
+# Each step decides for itself whether it is time (holidays, early closes, its window)
+# and records "closed" when it is not, so the clock only has to wake it.
+TRADER_STEPS = {
+    "orders": ("45 9 * * 1-5", ["orders", "--all", "--auto"]),
+    # 12:45 is the stop check on early-close days; on a regular day it records "closed".
+    "stop": ("45 12,15 * * 1-5", ["stop", "--all", "--auto"]),
+}
+for step, (schedule, args) in TRADER_STEPS.items():
+    job = gcp.cloudrunv2.Job(
+        f"trader-{step}",
+        project=PROJECT,
+        location=REGION,
+        name=f"dongpa-trader-{step}",
+        launch_stage="GA",
+        template={
+            "task_count": 1,
+            "template": {
+                "service_account": trader_sa.email,
+                # A rerun never sends twice (open orders halt the check), but nothing should rerun on its own.
+                "max_retries": 0,
+                "timeout": "240s",
+                "containers": [{
+                    "image": TRADER_IMAGE,
+                    "args": args,
+                    "envs": [
+                        {"name": "DONGPA_TRADER_RUNS", "value": TRADER_RUNS},
+                        *({"name": name, "value_source": {"secret_key_ref": {
+                            "secret": name.lower().replace("_", "-"), "version": "latest"}}}
+                          for name in TRADER_SECRET_ENVS),
+                    ],
+                    "resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
+                }],
+            },
+        },
+        deletion_policy="DELETE",
+        opts=pulumi.ResourceOptions(
+            protect=True,
+            depends_on=[apis["run"]],
+            ignore_changes=["template.template.containers[0].image", "client", "clientVersion"],
+        ),
+    )
+    gcp.cloudrunv2.JobIamMember(
+        f"trader-{step}-scheduler", project=PROJECT, location=REGION, name=job.name,
+        role="roles/run.invoker", member=trader_member,
+    )
+    gcp.cloudscheduler.Job(
+        f"trader-{step}-clock",
+        project=PROJECT,
+        region=REGION,
+        name=f"dongpa-trader-{step}",
+        schedule=schedule,
+        time_zone="America/New_York",
+        attempt_deadline="60s",
+        retry_config={"retry_count": 0},
+        http_target={
+            "http_method": "POST",
+            "uri": job.name.apply(
+                lambda name: f"https://run.googleapis.com/v2/projects/{PROJECT}/locations/{REGION}/jobs/{name}:run"),
+            "oauth_token": {"service_account_email": trader_sa.email},
+        },
+        opts=pulumi.ResourceOptions(protect=True, depends_on=[apis["cloudscheduler"]]),
     )
 
 pulumi.export("viewer_url", viewer.uri)

@@ -43,6 +43,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker; any failed check halts the run
 - `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min
 - Settings `config/trader/<id>.json` (broker, `auto_trade`; gitignored, not in the web image). Broker keys live in `.env` as `<BROKER>_<ID>_APP_KEY` / `_APP_SECRET` (`MERITZ_MAIN_APP_KEY`; `credentials_env` overrides the prefix for ids like Korean names); `python -m trader` loads `.env`, `.dockerignore` keeps it out of images
+- Cloud: `Dockerfile.trader` (config/trader baked in, no keys) on Cloud Run Jobs `dongpa-trader-orders` (09:45 NY) / `-stop` (12:45, 15:45), Cloud Scheduler on NY time. Keys: `make trader-secrets` → Secret Manager → env; `make trader-deploy` after changing config/trader or code
 - Run records: `<root>/<account>/<date>/<HHMMSS>-<step>.json`; root from `DONGPA_TRADER_RUNS` (`gs://<TRADER_BUCKET>/runs` from `.env` and on Cloud Run, default `var/trader`, gitignored). The web reads them (`GET /api/v1/trader/status?account=`, `web/api/app/services/trader.py`) for the order book's auto-trade panel (`AutoTradePanel.tsx`: price map + day timeline); it never sees broker settings
 
 **`web/api/`** - FastAPI service (backtest, order book, VR, presets); serves the built frontend

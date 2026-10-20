@@ -25,6 +25,11 @@ are per person and gitignored.
 | IAP access per `$IAP_MEMBERS` entry | `roles/iap.httpsResourceAccessor` |
 | Domain mapping `$VIEWER_DOMAIN` | only when set |
 | Bucket `$TRADER_BUCKET` | trader run records (`runs/`); the viewer's service account reads |
+| APIs secretmanager / cloudscheduler | for the trader jobs |
+| Service account `dongpa-trader` | writes run records, reads the broker key secrets, runs the jobs |
+| Cloud Run Jobs `dongpa-trader-orders` / `-stop` | `python -m trader <step> --all --auto`. The image is ignored: `make trader-deploy` rolls it |
+| Cloud Scheduler `dongpa-trader-orders` / `-stop` | NY time, weekdays: orders 09:45, stop 12:45 and 15:45 (each step skips what is not its time) |
+| Secret access per `TRADER_SECRET_ENVS` | the secrets themselves come from `make trader-secrets` |
 
 Every resource except the IAP access bindings is `protect`ed: `pulumi destroy` refuses until
 protection is lifted on purpose. Clearing `VIEWER_DOMAIN` therefore needs
@@ -40,6 +45,20 @@ protection is lifted on purpose. Clearing `VIEWER_DOMAIN` therefore needs
 
 If the resources already exist (made by hand), import them instead of creating:
 `pulumi import <type> <name> <id> --protect`, then `make infra-preview` until it shows no diff.
+
+## Auto-trading jobs
+
+Order: keys first, then the image, then the jobs (a job cannot start without either).
+
+```bash
+make trader-secrets      # one secret per *_APP_KEY / *_APP_SECRET in .env; rerun after a key changes
+make trader-image-push   # image with config/trader baked in
+make infra-up            # jobs, clocks, IAM
+make trader-deploy       # later: after config/trader (auto_trade) or code changes
+gcloud run jobs execute dongpa-trader-stop --region $GCP_REGION   # one run by hand
+```
+
+`auto_trade: false` runs every step and records the plan as `declined`: a dry run that shows in the viewer.
 
 ## Not managed (set once by hand)
 

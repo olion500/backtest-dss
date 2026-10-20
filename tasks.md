@@ -81,6 +81,9 @@
       - 실제 계좌 시험 (NY 10/20 11:46, --force): 손절 없음(현재가 $99.46, SL 90.53/87.92). 가정 $85면 1213426·1213427 취소 → 151주 MOC로 맞게 계획
       - 실제 손절 MOC 전송은 아직 미시험 (손절 날 처음)
     - [ ] ③ Cloud Run Job + Scheduler + Secret Manager (Pulumi)
+      - 사용자 결정 (2026-10-21): auto_trade false로 먼저 배포해 실행 기록만 확인 (10/20 주문은 이미 냄)
+      - [x] 코드 (2026-10-21): `Dockerfile.trader`(config/trader 포함, 키 없음), Job `dongpa-trader-orders`(뉴욕 09:45)·`-stop`(12:45·15:45), Scheduler NY 시간, SA `dongpa-trader`, `make trader-secrets`·`trader-image-push`·`trader-deploy`. preview: 12 create / 13 unchanged
+      - [ ] 배포: Secret Manager 쓰기는 자동 모드에서 막힘 → 사용자 실행. Docker(Rancher Desktop) 꺼져 있었음
 - [ ] 레포 정리 (시작 2026-10-15)
   - [x] main 머지·푸시(694d0a5) + 배포 리비전 dongpa-viewer-00023-lwf (2026-10-16)
   - [x] 매수 지정가 반올림 수정 푸시(b3bbcd7) + 배포 리비전 dongpa-viewer-00024-zzn (2026-10-16)

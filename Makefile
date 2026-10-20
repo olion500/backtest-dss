@@ -13,6 +13,9 @@ DONGPA_TRADER_RUNS ?= $(if $(GCP_PROJECT),gs://$(TRADER_BUCKET)/runs,)
 PULUMI_STATE ?= gs://$(GCP_PROJECT)-pulumi
 PULUMI_STACK ?= prod
 DEPLOY_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-viewer:latest
+TRADER_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-trader:latest
+# Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET): each becomes a Secret Manager secret.
+TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^[A-Z][A-Z0-9_]*_APP_(KEY|SECRET)=.' .env | cut -d= -f1 | paste -sd, -)
 # Pulumi CLI (curl -fsSL https://get.pulumi.com | sh). The stack has no secrets, so the passphrase is empty.
 # infra/__main__.py reads the .env values from the environment; GOOGLE_* configure the gcp provider.
 PULUMI ?= $(HOME)/.pulumi/bin/pulumi
@@ -20,9 +23,10 @@ PULUMI_ENV := PULUMI_CONFIG_PASSPHRASE="" PULUMI_SKIP_UPDATE_CHECK=1 PATH="$(HOM
 	PULUMI_BACKEND_URL="$(PULUMI_STATE)" GOOGLE_PROJECT="$(GCP_PROJECT)" GOOGLE_REGION="$(GCP_REGION)" \
 	GCP_PROJECT="$(GCP_PROJECT)" GCP_REGION="$(GCP_REGION)" CLOUD_RUN_SERVICE="$(CLOUD_RUN_SERVICE)" \
 	VIEWER_DOMAIN="$(VIEWER_DOMAIN)" IAP_MEMBERS="$(IAP_MEMBERS)" TRADER_BUCKET="$(TRADER_BUCKET)" \
-	VIEWER_IMAGE="$(DEPLOY_IMAGE)" DONGPA_RATE_LIMIT="$(DONGPA_RATE_LIMIT)"
+	VIEWER_IMAGE="$(DEPLOY_IMAGE)" DONGPA_RATE_LIMIT="$(DONGPA_RATE_LIMIT)" \
+	TRADER_IMAGE="$(TRADER_IMAGE)" TRADER_SECRET_ENVS="$(TRADER_SECRET_ENVS)"
 
-.PHONY: help check-env install test web-install web-api web-frontend web-build web image-push deploy infra-init infra-preview infra-up trader-check clean
+.PHONY: help check-env install test web-install web-api web-frontend web-build web image-push deploy infra-init infra-preview infra-up trader-check trader-image-push trader-deploy trader-secrets clean
 
 help:
 	@echo "Dongpa backtest helpers"
@@ -40,6 +44,8 @@ help:
 	@echo "make infra-preview Show what Pulumi would change on GCP (infra/)"
 	@echo "make infra-up      Apply infra/ to GCP"
 	@echo "make trader-check  Reconcile every account in config/trader (read only)"
+	@echo "make trader-secrets Put the broker keys from .env into Secret Manager"
+	@echo "make trader-deploy Build, push and roll the trader image on the Cloud Run jobs"
 	@echo "make clean         Remove the built Docker image"
 
 install:
@@ -94,6 +100,26 @@ infra-up: check-env
 
 trader-check:
 	DONGPA_TRADER_RUNS=$(DONGPA_TRADER_RUNS) uv run python -m trader check --all
+
+trader-secrets: check-env
+	@for name in $$(echo "$(TRADER_SECRET_ENVS)" | tr , ' '); do \
+		id=$$(echo $$name | tr 'A-Z_' 'a-z-'); \
+		gcloud secrets describe $$id --project $(GCP_PROJECT) >/dev/null 2>&1 || \
+			gcloud secrets create $$id --project $(GCP_PROJECT) --replication-policy automatic >/dev/null; \
+		grep -E "^$$name=" .env | head -1 | cut -d= -f2- | tr -d '\n' | \
+			gcloud secrets versions add $$id --project $(GCP_PROJECT) --data-file=- >/dev/null && echo "$$id: new version"; \
+	done
+
+# config/trader (auto_trade) is baked into this image: change it, then make trader-deploy.
+trader-image-push: check-env
+	docker build --file Dockerfile.trader --tag $(APP_NAME)-trader:latest .
+	docker tag $(APP_NAME)-trader:latest $(TRADER_IMAGE)
+	docker push $(TRADER_IMAGE)
+
+trader-deploy: trader-image-push
+	for step in orders stop; do \
+		gcloud run jobs update dongpa-trader-$$step --project $(GCP_PROJECT) --region $(GCP_REGION) --image $(TRADER_IMAGE) || exit 1; \
+	done
 
 clean:
 	- docker rmi $(APP_NAME)-viewer:latest
