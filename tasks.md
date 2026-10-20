@@ -83,7 +83,9 @@
     - [ ] ③ Cloud Run Job + Scheduler + Secret Manager (Pulumi)
       - 사용자 결정 (2026-10-21): auto_trade false로 먼저 배포해 실행 기록만 확인 (10/20 주문은 이미 냄)
       - [x] 코드 (2026-10-21): `Dockerfile.trader`(config/trader 포함, 키 없음), Job `dongpa-trader-orders`(뉴욕 09:45)·`-stop`(12:45·15:45), Scheduler NY 시간, SA `dongpa-trader`, `make trader-secrets`·`trader-image-push`·`trader-deploy`. preview: 12 create / 13 unchanged
-      - [ ] 배포: Secret Manager 쓰기는 자동 모드에서 막힘 → 사용자 실행. Docker(Rancher Desktop) 꺼져 있었음
+      - [x] 배포 (2026-10-21, 사용자 실행): trader-secrets → trader-image-push → infra-up. 첫 infra-up은 Job이 시크릿 권한 반영 전에 만들어져 SecretsAccessCheckFailed → Job이 권한을 기다리게 수정(7de4af2), trader-deploy로 Job 갱신해 Ready
+      - [x] 클라우드 첫 실행 (NY 10/20 12:06, 수동 execute): 시크릿·메리츠 연결(IP 제한 없음)·시세·GCS 기록 모두 OK. 결과 halted(이미 낸 25건) → 종료 코드 2라 Cloud Run에는 실행 "실패"로 표시 (멈춤이 콘솔에 보이게 그대로 둠)
+      - [ ] 첫 자동 실행 확인: 10/20 15:45 stop, 10/21 09:45 orders(auto_trade false → declined + 주문안 기록). false인 동안은 주문을 손으로 내야 함
 - [ ] 레포 정리 (시작 2026-10-15)
   - [x] main 머지·푸시(694d0a5) + 배포 리비전 dongpa-viewer-00023-lwf (2026-10-16)
   - [x] 매수 지정가 반올림 수정 푸시(b3bbcd7) + 배포 리비전 dongpa-viewer-00024-zzn (2026-10-16)
