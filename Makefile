@@ -12,6 +12,8 @@ TRADER_BUCKET ?= $(GCP_PROJECT)-dongpa-trader
 DONGPA_TRADER_RUNS ?= $(if $(GCP_PROJECT),gs://$(TRADER_BUCKET)/runs,)
 PULUMI_STATE ?= gs://$(GCP_PROJECT)-pulumi
 PULUMI_STACK ?= prod
+# Non-interactive shells (no prompt to answer): make infra-up PULUMI_UP_FLAGS=--yes, after make infra-preview
+PULUMI_UP_FLAGS ?=
 DEPLOY_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-viewer:latest
 TRADER_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-trader:latest
 # Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET): each becomes a Secret Manager secret.
@@ -96,7 +98,7 @@ infra-preview: check-env
 	cd infra && $(PULUMI_ENV) $(PULUMI) preview --diff --stack $(PULUMI_STACK)
 
 infra-up: check-env
-	cd infra && $(PULUMI_ENV) $(PULUMI) up --stack $(PULUMI_STACK)
+	cd infra && $(PULUMI_ENV) $(PULUMI) up --stack $(PULUMI_STACK) $(PULUMI_UP_FLAGS)
 
 trader-check:
 	DONGPA_TRADER_RUNS=$(DONGPA_TRADER_RUNS) uv run python -m trader check --all
