@@ -87,6 +87,7 @@
       - [x] 클라우드 첫 실행 (NY 10/20 12:06, 수동 execute): 시크릿·메리츠 연결(IP 제한 없음)·시세·GCS 기록 모두 OK. 결과 halted(이미 낸 25건) → 종료 코드 2라 Cloud Run에는 실행 "실패"로 표시 (멈춤이 콘솔에 보이게 그대로 둠)
       - [ ] 첫 자동 실행 확인: 10/20 15:45 stop, 10/21 09:45 orders(auto_trade false → declined + 주문안 기록). false인 동안은 주문을 손으로 내야 함
 - [ ] 레포 정리 (시작 2026-10-15)
+  - [x] ARCHITECTURE.md (2026-10-21, 사용자 요청: 웹 외 구조가 생겨서): matklad 형식(조감도·코드 지도·경계와 불변식·교차 관심사), 하루 흐름 표 추가. README 폴더 표에 trader/·infra/, 수수료 문장 수정
   - [x] main 머지·푸시(694d0a5) + 배포 리비전 dongpa-viewer-00023-lwf (2026-10-16)
   - [x] 매수 지정가 반올림 수정 푸시(b3bbcd7) + 배포 리비전 dongpa-viewer-00024-zzn (2026-10-16)
   - [x] scipy 복구 (2026-10-16): 정리 때 뺐더니 yfinance repair=True가 실패해 "SOXL 가격 데이터가 비어 있습니다". 리비전 00025-m94

@@ -222,6 +222,7 @@ backtest-dss/
 
 ## Documentation References
 
+- **ARCHITECTURE.md**: Bird's-eye view, code map, daily flow, boundaries/invariants (Korean). Update it when a boundary or a top-level part changes
 - **docs/dongpa_strategy.md**: Complete strategy rules, mode logic, parameter definitions (Korean)
 - **docs/vr_sheet.md**: VR Google Sheet rules and how the web VR tab maps them
 - **benchmarks/README.md**: How to run/add benchmarks, research results

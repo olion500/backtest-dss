@@ -54,10 +54,14 @@ make web-frontend          # 화면 → http://localhost:5173
 
 ## 폴더 구조
 
+전체 구조와 각 부분의 경계는 [ARCHITECTURE.md](ARCHITECTURE.md)에 있습니다.
+
 | 폴더 | 내용 |
 |---|---|
 | `engines/` | 계산 엔진: 백테스트, 주문표, VR |
 | `web/` | 웹 앱: API(FastAPI)와 화면(React) |
+| `trader/` | 자동매매: 증권사 잔고 대조, 주문 전송, 당일 손절 (`python -m trader`) |
+| `infra/` | GCP 리소스 (Pulumi): 웹 서비스, 자동매매 잡, 스케줄러 |
 | `benchmarks/` | 전략 연구용 벤치마크 |
 | `data/` | 일봉 가격 데이터 (`scripts/update_market_data.py`가 갱신) |
 | `config/` | 전략과 계좌 설정 |
@@ -74,11 +78,12 @@ make deploy
 
 ## 알아 둘 점
 
-- 체결은 종가에 정확히 된다고 가정합니다. 슬리피지와 수수료는 계산하지 않습니다.
+- 체결은 종가에 정확히 된다고 가정합니다. 슬리피지는 계산하지 않습니다(수수료는 계좌 설정대로 계산).
 - 과거 성과가 미래 수익을 보장하지 않습니다. 투자 판단은 본인 책임입니다.
 
 ## 더 읽을거리
 
+- [ARCHITECTURE.md](ARCHITECTURE.md): 구조, 하루의 흐름, 지켜야 할 경계
 - [docs/dongpa_strategy.md](docs/dongpa_strategy.md): 전략 규칙과 파라미터
 - [docs/loc_netting.md](docs/loc_netting.md): 같은 날 매수·매도 주문 상쇄 (퉁치기)
 - [docs/loc_spread_buy_strategy.md](docs/loc_spread_buy_strategy.md): 스프레드 매수
