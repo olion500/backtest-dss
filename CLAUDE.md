@@ -37,7 +37,8 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 **`trader/`** - Automated orders per account, broker-neutral (`python -m trader check --account main` reads only; `orders --account main` sends the sheet after a typed `y`, `orders --all --auto` without asking where `auto_trade` is on)
 - `plan.py` (pure) maps the order book rows to orders: LOC at the row price, MOC for `매도 (MOC)` (expiry). `orders` re-checks, needs the regular session before the close cutoff (−10 min), sends in sheet order, stops at the first order not taken, never retries an order whose answer was lost
 - `orders --auto` (scheduled runs, `--all` for every account) asks no one: it sends only for accounts with `auto_trade: true`, otherwise records `declined` with the plan
-- The order sheet has no stop-loss rows (next-day stop MOC removed): stops are sold the same day before the close (stage 3); a missed stop shows up as a reconcile halt
+- The order sheet has no stop-loss rows: `stop` (close − 15 min to the cutoff, `--force` earlier) takes the broker's last price, picks lots with `last <= SL`, cancels their TP LOC (matched by exact price + qty, else halt; shares under an open sell are not sellable), waits for the cancels to show, then sends one MOC. `stop.py` is pure. A missed stop shows up as a reconcile halt
+- Meritz reports a cancel on a row of its own (`oder_rctf_cncl_cls_code` 2, `orgl_oder_no`); `orders_today` folds it onto the original
 - `broker/base.py`: the `Broker` protocol + neutral types (Position, Cash, Order, LOC/MOC); `broker/meritz.py` is one adapter, registered in `broker/__init__.py` `BROKERS`
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker; any failed check halts the run
 - `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min

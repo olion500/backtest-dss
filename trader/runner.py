@@ -4,17 +4,19 @@ Steps (NY time):
   check  09:40  calendar, engine ledger vs broker account  (read only)
   orders 09:45  check again, then the order sheet as LOC/MOC once a person approves it,
                 or unattended (``--auto``) when the account's ``auto_trade`` is on
-  stop   close−15m  stop-loss check → MOC                   (not built yet)
+  stop   close−15m  price vs each lot's stop → cancel those lots' TP LOC → one MOC sell
 
 Record ``status``: ``ok`` (would trade), ``halted`` (a check failed, nothing sent),
 ``closed`` (no regular session under way), ``error`` (a call failed).
 The orders step adds ``declined`` (not approved or ``auto_trade`` off, nothing sent), ``sent`` (every order
-taken) and ``partial`` (stopped at the first order the broker did not take).
+taken) and ``partial`` (stopped at the first order the broker did not take). The stop step uses
+the same words; its ``partial`` means some TP orders were cancelled but the MOC did not go out.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -28,10 +30,14 @@ from trader.expected import Expected, UnknownAccount, expected_state
 from trader.plan import PlanError, plan_orders
 from trader.reconcile import DEFAULT_CASH_TOLERANCE, reconcile
 from trader.runlog import LocalRunStore, RunStore, run_store
+from trader.stop import StopError, StopPlan, plan_stop
 
 BrokerBuilder = Callable[[TraderAccount], Broker]
 ExpectedBuilder = Callable[[str, date], Expected]
 Approver = Callable[[list[OrderRequest], Expected], bool]
+StopApprover = Callable[[StopPlan, Expected, Decimal], bool]
+
+CANCEL_POLLS = 10  # once a second: Meritz showed a cancel within a second (2026-10-20)
 
 
 def _default_broker(account: TraderAccount) -> Broker:
@@ -183,6 +189,115 @@ def run_orders(
                 return _finish(record, store, "partial", f"{len(sent) - 1}/{len(plan)}건 접수 후 멈춤: {exc}")
             sent.append({"request": asdict(request), "order_id": order.order_id})
         return _finish(record, store, "sent", f"{len(plan)}건 모두 접수됐습니다")
+    except (BrokerError, TraderConfigError, UnknownAccount) as exc:
+        record["error_code"] = getattr(exc, "code", None)
+        return _finish(record, store, "error", str(exc))
+
+
+def run_stop(
+    account_id: str,
+    approve: StopApprover | None = None,
+    now: datetime | None = None,
+    force: bool = False,
+    clock: Callable[[], datetime] = ny_now,
+    sleep: Callable[[float], None] = time.sleep,
+    broker_builder: BrokerBuilder = _default_broker,
+    expected_builder: ExpectedBuilder = expected_state,
+    load_account: Callable[[str], TraderAccount] = load_trader_account,
+    store: RunStore | None = None,
+) -> dict:
+    """Sell today the lots whose price is at or below their stop, before the close.
+
+    Runs between ``stop_check_at`` (close − 15 min) and the order cutoff (close − 10 min);
+    ``force`` lets a person run it earlier in the session. Without ``approve`` the
+    account's ``auto_trade`` setting is the approval, as in :func:`run_orders`.
+    """
+    now = now or clock()
+    record = _new_record(account_id, "stop", now, force)
+    try:
+        account = load_account(account_id)
+        record.update(broker=account.broker, auto_trade=account.auto_trade)
+        broker = broker_builder(account)
+        session = us_session(now.date())
+        trading = session.trading_at(now)
+        broker_open = broker.market_open()
+        record["calendar"] = _session_info(session, broker_open)
+        if (trading or not session.is_open) and broker_open != trading:
+            return _finish(record, store, "halted", f"달력이 다릅니다: 거래소 달력 {'장중' if trading else '휴장'}, 증권사 {'장중' if broker_open else '장 닫힘'}")
+        if not trading:
+            return _finish(record, store, "closed", "정규장 시간이 아닙니다" if session.is_open else "휴장")
+        cutoff = session.close_order_cutoff
+        if now >= cutoff:
+            return _finish(record, store, "halted", f"주문 마감이 지났습니다 (뉴욕 {cutoff:%H:%M})")
+        if now < session.stop_check_at and not force:
+            return _finish(record, store, "closed", f"손절 확인 시각 전입니다 (뉴욕 {session.stop_check_at:%H:%M})")
+
+        expected = expected_builder(account_id, now.date())
+        record["expected"] = _expected_payload(expected)
+        # The lots must be yesterday's: a bar for today (a live fallback fetch) would already
+        # include today's simulated fills.
+        must_have = last_closed_session(now.date()).isoformat()
+        if expected.as_of != must_have:
+            return _finish(record, store, "halted", f"엔진 종가 날짜가 {expected.as_of}입니다 (필요: {must_have})")
+        held = next((p for p in broker.positions() if p.symbol == expected.symbol), None)
+        held_qty = int(held.qty) if held else 0
+        if held_qty != expected.qty:
+            return _finish(record, store, "halted", f"보유 수량이 장부와 다릅니다: 엔진 {expected.qty}주, 실제 {held_qty}주")
+
+        quote = broker.quote(expected.symbol)
+        record["quote"] = asdict(quote)
+        try:
+            plan = plan_stop(expected, quote.last, broker.orders_today())
+        except StopError as exc:
+            return _finish(record, store, "halted", f"손절 주문을 만들 수 없습니다: {exc}")
+        record["stop_lots"] = [asdict(lot) for lot in plan.lots]
+        record["cancel"] = [asdict(order) for order in plan.cancel]
+        record["plan"] = [asdict(plan.sell)] if plan.sell else []
+        if plan.sell is None:
+            if plan.lots:
+                return _finish(record, store, "ok", "손절 lot은 이미 MOC 매도가 걸려 있습니다")
+            return _finish(record, store, "ok", f"손절 없음 (현재가 ${quote.last})")
+
+        if approve is None:
+            if not account.auto_trade:
+                return _finish(record, store, "declined", "auto_trade가 꺼져 있어 보내지 않았습니다")
+            record["approved_by"] = "auto_trade"
+        elif approve(plan, expected, quote.last):
+            record["approved_by"] = "person"
+        else:
+            return _finish(record, store, "declined", "승인하지 않아 보내지 않았습니다")
+        if clock() >= cutoff:
+            return _finish(record, store, "halted", f"승인 사이에 주문 마감이 지났습니다 (뉴욕 {cutoff:%H:%M})")
+
+        cancelled: list[str] = []
+        record["cancelled"] = cancelled
+        for order in plan.cancel:
+            try:
+                broker.cancel(order.order_id)
+            except BrokerError as exc:
+                record["error_code"] = exc.code
+                status = "partial" if cancelled else "halted"
+                return _finish(record, store, status, f"익절 주문 {order.order_id} 취소 실패 ({len(cancelled)}/{len(plan.cancel)}건 취소됨): {exc}")
+            cancelled.append(order.order_id)
+        # The MOC needs the shares free: wait until every cancel reads as done.
+        waiting = set(cancelled)
+        for _ in range(CANCEL_POLLS):
+            if not waiting:
+                break
+            sleep(1)
+            done = {o.order_id for o in broker.orders_today() if o.state is OrderState.CANCELLED}
+            waiting -= done
+        if waiting:
+            return _finish(record, store, "partial", f"취소가 확인되지 않아 MOC를 보내지 않았습니다: {', '.join(sorted(waiting))}")
+
+        try:
+            order = broker.submit(plan.sell)
+        except BrokerError as exc:
+            record["sent"] = [{"request": asdict(plan.sell), "error": str(exc), "error_code": exc.code}]
+            record["error_code"] = exc.code
+            return _finish(record, store, "partial", f"익절 주문 {len(cancelled)}건 취소 후 MOC 실패: {exc}")
+        record["sent"] = [{"request": asdict(plan.sell), "order_id": order.order_id}]
+        return _finish(record, store, "sent", f"손절 {len(plan.lots)}개 lot {plan.sell.qty}주 MOC 접수 (현재가 ${quote.last})")
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
         record["error_code"] = getattr(exc, "code", None)
         return _finish(record, store, "error", str(exc))

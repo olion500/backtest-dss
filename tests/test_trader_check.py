@@ -1,5 +1,5 @@
 """Trader check step: calendar, reconcile rules, run records. Fake broker, no network."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -12,7 +12,9 @@ from trader.expected import Expected, Lot
 from trader.reconcile import reconcile
 from trader.runlog import LocalRunStore
 from trader.plan import PlanError, plan_orders
-from trader.runner import run_check, run_orders
+from trader.runner import run_check, run_orders, run_stop
+from trader.stop import StopError, plan_stop
+from trader.broker.base import Quote
 
 LOTS = (
     Lot("2026-10-14", 40, Decimal("110.54"), Decimal("114.31"), Decimal("90.53")),
@@ -147,6 +149,10 @@ class FakeBroker:
     name: str = "fake"
     submitted: list = field(default_factory=list)
     reject_at: int | None = None
+    last: Decimal = Decimal("95")
+    cancelled: list = field(default_factory=list)
+    cancel_fails: bool = False
+    cancel_shows: bool = True  # whether today's list reads a cancel as done
 
     def market_open(self):
         if self.fail:
@@ -161,6 +167,16 @@ class FakeBroker:
 
     def orders_today(self):
         return self.orders
+
+    def quote(self, symbol):
+        return Quote(symbol, self.last, Decimal("93.67"), MONDAY)
+
+    def cancel(self, order_id):
+        if self.cancel_fails:
+            raise BrokerError("취소 거절", code="IGW00001")
+        self.cancelled.append(order_id)
+        if self.cancel_shows:
+            self.orders = [replace(o, state=OrderState.CANCELLED) if o.order_id == order_id else o for o in self.orders]
 
     def submit(self, request):
         self.submitted.append(request)
@@ -365,3 +381,112 @@ def test_first_rejection_stops_the_rest(tmp_path):
 def test_empty_sheet_asks_nothing(tmp_path):
     record, asked = send(tmp_path, FakeBroker(True), sheet=())
     assert record["status"] == "ok" and asked == []
+
+
+
+# --- stop step ---
+# LOTS: 40 @110.54 (TP 114.31, SL 90.53), 30 @107.35 (TP 111.01, SL 87.92), 50 @93.67 (TP 96.86, SL 76.72)
+
+def sell(order_id, qty, price, type_=OrderType.LOC, state=OrderState.OPEN):
+    return Order(order_id, "SOXL", Side.SELL, type_, Decimal(qty), None if price is None else Decimal(price),
+                 Decimal(0), None, state)
+
+
+TP_ORDERS = [sell("11", 40, "114.31"), sell("12", 30, "111.01"), sell("13", 50, "96.86")]
+
+
+def test_stop_plan_picks_lots_at_or_below_their_stop():
+    assert plan_stop(expected(), Decimal("90.54"), TP_ORDERS).sell is None
+    plan = plan_stop(expected(), Decimal("90.53"), TP_ORDERS)
+    assert [o.order_id for o in plan.cancel] == ["11"] and plan.sell.qty == 40 and plan.sell.type is OrderType.MOC
+    plan = plan_stop(expected(), Decimal("80"), TP_ORDERS)
+    assert [o.order_id for o in plan.cancel] == ["11", "12"] and plan.sell.qty == 70
+
+
+def test_stop_plan_skips_lots_without_a_stop_and_lots_already_selling_at_the_close():
+    no_stop = expected(lots=(LOTS[0].__class__("2026-10-14", 40, Decimal("110.54"), Decimal("114.31"), None),))
+    assert plan_stop(no_stop, Decimal("50"), TP_ORDERS).lots == ()
+    plan = plan_stop(expected(), Decimal("80"), [sell("21", 40, None, OrderType.MOC), *TP_ORDERS[1:]])
+    assert [o.order_id for o in plan.cancel] == ["12"] and plan.sell.qty == 30
+
+
+def test_stop_plan_refuses_when_the_tp_order_is_not_there():
+    with pytest.raises(StopError, match="114.31"):
+        plan_stop(expected(), Decimal("90"), [sell("11", 39, "114.31"), *TP_ORDERS[1:]])
+
+
+STOP_TIME = datetime(2026, 10, 19, 15, 45, tzinfo=NY)
+
+
+def stop_run(tmp_path, broker, now=STOP_TIME, answer=True, auto_trade=None, force=False, ledger=None):
+    asked = []
+
+    def approve(plan, ledger_, last):
+        asked.append(plan)
+        return answer
+
+    account = TraderAccount(id="main", broker="fake", credentials_path=None, auto_trade=bool(auto_trade))
+    record = run_stop(
+        "main", None if auto_trade is not None else approve, now=now, force=force, clock=lambda: now,
+        sleep=lambda s: None, broker_builder=lambda _: broker,
+        expected_builder=lambda _id, _day: ledger or expected(), load_account=lambda _id: account,
+        store=LocalRunStore(tmp_path),
+    )
+    return record, asked
+
+
+def test_stop_cancels_the_tp_then_sells_at_the_close(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"))
+    record, asked = stop_run(tmp_path, broker)
+    assert record["status"] == "sent" and len(asked) == 1
+    assert broker.cancelled == ["11"]
+    assert [(o.side, o.type, o.qty) for o in broker.submitted] == [(Side.SELL, OrderType.MOC, 40)]
+    saved = LocalRunStore(tmp_path).recent("main")[0]
+    assert saved["step"] == "stop" and saved["cancelled"] == ["11"] and saved["quote"]["last"] == "89"
+
+
+def test_stop_with_no_lot_at_its_stop_does_nothing(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("95"))
+    record, asked = stop_run(tmp_path, broker)
+    assert record["status"] == "ok" and "손절 없음" in record["message"] and asked == []
+    assert broker.cancelled == [] and broker.submitted == []
+
+
+def test_stop_runs_only_in_its_window(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"))
+    early = datetime(2026, 10, 19, 15, 30, tzinfo=NY)
+    assert stop_run(tmp_path, broker, now=early)[0]["status"] == "closed"
+    late = datetime(2026, 10, 19, 15, 50, tzinfo=NY)
+    assert stop_run(tmp_path, broker, now=late)[0]["status"] == "halted"
+    assert broker.cancelled == [] and broker.submitted == []
+    assert stop_run(tmp_path, broker, now=early, force=True)[0]["status"] == "sent"
+
+
+def test_stop_unattended_follows_auto_trade(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"))
+    record, _ = stop_run(tmp_path, broker, auto_trade=False)
+    assert record["status"] == "declined" and broker.cancelled == [] and record["plan"][0]["qty"] == 40
+    record, _ = stop_run(tmp_path, broker, auto_trade=True)
+    assert record["status"] == "sent" and record["approved_by"] == "auto_trade"
+
+
+def test_stop_halts_on_a_ledger_it_cannot_trust(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"))
+    assert "보유 수량" in stop_run(tmp_path, FakeBroker(True, held=[soxl("119")], orders=list(TP_ORDERS), last=Decimal("89")))[0]["message"]
+    record, _ = stop_run(tmp_path, broker, ledger=expected(as_of="2026-10-19"))  # today's bar already in
+    assert record["status"] == "halted" and broker.cancelled == []
+
+
+def test_stop_sends_no_moc_until_the_cancel_shows(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), cancel_shows=False)
+    record, _ = stop_run(tmp_path, broker)
+    assert record["status"] == "partial" and broker.cancelled == ["11"] and broker.submitted == []
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), cancel_fails=True)
+    record, _ = stop_run(tmp_path, broker)
+    assert record["status"] == "halted" and broker.submitted == []
+
+
+def test_stop_records_a_failed_moc_as_partial(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), reject_at=1)
+    record, _ = stop_run(tmp_path, broker)
+    assert record["status"] == "partial" and broker.cancelled == ["11"] and record["sent"][0]["error_code"] == "IGW50002"

@@ -10,7 +10,8 @@ from trader.broker.base import OrderRequest
 from trader.config import load_repo_env, trader_account_ids
 from trader.expected import Expected
 from trader.plan import describe
-from trader.runner import run_check, run_orders
+from trader.runner import run_check, run_orders, run_stop
+from trader.stop import StopPlan
 
 MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!", "sent": "✓", "declined": "·", "partial": "!"}
 EXIT = {"ok": 0, "closed": 0, "sent": 0, "declined": 0, "halted": 2, "partial": 3, "error": 3}
@@ -37,8 +38,24 @@ def _ask(plan: list[OrderRequest], expected: Expected) -> bool:
     return answer.strip().lower() == "y"
 
 
+def _ask_stop(plan: StopPlan, expected: Expected, last) -> bool:
+    print(f"\n[{expected.account_id}] {expected.symbol} 현재가 ${last} — 손절 lot {len(plan.lots)}개")
+    for lot in plan.lots:
+        print(f"   {lot.buy_date} {lot.qty}주 매수가 ${lot.buy_price} 손절가 ${lot.sl}")
+    for order in plan.cancel:
+        print(f"   취소: 주문번호 {order.order_id} 매도 LOC {order.qty.normalize():f}주 ${order.price}")
+    print(f"   전송: {describe(plan.sell)}")
+    try:
+        answer = input("익절 주문을 취소하고 MOC로 손절할까요? 보내려면 y: ")
+    except EOFError:
+        return False
+    return answer.strip().lower() == "y"
+
+
 def _print_orders(record: dict) -> None:
     print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
+    for order_id in record.get("cancelled", []):
+        print(f"   취소: 주문번호 {order_id}")
     for item in record.get("sent", []):
         mark = f"주문번호 {item['order_id']}" if "order_id" in item else f"✗ {item['error']}"
         print(f"   {describe(OrderRequest(**item['request']))}  {mark}")
@@ -61,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("--account", help="config/trader/<id>.json 의 id")
     target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
     orders.add_argument("--auto", action="store_true", help="묻지 않음: auto_trade 가 켜진 계좌만 전송 (스케줄 실행용)")
+    stop = sub.add_parser("stop", help="마감 15분 전: 손절가 아래 lot의 익절 LOC 취소 → MOC 매도")
+    target = stop.add_mutually_exclusive_group(required=True)
+    target.add_argument("--account", help="config/trader/<id>.json 의 id")
+    target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
+    stop.add_argument("--auto", action="store_true", help="묻지 않음: auto_trade 가 켜진 계좌만 전송 (스케줄 실행용)")
+    stop.add_argument("--force", action="store_true", help="손절 확인 시각 전에도 실행 (장중, 주문 마감 전만)")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
@@ -75,9 +98,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     worst = 0
 
-    if args.command == "orders":
+    if args.command in ("orders", "stop"):
         for account_id in ids:
-            record = run_orders(account_id, approve=None if args.auto else _ask)
+            if args.command == "orders":
+                record = run_orders(account_id, approve=None if args.auto else _ask)
+            else:
+                record = run_stop(account_id, approve=None if args.auto else _ask_stop, force=args.force)
             if record["status"] == "halted" and record.get("checks"):
                 _print_check(record)
             else:
