@@ -1,4 +1,4 @@
-# Auto-trading job image (Cloud Run Jobs): `python -m trader <step> --all --auto`.
+# Auto-trading job image (Cloud Run Jobs): `python -m trader <step> --all --auto`, `data --push`.
 # Unlike the web image it carries config/trader (broker, auto_trade: no secrets).
 # Broker keys come from Secret Manager as env vars; nothing from .env enters the image.
 FROM python:3.13-slim
@@ -27,7 +27,7 @@ COPY trader ./trader
 # The engine ledger is built through the web's order-book service (trader/expected.py)
 COPY web/__init__.py ./web/
 COPY web/api ./web/api
-# Baseline bars; anything newer than the last row is fetched live at run time
-COPY data ./data
+# Bars come from the repo's data/ on GitHub (DONGPA_DATA_URL); `data --push` refreshes them there
+COPY scripts/update_market_data.py ./scripts/update_market_data.py
 
 ENTRYPOINT ["python", "-m", "trader"]

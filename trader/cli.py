@@ -8,6 +8,7 @@ import json
 from trader.broker import BROKERS
 from trader.broker.base import OrderRequest
 from trader.config import load_repo_env, trader_account_ids
+from trader.datasync import run_data
 from trader.expected import Expected
 from trader.plan import describe
 from trader.runner import run_check, run_orders, run_stop
@@ -84,6 +85,10 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
     stop.add_argument("--auto", action="store_true", help="묻지 않음: auto_trade 가 켜진 계좌만 전송 (스케줄 실행용)")
     stop.add_argument("--force", action="store_true", help="손절 확인 시각 전에도 실행 (장중, 주문 마감 전만)")
+    data = sub.add_parser("data", help="data/ 일봉 갱신: Yahoo + 증권사 전일 종가 (정규장 중)")
+    data.add_argument("--account", required=True, help="시세를 물을 계좌 (config/trader/<id>.json 의 id)")
+    data.add_argument("--push", action="store_true", help="GitHub의 data/를 받아 갱신하고 커밋 (DONGPA_DATA_REPO, GITHUB_DATA_TOKEN)")
+    data.add_argument("--force", action="store_true", help="정규장 밖에서도 실행 (증권사 전일 종가가 하루 전일 수 있음)")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
@@ -91,6 +96,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "brokers":
         print("\n".join(sorted(BROKERS)))
         return 0
+
+    if args.command == "data":
+        result = run_data(args.account, force=args.force, push=args.push)
+        print(f"[data] {MARKS.get(result['status'], '?')} {result['status']} — {result['message']}")
+        for ticker, close in result.get("broker_closes", {}).items():
+            print(f"   {ticker} {result['close_of']} 증권사 종가 ${close}")
+        if "changed" in result:
+            print(f"   바뀐 파일: {', '.join(result['changed']) or '없음'}")
+        if result.get("commit"):
+            print(f"   커밋: {result['commit']}")
+        return EXIT.get(result["status"], 3)
 
     ids = trader_account_ids() if args.all else [args.account]
     if not ids:

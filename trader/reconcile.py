@@ -13,6 +13,9 @@ from trader.broker.base import Cash, Order, OrderState, Position
 from trader.expected import Expected
 
 DEFAULT_CASH_TOLERANCE = Decimal("5")
+# The engine's last close (Yahoo, or the dataset) against the broker's previous close:
+# a wrong bar mis-states the whole ledger, so it is named before the balances it breaks.
+PREV_CLOSE_TOLERANCE = Decimal("0.01")
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,7 @@ def reconcile(
     cash: Cash,
     orders_today: list[Order],
     cash_tolerance: Decimal = DEFAULT_CASH_TOLERANCE,
+    broker_prev_close: Decimal | None = None,
 ) -> Reconciliation:
     held = next((p for p in positions if p.symbol == expected.symbol), None)
     real_qty = held.qty if held else Decimal(0)
@@ -64,7 +68,16 @@ def reconcile(
     pending = [o for o in orders_today if o.symbol == expected.symbol and o.state in (OrderState.OPEN, OrderState.PARTIAL)]
     others = sorted({p.symbol for p in positions if p.symbol != expected.symbol})
 
-    checks = [
+    checks = []
+    if broker_prev_close is not None and expected.prev_close is not None:
+        close_diff = expected.prev_close - broker_prev_close
+        checks.append(Check(
+            key="prev_close", label=f"{expected.symbol} 전일 종가 ({expected.as_of})",
+            expected=_usd(expected.prev_close), actual=_usd(broker_prev_close),
+            diff=_signed_usd(close_diff) if close_diff else "0",
+            ok=abs(close_diff) <= PREV_CLOSE_TOLERANCE, note="시세 데이터 확인 (엔진 vs 증권사)",
+        ))
+    checks += [
         Check(
             key="qty", label=f"{expected.symbol} 수량",
             expected=f"{expected.qty}주", actual=f"{real_qty.normalize():f}주",

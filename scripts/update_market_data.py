@@ -4,7 +4,12 @@ Reads the ticker list from data/tickers.txt, fetches only the bars missing
 since the last stored date (re-fetching a small overlap window so Yahoo's
 post-close corrections overwrite stale rows), and rewrites each CSV.
 
-Run daily by .github/workflows/update-data.yml; safe to run by hand.
+Closes in data/broker_closes.csv (Date,Ticker,Close: the broker's official
+previous close, written by ``python -m trader data``) override Yahoo's: Yahoo
+has served a provisional close as final (SOXL 2026-10-21: $98.50 for $103.24),
+and the overlap re-fetch must not bring it back.
+
+Run daily by the dongpa-trader-data Cloud Run job; safe to run by hand.
 Exits non-zero if any ticker failed so the workflow run shows up red,
 but successful tickers are still written first.
 """
@@ -25,13 +30,44 @@ COLUMNS = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
 OVERLAP_DAYS = 7
 RETRIES = 3
 RETRY_WAIT_SECONDS = 30
+BROKER_CLOSES = "broker_closes.csv"
 
 
 def load_existing(path: Path) -> pd.DataFrame | None:
     if not path.exists():
         return None
-    frame = pd.read_csv(path, index_col=0, parse_dates=True)
+    # round_trip: the default parser drops the last digit, so every run would rewrite every row
+    frame = pd.read_csv(path, index_col=0, parse_dates=True, float_precision="round_trip")
     frame.index.name = "Date"
+    return frame
+
+
+def load_broker_closes(data_dir: Path) -> pd.DataFrame:
+    path = data_dir / BROKER_CLOSES
+    if not path.exists():
+        return pd.DataFrame(columns=["Date", "Ticker", "Close"])
+    return pd.read_csv(path, parse_dates=["Date"])
+
+
+def apply_broker_closes(ticker: str, frame: pd.DataFrame, closes: pd.DataFrame) -> pd.DataFrame:
+    """Set Close to the broker's on the rows it has; Adj Close keeps its ratio, High/Low widen to hold it."""
+    frame = frame.copy()
+    for row in closes[closes["Ticker"] == ticker].itertuples():
+        day = pd.Timestamp(row.Date).normalize()
+        if day not in frame.index:
+            continue
+        close = float(row.Close)
+        old = float(frame.at[day, "Close"])
+        if abs(old - close) < 0.005:
+            continue
+        print(f"{ticker} {day.date()}: Yahoo close {old:.2f} → broker {close:.2f}")
+        if "Adj Close" in frame.columns and old:
+            frame.at[day, "Adj Close"] = float(frame.at[day, "Adj Close"]) * close / old
+        frame.at[day, "Close"] = close
+        if "High" in frame.columns:
+            frame.at[day, "High"] = max(float(frame.at[day, "High"]), close)
+        if "Low" in frame.columns:
+            frame.at[day, "Low"] = min(float(frame.at[day, "Low"]), close)
     return frame
 
 
@@ -68,8 +104,8 @@ def fetch(ticker: str, start: date | None) -> pd.DataFrame:
     raise RuntimeError(f"{ticker}: all {RETRIES} attempts failed") from last_error
 
 
-def update_ticker(ticker: str) -> bool:
-    path = DATA_DIR / f"{ticker}.csv"
+def update_ticker(ticker: str, data_dir: Path = DATA_DIR, closes: pd.DataFrame | None = None) -> bool:
+    path = data_dir / f"{ticker}.csv"
     existing = load_existing(path)
     start = None
     if existing is not None and not existing.empty:
@@ -84,6 +120,8 @@ def update_ticker(ticker: str) -> bool:
     else:
         merged = fresh
     merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+    if closes is not None:
+        merged = apply_broker_closes(ticker, merged, closes)
 
     changed = existing is None or not merged.equals(existing)
     if changed:
@@ -94,16 +132,20 @@ def update_ticker(ticker: str) -> bool:
     return changed
 
 
-def main() -> int:
-    tickers = [
+def read_tickers(data_dir: Path = DATA_DIR) -> list[str]:
+    return [
         line.strip()
-        for line in (DATA_DIR / "tickers.txt").read_text().splitlines()
+        for line in (data_dir / "tickers.txt").read_text().splitlines()
         if line.strip() and not line.startswith("#")
     ]
+
+
+def main(data_dir: Path = DATA_DIR) -> int:
+    closes = load_broker_closes(data_dir)
     failures = []
-    for ticker in tickers:
+    for ticker in read_tickers(data_dir):
         try:
-            update_ticker(ticker)
+            update_ticker(ticker, data_dir, closes)
         except Exception as exc:  # noqa: BLE001 - report and continue with the rest
             failures.append(ticker)
             print(f"{ticker}: FAILED - {exc}", file=sys.stderr)

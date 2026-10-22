@@ -44,6 +44,11 @@ TRADER_BUCKET = env("TRADER_BUCKET", f"{PROJECT}-dongpa-trader")
 RATE_LIMIT = env("DONGPA_RATE_LIMIT", "12")
 TRADER_IMAGE = env("TRADER_IMAGE", f"{REGION}-docker.pkg.dev/{PROJECT}/dongpa/dongpa-trader:latest")
 TRADER_SECRET_ENVS = [name.strip() for name in env("TRADER_SECRET_ENVS", "").split(",") if name.strip()]
+DATA_TOKEN_ENV = "GITHUB_DATA_TOKEN"
+BROKER_SECRET_ENVS = [name for name in TRADER_SECRET_ENVS if name != DATA_TOKEN_ENV]
+DATA_REPO = env("DONGPA_DATA_REPO", "")    # owner/name; empty: no data job, the jobs read the app's default data source
+DATA_ACCOUNT = env("DONGPA_DATA_ACCOUNT", "main")
+DATA_URL = f"https://raw.githubusercontent.com/{DATA_REPO}/main/data" if DATA_REPO else ""
 
 project_number = gcp.organizations.get_project(project_id=PROJECT).number
 VIEWER_SA = f"{project_number}-compute@developer.gserviceaccount.com"
@@ -182,14 +187,27 @@ for name in TRADER_SECRET_ENVS:
         opts=pulumi.ResourceOptions(depends_on=[apis["secretmanager"]]),
     ))
 
+def secret_env(name: str) -> dict:
+    return {"name": name, "value_source": {"secret_key_ref": {"secret": name.lower().replace("_", "-"), "version": "latest"}}}
+
+
+TRADER_ENVS = [{"name": "DONGPA_TRADER_RUNS", "value": TRADER_RUNS}, *map(secret_env, BROKER_SECRET_ENVS)]
+if DATA_URL:
+    TRADER_ENVS.append({"name": "DONGPA_DATA_URL", "value": DATA_URL})
 # Each step decides for itself whether it is time (holidays, early closes, its window)
 # and records "closed" when it is not, so the clock only has to wake it.
+# step: (schedule, args, envs, timeout)
 TRADER_STEPS = {
-    "orders": ("45 9 * * 1-5", ["orders", "--all", "--auto"]),
+    "orders": ("45 9 * * 1-5", ["orders", "--all", "--auto"], TRADER_ENVS, "240s"),
     # 12:45 is the stop check on early-close days; on a regular day it records "closed".
-    "stop": ("45 12,15 * * 1-5", ["stop", "--all", "--auto"]),
+    "stop": ("45 12,15 * * 1-5", ["stop", "--all", "--auto"], TRADER_ENVS, "240s"),
 }
-for step, (schedule, args) in TRADER_STEPS.items():
+if DATA_REPO and DATA_TOKEN_ENV in TRADER_SECRET_ENVS:
+    # In session (the broker's previous close is final then), ten minutes before orders read data/.
+    TRADER_STEPS["data"] = ("35 9 * * 1-5", ["data", "--account", DATA_ACCOUNT, "--push"], [
+        *map(secret_env, TRADER_SECRET_ENVS), {"name": "DONGPA_DATA_REPO", "value": DATA_REPO},
+    ], "600s")
+for step, (schedule, args, envs, timeout) in TRADER_STEPS.items():
     job = gcp.cloudrunv2.Job(
         f"trader-{step}",
         project=PROJECT,
@@ -202,16 +220,11 @@ for step, (schedule, args) in TRADER_STEPS.items():
                 "service_account": trader_sa.email,
                 # A rerun never sends twice (open orders halt the check), but nothing should rerun on its own.
                 "max_retries": 0,
-                "timeout": "240s",
+                "timeout": timeout,
                 "containers": [{
                     "image": TRADER_IMAGE,
                     "args": args,
-                    "envs": [
-                        {"name": "DONGPA_TRADER_RUNS", "value": TRADER_RUNS},
-                        *({"name": name, "value_source": {"secret_key_ref": {
-                            "secret": name.lower().replace("_", "-"), "version": "latest"}}}
-                          for name in TRADER_SECRET_ENVS),
-                    ],
+                    "envs": envs,
                     "resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
                 }],
             },

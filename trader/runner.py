@@ -91,12 +91,15 @@ def _check(
     positions = broker.positions()
     cash = broker.cash("USD")
     orders = broker.orders_today()
+    quote = broker.quote(expected.symbol)
     record["actual"] = {
         "positions": [asdict(p) for p in positions],
         "cash": asdict(cash),
         "orders_today": [asdict(o) for o in orders],
+        "prev_close": quote.prev_close,
     }
-    result = reconcile(expected, positions, cash, orders, cash_tolerance=DEFAULT_CASH_TOLERANCE)
+    result = reconcile(expected, positions, cash, orders, cash_tolerance=DEFAULT_CASH_TOLERANCE,
+                       broker_prev_close=quote.prev_close)
     record["checks"] = [asdict(check) for check in result.checks]
     if result.ok:
         return "ok", "장부와 실제 잔고가 맞습니다", session, expected

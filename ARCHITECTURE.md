@@ -57,6 +57,9 @@
 ### `data/` — 시세
 
 일봉 OHLCV CSV(`data/tickers.txt`의 종목). `scripts/update_market_data.py`가 새 봉을 덧붙입니다.
+`data/broker_closes.csv`(증권사 전일 종가)가 있는 날은 Yahoo 종가 대신 그 값을 씁니다. Yahoo가 임시 종가를
+확정처럼 준 적이 있습니다(SOXL 2026-10-21: $98.50, 실제 $103.24). 매 거래일 09:35 `data` 잡이 갱신해 GitHub에 커밋하고,
+trader 잡들은 GitHub의 `data/`를 읽습니다(`DONGPA_DATA_URL`).
 읽는 쪽(`web/api/app/services/market_data.py`의 `MarketDataClient`)은 CSV를 먼저 쓰고, 마지막 행 이후만
 Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니다.
 
@@ -76,6 +79,7 @@ Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니�
   - `check`: 달력 + 대조만 (읽기 전용)
   - `orders`: 대조 → 주문표를 LOC/MOC로 전송
   - `stop`: 마감 직전 현재가로 손절 lot을 골라 익절 주문을 취소하고 MOC 매도
+  - `data` (`datasync.py`): 증권사 전일 종가 → `data/broker_closes.csv`, Yahoo 갱신, `--push`면 GitHub에 커밋 (`github.py`)
 - `expected.py`: 엔진이 말하는 "계좌에 있어야 할 것". 웹의 `run_order_book_view`를 그대로 불러서,
   화면에 보이는 주문표와 다른 주문표를 계산할 수 없게 합니다.
 - `plan.py`, `stop.py`, `reconcile.py`: 순수 함수. 주문표 행 → 주문, 손절 계획, 장부 대 잔고 비교.
@@ -112,7 +116,8 @@ pytest. 엔진 규칙(`test_loc_rules.py`, `test_order_book_engine.py` …), 웹
 | 시각 | 무엇이 | 하는 일 |
 |---|---|---|
 | 전일 마감 후 | 시세 | 전일 종가가 생김. 다음 계산부터 엔진이 그 봉까지 봄 |
-| 09:45 | `orders` 잡 | 달력 확인 → 엔진 장부와 증권사 잔고 대조 → 맞으면 주문표 전송 |
+| 09:35 | `data` 잡 | 증권사 전일 종가로 `data/` 갱신 → GitHub 커밋 |
+| 09:45 | `orders` 잡 | 달력 확인 → 엔진 전일 종가·장부와 증권사 전일 종가·잔고 대조 → 맞으면 주문표 전송 |
 | 장중 | 웹 | 사람이 주문표·자동매매 기록을 봄 (언제 열어도 같은 주문표) |
 | 마감 15분 전 | `stop` 잡 | 현재가 ≤ 손절가인 lot의 익절 LOC 취소 → MOC 매도 |
 | 마감 10분 전 | 증권사 | LOC·MOC 접수 마감 |

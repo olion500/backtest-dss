@@ -16,8 +16,9 @@ PULUMI_STACK ?= prod
 PULUMI_UP_FLAGS ?=
 DEPLOY_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-viewer:latest
 TRADER_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-trader:latest
-# Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET): each becomes a Secret Manager secret.
-TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^[A-Z][A-Z0-9_]*_APP_(KEY|SECRET)=.' .env | cut -d= -f1 | paste -sd, -)
+# Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET) and the data job's GITHUB_DATA_TOKEN:
+# each becomes a Secret Manager secret.
+TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^([A-Z][A-Z0-9_]*_APP_(KEY|SECRET)|GITHUB_DATA_TOKEN)=.' .env | cut -d= -f1 | paste -sd, -)
 # Pulumi CLI (curl -fsSL https://get.pulumi.com | sh). The stack has no secrets, so the passphrase is empty.
 # infra/__main__.py reads the .env values from the environment; GOOGLE_* configure the gcp provider.
 PULUMI ?= $(HOME)/.pulumi/bin/pulumi
@@ -26,7 +27,8 @@ PULUMI_ENV := PULUMI_CONFIG_PASSPHRASE="" PULUMI_SKIP_UPDATE_CHECK=1 PATH="$(HOM
 	GCP_PROJECT="$(GCP_PROJECT)" GCP_REGION="$(GCP_REGION)" CLOUD_RUN_SERVICE="$(CLOUD_RUN_SERVICE)" \
 	VIEWER_DOMAIN="$(VIEWER_DOMAIN)" IAP_MEMBERS="$(IAP_MEMBERS)" TRADER_BUCKET="$(TRADER_BUCKET)" \
 	VIEWER_IMAGE="$(DEPLOY_IMAGE)" DONGPA_RATE_LIMIT="$(DONGPA_RATE_LIMIT)" \
-	TRADER_IMAGE="$(TRADER_IMAGE)" TRADER_SECRET_ENVS="$(TRADER_SECRET_ENVS)"
+	TRADER_IMAGE="$(TRADER_IMAGE)" TRADER_SECRET_ENVS="$(TRADER_SECRET_ENVS)" \
+	DONGPA_DATA_REPO="$(DONGPA_DATA_REPO)" DONGPA_DATA_ACCOUNT="$(DONGPA_DATA_ACCOUNT)"
 
 .PHONY: help check-env install test web-install web-api web-frontend web-build web image-push deploy infra-init infra-preview infra-up trader-check trader-image-push trader-deploy trader-secrets clean
 
@@ -46,7 +48,7 @@ help:
 	@echo "make infra-preview Show what Pulumi would change on GCP (infra/)"
 	@echo "make infra-up      Apply infra/ to GCP"
 	@echo "make trader-check  Reconcile every account in config/trader (read only)"
-	@echo "make trader-secrets Put the broker keys from .env into Secret Manager"
+	@echo "make trader-secrets Put the broker keys and GITHUB_DATA_TOKEN from .env into Secret Manager"
 	@echo "make trader-deploy Build, push and roll the trader image on the Cloud Run jobs"
 	@echo "make clean         Remove the built Docker image"
 
@@ -119,7 +121,7 @@ trader-image-push: check-env
 	docker push $(TRADER_IMAGE)
 
 trader-deploy: trader-image-push
-	for step in orders stop; do \
+	for step in orders stop $(if $(DONGPA_DATA_REPO),data,); do \
 		gcloud run jobs update dongpa-trader-$$step --project $(GCP_PROJECT) --region $(GCP_REGION) --image $(TRADER_IMAGE) || exit 1; \
 	done
 

@@ -94,6 +94,14 @@ def test_open_orders_for_the_target_block_a_second_send():
     assert reconcile(expected(), [soxl()], usd(), [order(OrderState.FILLED), order(symbol="AAPL")]).ok
 
 
+def test_wrong_engine_close_is_named_before_the_balances():
+    # 2026-10-22: Yahoo had SOXL 10-21 at $98.50, the broker's previous close was $103.24.
+    result = reconcile(expected(prev_close=Decimal("98.50")), [soxl()], usd(), [], broker_prev_close=Decimal("103.24"))
+    assert [c.key for c in result.failures] == ["prev_close"] and result.checks[0].diff == "−$4.74"
+    assert reconcile(expected(), [soxl()], usd(), [], broker_prev_close=Decimal("93.6700")).ok
+    assert reconcile(expected(), [soxl()], usd(), [], broker_prev_close=None).ok  # no quote: not checked
+
+
 def test_other_symbols_are_reported_but_never_block():
     other = Position("AAPL", Decimal(3), Decimal(3), Decimal(200))
     result = reconcile(expected(), [soxl(), other], usd(), [])
@@ -240,6 +248,12 @@ def test_stale_engine_close_halts(tmp_path):
 def test_mismatch_halts_and_names_the_check(tmp_path):
     record = run(tmp_path, MONDAY, FakeBroker(True, held=[soxl("300")]))
     assert record["status"] == "halted" and "SOXL 수량" in record["message"]
+
+
+def test_engine_close_unlike_the_brokers_halts(tmp_path):
+    record = run(tmp_path, MONDAY, FakeBroker(True), expected(prev_close=Decimal("98.50")))
+    assert record["status"] == "halted" and "전일 종가" in record["message"]
+    assert record["actual"]["prev_close"] == Decimal("93.67")
 
 
 def test_broker_error_is_recorded_not_raised(tmp_path):
