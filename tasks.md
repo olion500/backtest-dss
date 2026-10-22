@@ -8,7 +8,11 @@
   - 사용자 결정: 별도 Cloud Run 잡이 data/를 갱신해 git commit (PAT)
   - [x] 구현: 대조에 전일 종가 검사(엔진 vs 증권사, ±$0.01), `python -m trader data [--push]` (09:35 NY 장중, 증권사 전일 종가 → `data/broker_closes.csv` → Yahoo 갱신 시 덮어씀, GitHub REST로 커밋), infra `dongpa-trader-data` 잡, orders/stop은 `DONGPA_DATA_URL`(GitHub raw)
   - [ ] PAT 만들어 .env `GITHUB_DATA_TOKEN`·`DONGPA_DATA_REPO` → `make trader-secrets` → push → `make trader-image-push` → `make infra-up` → `make trader-deploy`
+  - [x] 배포 (2026-10-22 12:40 NY): secrets 7개, infra-up(사용자 실행), trader-deploy. Cloud Run data 실행 ok(변경 없음), check: 전일 종가 $103.24 일치·수량·예수금 ok
   - [ ] 첫 자동 실행(다음 거래일 09:35) 기록·커밋 확인
+  - 사건 (2026-10-22): 수동 orders(12:11 NY, SOXL $86.4)의 매수 LOC 4건(69주 $107.68, 1주 $107.29/$105.78/$104.31) 거절 "LimitPrice > 20% thru nbbo". 접수 후 거절이라 run은 sent로 기록됨
+    - [x] 수정: `fit_collar` 매수 ≤ 현재가×1.19, 매도 ≥ ×0.81 (LOC는 종가 체결이라 결과 같음), 전송 3초 뒤 거절 확인 → partial
+    - [ ] 같은 수량 $103.00 재전송은 사용자가 직접 (스크립트, 권한 검사가 주문 전송을 막음). 안 되면 10/23 대조가 72주 차이로 멈춤
 - [x] 주문 시트 퉁치기 구분 라벨 수정 (2026-10-18): 옮겨진 원래 주문은 `매도 (익절)`/`매수`, 줄어든 줄이 `매도 (퉁치기)`/`매수 (퉁치기)` (가격·수량은 그대로였음)
 - [ ] 동파법 3계좌(메인·서브·연향) 메리츠 Open API 자동매매 (시작 2026-10-17)
   - [x] API 확인 (2026-10-17): 해외 LOC(`oder_cls_code` 32, 조건 7)·MOC(34)·예약주문 LOC 지원. 앱키 1개 = 계좌 1개, 모의계좌 없음, 베타, API별 초당 10건

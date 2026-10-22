@@ -57,6 +57,9 @@ def _print_orders(record: dict) -> None:
     print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
     for order_id in record.get("cancelled", []):
         print(f"   취소: 주문번호 {order_id}")
+    if record.get("collar"):
+        for item in record["collar"]["moved"]:
+            print(f"   지정가 조정 (현재가 ${record['collar']['last']}의 ±19%): {describe(OrderRequest(**item['request']))} → ${item['price']}")
     for item in record.get("sent", []):
         mark = f"주문번호 {item['order_id']}" if "order_id" in item else f"✗ {item['error']}"
         print(f"   {describe(OrderRequest(**item['request']))}  {mark}")

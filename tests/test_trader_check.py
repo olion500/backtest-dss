@@ -11,10 +11,10 @@ from trader.config import DEFAULT_LISTINGS, TraderAccount, TraderConfigError, lo
 from trader.expected import Expected, Lot
 from trader.reconcile import reconcile
 from trader.runlog import LocalRunStore
-from trader.plan import PlanError, plan_orders
+from trader.plan import PlanError, fit_collar, plan_orders
 from trader.runner import run_check, run_orders, run_stop
 from trader.stop import StopError, plan_stop
-from trader.broker.base import Quote
+from trader.broker.base import OrderRequest, Quote
 
 LOTS = (
     Lot("2026-10-14", 40, Decimal("110.54"), Decimal("114.31"), Decimal("90.53")),
@@ -161,6 +161,7 @@ class FakeBroker:
     cancelled: list = field(default_factory=list)
     cancel_fails: bool = False
     cancel_shows: bool = True  # whether today's list reads a cancel as done
+    rejects_later: tuple = ()  # submit numbers the venue rejects after the broker took them
 
     def market_open(self):
         if self.fail:
@@ -190,8 +191,11 @@ class FakeBroker:
         self.submitted.append(request)
         if len(self.submitted) == self.reject_at:
             raise BrokerError("주문가격 오류", code="IGW50002")
-        return Order(str(len(self.submitted)), request.symbol, request.side, request.type, Decimal(request.qty),
-                     request.price, Decimal(0), None, OrderState.OPEN)
+        taken = Order(str(len(self.submitted)), request.symbol, request.side, request.type, Decimal(request.qty),
+                      request.price, Decimal(0), None, OrderState.OPEN)
+        if len(self.submitted) in self.rejects_later:
+            self.orders.append(replace(taken, state=OrderState.REJECTED))
+        return taken
 
 
 def run(tmp_path, now, broker, expected_value=None, force=False):
@@ -311,6 +315,7 @@ def send(tmp_path, broker, answer=True, now=MONDAY, clock=None, sheet=SHEET, aut
         expected_builder=lambda _id, _day: expected(orders=sheet),
         load_account=lambda _id: account,
         store=LocalRunStore(tmp_path),
+        sleep=lambda _: None,
     )
     return record, asked
 
@@ -380,8 +385,35 @@ def test_orders_placed_meanwhile_block_the_send(tmp_path):
     account = TraderAccount(id="main", broker="fake", credentials_path=None)
     record = run_orders("main", approve_and_place, now=MONDAY, clock=lambda: MONDAY, broker_builder=lambda _: broker,
                         expected_builder=lambda _id, _day: expected(orders=SHEET), load_account=lambda _id: account,
-                        store=LocalRunStore(tmp_path))
+                        store=LocalRunStore(tmp_path), sleep=lambda _: None)
     assert record["status"] == "halted" and "미체결" in record["message"] and broker.submitted == []
+
+
+def test_limits_beyond_the_collar_are_pulled_in():
+    # 2026-10-22: SOXL at $86.43, buy LOC $107.68 rejected (more than 20% through the NBBO)
+    plan = [
+        OrderRequest("SOXL", Side.BUY, OrderType.LOC, 69, Decimal("107.68")),
+        OrderRequest("SOXL", Side.BUY, OrderType.LOC, 1, Decimal("100.14")),
+        OrderRequest("SOXL", Side.SELL, OrderType.LOC, 10, Decimal("60.00")),
+        OrderRequest("SOXL", Side.SELL, OrderType.MOC, 5),
+    ]
+    fitted = fit_collar(plan, Decimal("86.43"))
+    assert [o.price for o in fitted] == [Decimal("102.85"), Decimal("100.14"), Decimal("70.01"), None]
+    assert [o.qty for o in fitted] == [69, 1, 10, 5]
+
+
+def test_collar_moves_are_recorded(tmp_path):
+    broker = FakeBroker(True, last=Decimal("80"))  # SHEET's 매수 (퉁치기) 96.85 > 80 × 1.19
+    record, _ = send(tmp_path, broker)
+    assert record["status"] == "sent"
+    assert any(o.price == Decimal("95.20") for o in broker.submitted)
+    assert record["collar"]["moved"][0]["price"] == Decimal("95.20")
+
+
+def test_a_rejection_after_taking_the_order_is_partial(tmp_path):
+    broker = FakeBroker(True, rejects_later=(3,))
+    record, _ = send(tmp_path, broker)
+    assert record["status"] == "partial" and record["rejected"] == ["3"] and "거절" in record["message"]
 
 
 def test_first_rejection_stops_the_rest(tmp_path):

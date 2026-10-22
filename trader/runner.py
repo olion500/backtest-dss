@@ -27,7 +27,7 @@ from trader.broker.base import Broker, BrokerError, OrderRequest, OrderState
 from trader.calendar import Session, last_closed_session, ny_now, us_session
 from trader.config import TraderAccount, TraderConfigError, load_trader_account
 from trader.expected import Expected, UnknownAccount, expected_state
-from trader.plan import PlanError, plan_orders
+from trader.plan import PlanError, fit_collar, plan_orders
 from trader.reconcile import DEFAULT_CASH_TOLERANCE, reconcile
 from trader.runlog import LocalRunStore, RunStore, run_store
 from trader.stop import StopError, StopPlan, plan_stop
@@ -38,6 +38,7 @@ Approver = Callable[[list[OrderRequest], Expected], bool]
 StopApprover = Callable[[StopPlan, Expected, Decimal], bool]
 
 CANCEL_POLLS = 10  # once a second: Meritz showed a cancel within a second (2026-10-20)
+REJECT_WAIT = 3  # seconds: Meritz takes an order, then shows the venue's rejection on today's list
 
 
 def _default_broker(account: TraderAccount) -> Broker:
@@ -138,6 +139,7 @@ def run_orders(
     expected_builder: ExpectedBuilder = expected_state,
     load_account: Callable[[str], TraderAccount] = load_trader_account,
     store: RunStore | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict:
     """Check, show the sheet, send it once ``approve`` says yes. Nothing goes out on a day the check fails.
 
@@ -180,6 +182,13 @@ def run_orders(
         if pending:
             return _finish(record, store, "halted", f"승인 사이에 미체결 주문 {len(pending)}건이 생겨 보내지 않았습니다")
 
+        last = broker.quote(expected.symbol).last
+        fitted = fit_collar(plan, last)
+        moved = [{"request": asdict(before), "price": after.price} for before, after in zip(plan, fitted) if before != after]
+        if moved:
+            record["collar"] = {"last": last, "moved": moved}
+        plan = fitted
+
         sent: list[dict] = []
         record["sent"] = sent
         for request in plan:
@@ -191,6 +200,12 @@ def run_orders(
                 record["error_code"] = exc.code
                 return _finish(record, store, "partial", f"{len(sent) - 1}/{len(plan)}건 접수 후 멈춤: {exc}")
             sent.append({"request": asdict(request), "order_id": order.order_id})
+        sleep(REJECT_WAIT)
+        ids = {item["order_id"] for item in sent}
+        rejected = [o for o in broker.orders_today() if o.order_id in ids and o.state is OrderState.REJECTED]
+        if rejected:
+            record["rejected"] = [o.order_id for o in rejected]
+            return _finish(record, store, "partial", f"{len(plan)}건 접수, 그중 {len(rejected)}건 거절: 주문번호 {', '.join(o.order_id for o in rejected)}")
         return _finish(record, store, "sent", f"{len(plan)}건 모두 접수됐습니다")
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
         record["error_code"] = getattr(exc, "code", None)
