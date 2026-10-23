@@ -12,6 +12,7 @@ from engines.order_book_engine import (
     apply_netting,
     build_holdings,
     build_order_sheet,
+    build_spread_extension,
     build_spread_orders,
     normalize_mode,
     safe_float,
@@ -744,3 +745,21 @@ class TestNettingEdges:
         assert buy["수량"] == pytest.approx(1.75)
         mirror_buy = next(r for r in result.order_sheet if r["구분"] == "매수")
         assert mirror_buy["수량"] == pytest.approx(2.5)
+
+
+class TestBuildSpreadExtension:
+    CTX = {"buy_limit_price": 100.0, "effective_budget": 1000.0, "base_qty": 10, "tp_pct": 2.0, "sl_pct": 0.0}
+
+    def test_continues_below_the_floor(self):
+        ui = {"spread_buy_levels": 5, "spread_buy_step": 1, "spread_floor_pct": 20.0}
+        sheet = build_spread_orders(self.CTX, None, 100.0, ui, False)
+        extension = build_spread_extension(self.CTX, None, 100.0, ui, False)
+        # sheet: 90.91, 83.33 (floor 80); then 76.92, 71.43, ... down to the ladder's −50% stop
+        assert [r["주문가"] for r in sheet] == [90.91, 83.33]
+        assert [r["주문가"] for r in extension] == [76.92, 71.43, 66.67, 62.5, 58.82, 55.56, 52.63, 50.0]
+        assert extension[0]["구분"] == "매수 (+3주)"
+
+    def test_level_mode_continues_after_the_last_level(self):
+        ui = {"spread_buy_levels": 1, "spread_buy_step": 1}
+        extension = build_spread_extension(self.CTX, None, 100.0, ui, False)
+        assert extension[0]["주문가"] == 83.33 and extension[0]["구분"] == "매수 (+2주)"

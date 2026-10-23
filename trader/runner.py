@@ -53,6 +53,7 @@ def _expected_payload(expected: Expected) -> dict:
     data = asdict(expected)
     data["lots"] = [asdict(lot) for lot in expected.lots]
     data["orders"] = list(expected.orders)
+    data["extension"] = list(expected.extension)
     return data
 
 
@@ -270,8 +271,8 @@ def run_stop(
             return _finish(record, store, "halted", f"손절 주문을 만들 수 없습니다: {exc}")
         record["stop_lots"] = [asdict(lot) for lot in plan.lots]
         record["cancel"] = [asdict(order) for order in plan.cancel]
-        record["plan"] = [asdict(plan.sell)] if plan.sell else []
-        if plan.sell is None:
+        record["plan"] = [asdict(order) for order in ((plan.sell,) if plan.sell else ()) + plan.buys]
+        if plan.sell is None and not plan.buys:
             if plan.lots:
                 return _finish(record, store, "ok", "손절 lot은 이미 MOC 매도가 걸려 있습니다")
             return _finish(record, store, "ok", f"손절 없음 (현재가 ${quote.last})")
@@ -287,35 +288,52 @@ def run_stop(
         if clock() >= cutoff:
             return _finish(record, store, "halted", f"승인 사이에 주문 마감이 지났습니다 (뉴욕 {cutoff:%H:%M})")
 
-        cancelled: list[str] = []
-        record["cancelled"] = cancelled
-        for order in plan.cancel:
-            try:
-                broker.cancel(order.order_id)
-            except BrokerError as exc:
-                record["error_code"] = exc.code
-                status = "partial" if cancelled else "halted"
-                return _finish(record, store, status, f"익절 주문 {order.order_id} 취소 실패 ({len(cancelled)}/{len(plan.cancel)}건 취소됨): {exc}")
-            cancelled.append(order.order_id)
-        # The MOC needs the shares free: wait until every cancel reads as done.
-        waiting = set(cancelled)
-        for _ in range(CANCEL_POLLS):
-            if not waiting:
-                break
-            sleep(1)
-            done = {o.order_id for o in broker.orders_today() if o.state is OrderState.CANCELLED}
-            waiting -= done
-        if waiting:
-            return _finish(record, store, "partial", f"취소가 확인되지 않아 MOC를 보내지 않았습니다: {', '.join(sorted(waiting))}")
+        sent: list[dict] = []
+        record["sent"] = sent
+        done: list[str] = []
+        if plan.sell is not None:
+            cancelled: list[str] = []
+            record["cancelled"] = cancelled
+            for order in plan.cancel:
+                try:
+                    broker.cancel(order.order_id)
+                except BrokerError as exc:
+                    record["error_code"] = exc.code
+                    status = "partial" if cancelled else "halted"
+                    return _finish(record, store, status, f"익절 주문 {order.order_id} 취소 실패 ({len(cancelled)}/{len(plan.cancel)}건 취소됨): {exc}")
+                cancelled.append(order.order_id)
+            # The MOC needs the shares free: wait until every cancel reads as done.
+            waiting = set(cancelled)
+            for _ in range(CANCEL_POLLS):
+                if not waiting:
+                    break
+                sleep(1)
+                gone = {o.order_id for o in broker.orders_today() if o.state is OrderState.CANCELLED}
+                waiting -= gone
+            if waiting:
+                return _finish(record, store, "partial", f"취소가 확인되지 않아 MOC를 보내지 않았습니다: {', '.join(sorted(waiting))}")
 
-        try:
-            order = broker.submit(plan.sell)
-        except BrokerError as exc:
-            record["sent"] = [{"request": asdict(plan.sell), "error": str(exc), "error_code": exc.code}]
-            record["error_code"] = exc.code
-            return _finish(record, store, "partial", f"익절 주문 {len(cancelled)}건 취소 후 MOC 실패: {exc}")
-        record["sent"] = [{"request": asdict(plan.sell), "order_id": order.order_id}]
-        return _finish(record, store, "sent", f"손절 {len(plan.lots)}개 lot {plan.sell.qty}주 MOC 접수 (현재가 ${quote.last})")
+            try:
+                order = broker.submit(plan.sell)
+            except BrokerError as exc:
+                sent.append({"request": asdict(plan.sell), "error": str(exc), "error_code": exc.code})
+                record["error_code"] = exc.code
+                return _finish(record, store, "partial", f"익절 주문 {len(cancelled)}건 취소 후 MOC 실패: {exc}")
+            sent.append({"request": asdict(plan.sell), "order_id": order.order_id})
+            done.append(f"손절 {len(plan.lots)}개 lot {plan.sell.qty}주 MOC")
+
+        for number, request in enumerate(plan.buys):
+            try:
+                order = broker.submit(request)
+            except BrokerError as exc:
+                status = "partial" if sent else "halted"
+                sent.append({"request": asdict(request), "error": str(exc), "error_code": exc.code})
+                record["error_code"] = exc.code
+                return _finish(record, store, status, f"{''.join(d + ', ' for d in done)}하한 밑 매수 {number}/{len(plan.buys)}건 접수 후 실패: {exc}")
+            sent.append({"request": asdict(request), "order_id": order.order_id})
+        if plan.buys:
+            done.append(f"하한 밑 매수 LOC {len(plan.buys)}건")
+        return _finish(record, store, "sent", f"{', '.join(done)} 접수 (현재가 ${quote.last})")
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
         record["error_code"] = getattr(exc, "code", None)
         return _finish(record, store, "error", str(exc))

@@ -13,7 +13,7 @@ from trader.reconcile import reconcile
 from trader.runlog import LocalRunStore
 from trader.plan import PlanError, fit_collar, plan_orders
 from trader.runner import run_check, run_orders, run_stop
-from trader.stop import StopError, plan_stop
+from trader.stop import StopError, extension_buys, plan_stop
 from trader.broker.base import OrderRequest, Quote
 
 LOTS = (
@@ -536,3 +536,57 @@ def test_stop_records_a_failed_moc_as_partial(tmp_path):
     broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), reject_at=1)
     record, _ = stop_run(tmp_path, broker)
     assert record["status"] == "partial" and broker.cancelled == ["11"] and record["sent"][0]["error_code"] == "IGW50002"
+
+
+# Below-floor spread steps (sheet floor 80 for a prev close of 100): the stop step sends the reachable ones.
+EXTENSION = tuple({"구분": f"매수 (+{n}주)", "주문가": price, "수량": 1}
+                  for n, price in ((21, 79.5), (22, 78.6), (23, 77.7), (24, 70.0)))
+
+
+def buy(order_id, price, qty=1):
+    return Order(order_id, "SOXL", Side.BUY, OrderType.LOC, Decimal(qty), Decimal(price), Decimal(0), None, OrderState.OPEN)
+
+
+def test_extension_sends_steps_within_reach_of_the_last_price():
+    ledger = expected(extension=EXTENSION)
+    assert extension_buys(ledger, Decimal("95"), []) == ()  # 79.5 < 95 × 0.9
+    buys = extension_buys(ledger, Decimal("80"), [])
+    assert [(b.side, b.type, b.qty, b.price) for b in buys] == [
+        (Side.BUY, OrderType.LOC, 1, Decimal("79.50")), (Side.BUY, OrderType.LOC, 1, Decimal("78.60")),
+        (Side.BUY, OrderType.LOC, 1, Decimal("77.70")),
+    ]
+
+
+def test_extension_never_sends_a_step_twice():
+    ledger = expected(extension=EXTENSION)
+    buys = extension_buys(ledger, Decimal("80"), [buy("31", "79.50"), buy("32", "78.60", qty=2)])
+    assert [b.price for b in buys] == [Decimal("78.60"), Decimal("77.70")]
+
+
+def test_extension_limits_stay_inside_the_collar():
+    buys = extension_buys(expected(extension=EXTENSION), Decimal("60"), [])
+    assert [b.price for b in buys] == [Decimal("71.40")] * 3 + [Decimal("70.00")]
+
+
+def test_stop_step_sends_the_extension_without_a_stop(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("91"))
+    ledger = expected(extension=({"구분": "매수 (+21주)", "주문가": 90.5, "수량": 1},))
+    record, asked = stop_run(tmp_path, broker, ledger=ledger)
+    assert record["status"] == "sent" and len(asked) == 1 and broker.cancelled == []
+    assert [(o.side, o.type, o.price) for o in broker.submitted] == [(Side.BUY, OrderType.LOC, Decimal("90.50"))]
+
+
+def test_stop_step_sells_first_then_buys_the_extension(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"))
+    ledger = expected(extension=({"구분": "매수 (+21주)", "주문가": 88.5, "수량": 1},))
+    record, _ = stop_run(tmp_path, broker, ledger=ledger)
+    assert record["status"] == "sent" and broker.cancelled == ["11"]
+    assert [(o.side, o.type) for o in broker.submitted] == [(Side.SELL, OrderType.MOC), (Side.BUY, OrderType.LOC)]
+    assert "MOC" in record["message"] and "하한 밑 매수 LOC 1건" in record["message"]
+
+
+def test_stop_step_records_a_failed_extension_buy_as_partial(tmp_path):
+    broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), reject_at=2)
+    ledger = expected(extension=({"구분": "매수 (+21주)", "주문가": 88.5, "수량": 1},))
+    record, _ = stop_run(tmp_path, broker, ledger=ledger)
+    assert record["status"] == "partial" and record["sent"][1]["error_code"] == "IGW50002"

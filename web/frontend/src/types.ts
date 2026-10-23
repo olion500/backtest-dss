@@ -100,6 +100,7 @@ export interface OrderBookPayload {
   };
   holdings: TablePayload;
   orders: TablePayload;
+  spread_extension: TablePayload;
   netting_message: string;
   netting_details: TablePayload;
   netting_scenarios: TablePayload;

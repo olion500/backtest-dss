@@ -27,6 +27,7 @@ from engines.order_book_engine import (
     apply_netting,
     build_holdings,
     build_order_sheet,
+    build_spread_extension,
     build_spread_orders,
     extract_state,
 )
@@ -306,14 +307,11 @@ def run_order_book_view(
         scenario_rows = netting.scenario_rows
         netting_floor = netting.netting_floor_price
 
+    spread_extension: list[dict] = []
     if spread_context is not None:
-        order_sheet.extend(build_spread_orders(
-            spread_context,
-            netting_floor,
-            state.prev_close,
-            ui_values,
-            request.strategy.allow_fractional_shares,
-        ))
+        spread_args = (spread_context, netting_floor, state.prev_close, ui_values, request.strategy.allow_fractional_shares)
+        order_sheet.extend(build_spread_orders(*spread_args))
+        spread_extension = build_spread_extension(*spread_args)
     order_sheet.sort(key=lambda row: float(row.get("주문가", 0)), reverse=True)
 
     payload = _backtest_payload(request, execution)
@@ -329,6 +327,8 @@ def run_order_book_view(
         }),
         "holdings": records_payload(holdings),
         "orders": records_payload(order_sheet),
+        # Steps below the sheet's floor, sent by the trader's stop step near the close.
+        "spread_extension": records_payload(spread_extension),
         "netting_message": netting_message,
         "netting_details": records_payload(netting_details),
         "netting_scenarios": records_payload(scenario_rows),

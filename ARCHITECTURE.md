@@ -78,7 +78,7 @@ Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니�
 - `cli.py` / `runner.py`: 단계 실행. 단계마다 실행 기록 하나를 남깁니다.
   - `check`: 달력 + 대조만 (읽기 전용)
   - `orders`: 대조 → 주문표를 LOC/MOC로 전송
-  - `stop`: 마감 직전 현재가로 손절 lot을 골라 익절 주문을 취소하고 MOC 매도
+  - `stop`: 마감 직전 현재가로 손절 lot을 골라 익절 주문을 취소하고 MOC 매도. 사다리 하한 밑 매수 단계(주문표 `spread_extension`) 중 현재가 −10% 안의 것도 LOC로 냄 (백테스트는 하한 없이 종가가 닿은 단계를 다 체결)
   - `data` (`datasync.py`): 증권사 전일 종가 → `data/broker_closes.csv`, Yahoo 갱신, `--push`면 GitHub에 커밋 (`github.py`)
 - `expected.py`: 엔진이 말하는 "계좌에 있어야 할 것". 웹의 `run_order_book_view`를 그대로 불러서,
   화면에 보이는 주문표와 다른 주문표를 계산할 수 없게 합니다.
@@ -119,7 +119,7 @@ pytest. 엔진 규칙(`test_loc_rules.py`, `test_order_book_engine.py` …), 웹
 | 09:35 | `data` 잡 | 증권사 전일 종가로 `data/` 갱신 → GitHub 커밋 |
 | 09:45 | `orders` 잡 | 달력 확인 → 엔진 전일 종가·장부와 증권사 전일 종가·잔고 대조 → 맞으면 주문표 전송 |
 | 장중 | 웹 | 사람이 주문표·자동매매 기록을 봄 (언제 열어도 같은 주문표) |
-| 마감 15분 전 | `stop` 잡 | 현재가 ≤ 손절가인 lot의 익절 LOC 취소 → MOC 매도 |
+| 마감 15분 전 | `stop` 잡 | 현재가 ≤ 손절가인 lot의 익절 LOC 취소 → MOC 매도, 하한 밑 매수 단계 LOC |
 | 마감 10분 전 | 증권사 | LOC·MOC 접수 마감 |
 | 마감 | 증권사 | LOC는 종가가 조건에 맞으면 종가에 체결. 엔진도 같은 규칙으로 그날을 계산 |
 | 다음 날 09:45 | `orders` 잡 | 체결 결과가 엔진 계산과 같았는지 대조로 확인. 어긋났으면 멈춤 |
@@ -137,7 +137,7 @@ Cloud Scheduler가 뉴욕 시간(`America/New_York`, 월–금)으로 깨웁니�
 | `dongpa-trader-data` | 09:35 | 22:35 | 23:35 | 증권사 전일 종가로 `data/` 갱신 → GitHub 커밋 |
 | `dongpa-trader-orders` | 09:45 | 22:45 | 23:45 | 대조 → 주문표 전송 |
 | `dongpa-trader-stop` | 12:45 | 다음 날 01:45 | 다음 날 02:45 | 조기 마감일의 손절 확인 (평일엔 `closed`) |
-| `dongpa-trader-stop` | 15:45 | 다음 날 04:45 | 다음 날 05:45 | 손절 확인 → 익절 LOC 취소 → MOC |
+| `dongpa-trader-stop` | 15:45 | 다음 날 04:45 | 다음 날 05:45 | 손절 확인 → 익절 LOC 취소 → MOC, 하한 밑 매수 |
 
 정의는 `infra/__main__.py`의 `TRADER_STEPS`입니다.
 

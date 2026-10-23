@@ -37,6 +37,7 @@ class Expected:
     tranche_budget: Decimal | None
     lots: tuple[Lot, ...]
     orders: tuple[dict, ...]  # the order book rows, as the web shows them
+    extension: tuple[dict, ...] = ()  # spread steps below the sheet's floor (stop step, near the close)
 
 
 class UnknownAccount(LookupError):
@@ -87,4 +88,5 @@ def expected_state(account_id: str, today: date | None = None) -> Expected:
         tranche_budget=_dec(state.get("tranche_budget")),
         lots=lots,
         orders=tuple(book["orders"]["rows"]),
+        extension=tuple(book["spread_extension"]["rows"]),
     )

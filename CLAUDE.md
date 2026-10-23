@@ -37,7 +37,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 **`trader/`** - Automated orders per account, broker-neutral (`python -m trader check --account main` reads only; `orders --account main` sends the sheet after a typed `y`, `orders --all --auto` without asking where `auto_trade` is on)
 - `plan.py` (pure) maps the order book rows to orders: LOC at the row price, MOC for `매도 (MOC)` (expiry). `orders` re-checks, needs the regular session before the close cutoff (−10 min), sends in sheet order, stops at the first order not taken, never retries an order whose answer was lost. LOC limits are pulled to within 19% of the last price (`fit_collar`: Meritz rejects a limit >20% through the NBBO after taking it); a rejection that shows on today's list after sending makes the run `partial`
 - `orders --auto` (scheduled runs, `--all` for every account) asks no one: it sends only for accounts with `auto_trade: true`, otherwise records `declined` with the plan
-- The order sheet has no stop-loss rows: `stop` (close − 15 min to the cutoff, `--force` earlier) takes the broker's last price, picks lots with `last <= SL`, cancels their TP LOC (matched by exact price + qty, else halt; shares under an open sell are not sellable), waits for the cancels to show, then sends one MOC. `stop.py` is pure. A missed stop shows up as a reconcile halt
+- The order sheet has no stop-loss rows: `stop` (close − 15 min to the cutoff, `--force` earlier) takes the broker's last price, picks lots with `last <= SL`, cancels their TP LOC (matched by exact price + qty, else halt; shares under an open sell are not sellable), waits for the cancels to show, then sends one MOC. It also sends the spread steps below the sheet's floor (order book `spread_extension`) within 10% under the last price, since the engine fills every step the close reaches. `stop.py` is pure. A missed stop shows up as a reconcile halt
 - Meritz reports a cancel on a row of its own (`oder_rctf_cncl_cls_code` 2, `orgl_oder_no`); `orders_today` folds it onto the original
 - `broker/base.py`: the `Broker` protocol + neutral types (Position, Cash, Order, LOC/MOC); `broker/meritz.py` is one adapter, registered in `broker/__init__.py` `BROKERS`
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker (engine prev close vs the broker's `prdy_clpr` first, then qty/cash/open orders); any failed check halts the run
@@ -128,7 +128,7 @@ large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Research and
 - With `spread_buy_step` set (web API always sets it from the order book settings), the fill is
   the base qty `budget ÷ limit` plus `spread_buy_step` shares per step price the close reached
   (`spread_fill_qty`, no level cap). The order book lays steps down to `prev_close × (1 − spread_floor_pct%)`
-  (accounts use 20, 1-share steps; `spread_floor_pct` 0 falls back to `spread_buy_levels`). `None` = legacy `budget ÷ close`
+  (accounts use 20, 1-share steps; `spread_floor_pct` 0 falls back to `spread_buy_levels`); the steps below it go out from the trader's `stop` step. `None` = legacy `budget ÷ close`
 
 **Sell LOC**:
 - If `today_close ≥ TP`: sell at `today_close`

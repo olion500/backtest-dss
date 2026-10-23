@@ -583,15 +583,42 @@ def build_spread_orders(
     allow_fractional: bool,
 ) -> list[dict]:
     """Generate lower-price spread buy orders below the base buy."""
-    ref_price = netting_floor_price if netting_floor_price else spread_ctx["buy_limit_price"]
-    eff_budget = spread_ctx["effective_budget"]
-    s_tp_pct = spread_ctx["tp_pct"]
-    s_sl_pct = spread_ctx["sl_pct"]
+    ladder = _sheet_ladder(spread_ctx, netting_floor_price, prev_close, ui_values, allow_fractional)
+    return _spread_rows(spread_ctx, ladder, 1, prev_close, ui_values.get("spread_buy_step", 1))
 
+
+def build_spread_extension(
+    spread_ctx: dict,
+    netting_floor_price: float | None,
+    prev_close: float | None,
+    ui_values: dict,
+    allow_fractional: bool,
+) -> list[dict]:
+    """The steps after the sheet's last one, down to the ladder's −50% stop.
+
+    The backtest has no level cap: a close below the sheet's floor still fills these.
+    They stay off the sheet; the trader's stop step sends the ones the close can still
+    reach, from the price just before the close.
+    """
+    s_step = ui_values.get("spread_buy_step", 1)
+    sheet = _sheet_ladder(spread_ctx, netting_floor_price, prev_close, ui_values, allow_fractional)
+    ref_price = netting_floor_price if netting_floor_price else spread_ctx["buy_limit_price"]
+    full = spread_ladder(spread_ctx["effective_budget"], ref_price, SPREAD_MAX_LEVELS, s_step, allow_fractional)
+    return _spread_rows(spread_ctx, full[len(sheet):], len(sheet) + 1, prev_close, s_step)
+
+
+def _sheet_ladder(
+    spread_ctx: dict,
+    netting_floor_price: float | None,
+    prev_close: float | None,
+    ui_values: dict,
+    allow_fractional: bool,
+) -> list[tuple]:
+    ref_price = netting_floor_price if netting_floor_price else spread_ctx["buy_limit_price"]
     max_spread = ui_values.get("spread_buy_levels", 5)
     s_step = ui_values.get("spread_buy_step", 1)
     # Floor mode: every step down to prev_close × (1 − floor%). The backtest has no level cap,
-    # so a deeper close only misses the steps below the floor (the trader adds those near the close).
+    # so a deeper close only misses the steps below the floor (build_spread_extension).
     floor_pct = ui_values.get("spread_floor_pct", 0.0) or 0.0
     floor_price = None
     if floor_pct > 0 and prev_close:
@@ -599,10 +626,15 @@ def build_spread_orders(
         max_spread = SPREAD_MAX_LEVELS
 
     # Same ladder the backtest fills against (engines.dongpa_engine.spread_ladder).
-    ladder = spread_ladder(eff_budget, ref_price, max_spread, s_step, allow_fractional, floor_price=floor_price)
+    return spread_ladder(spread_ctx["effective_budget"], ref_price, max_spread, s_step, allow_fractional, floor_price=floor_price)
+
+
+def _spread_rows(spread_ctx: dict, ladder: list[tuple], first_n: int, prev_close: float | None, s_step: int) -> list[dict]:
+    s_tp_pct = spread_ctx["tp_pct"]
+    s_sl_pct = spread_ctx["sl_pct"]
     cash = spread_ctx.get("cash")
     rows: list[dict] = []
-    for n, (step_price, _step_qty) in enumerate(ladder, start=1):
+    for n, (step_price, _step_qty) in enumerate(ladder, start=first_n):
         incr = n * s_step
         sp_price = float(step_price)
         # A close at this step fills base + every step above it in one buy;

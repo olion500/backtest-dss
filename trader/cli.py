@@ -45,9 +45,13 @@ def _ask_stop(plan: StopPlan, expected: Expected, last) -> bool:
         print(f"   {lot.buy_date} {lot.qty}주 매수가 ${lot.buy_price} 손절가 ${lot.sl}")
     for order in plan.cancel:
         print(f"   취소: 주문번호 {order.order_id} 매도 LOC {order.qty.normalize():f}주 ${order.price}")
-    print(f"   전송: {describe(plan.sell)}")
+    if plan.sell:
+        print(f"   전송: {describe(plan.sell)}")
+    for order in plan.buys:
+        print(f"   전송 (하한 밑 매수): {describe(order)}")
+    question = "익절 주문을 취소하고 MOC로 손절할까요?" if plan.sell else f"하한 밑 매수 {len(plan.buys)}건을 보낼까요?"
     try:
-        answer = input("익절 주문을 취소하고 MOC로 손절할까요? 보내려면 y: ")
+        answer = input(f"{question} 보내려면 y: ")
     except EOFError:
         return False
     return answer.strip().lower() == "y"
