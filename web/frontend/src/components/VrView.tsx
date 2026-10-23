@@ -60,6 +60,7 @@ function ladderPayload(result: VRResult, showAll: boolean): OrderBookPayload {
     },
     holdings: { columns: [], rows: [] },
     orders: { columns: ["구분", "주문가", "수량", "비고"], rows },
+    spread_extension: { columns: [], rows: [] },
     netting_message: "",
     netting_details: { columns: [], rows: [] },
     netting_scenarios: { columns: [], rows: [] },
