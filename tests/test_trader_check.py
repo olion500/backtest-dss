@@ -89,6 +89,13 @@ def test_cash_within_tolerance_passes_beyond_fails():
     assert [c.key for c in failed.failures] == ["cash"] and failed.failures[0].diff == "−$5.93"
 
 
+def test_cash_surplus_passes_and_is_shown():
+    # 2026-10-26: main had +$6.73 from the broker's USD RP interest, which the ledger never sees.
+    result = reconcile(expected(), [soxl()], usd("10006.73"), [])
+    check = next(c for c in result.checks if c.key == "cash")
+    assert result.ok and check.diff == "+$6.73" and "$6.73 더 있음" in check.note
+
+
 def test_open_orders_for_the_target_block_a_second_send():
     assert not reconcile(expected(), [soxl()], usd(), [order()]).ok
     assert reconcile(expected(), [soxl()], usd(), [order(OrderState.FILLED), order(symbol="AAPL")]).ok

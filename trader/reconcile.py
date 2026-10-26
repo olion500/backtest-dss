@@ -13,6 +13,9 @@ from trader.broker.base import Cash, Order, OrderState, Position
 from trader.expected import Expected
 
 DEFAULT_CASH_TOLERANCE = Decimal("5")
+# Only a shortfall blocks: Meritz sweeps USD cash into a foreign-currency RP whose interest
+# lands in the balance every KST night (~2.5%/yr), which the engine ledger never sees.
+# A surplus is shown and left out of the ledger; a missed buy still shows up as a qty diff.
 # The engine's last close (Yahoo, or the dataset) against the broker's previous close:
 # a wrong bar mis-states the whole ledger, so it is named before the balances it breaks.
 PREV_CLOSE_TOLERANCE = Decimal("0.01")
@@ -88,7 +91,9 @@ def reconcile(
             key="cash", label=f"{cash.currency} 추정 예수금",
             expected=_usd(expected.cash), actual=_usd(cash.estimated),
             diff=_signed_usd(cash_diff) if cash_diff else "0",
-            ok=abs(cash_diff) <= cash_tolerance, note=f"허용 ±{_usd(cash_tolerance)}",
+            ok=cash_diff >= -cash_tolerance,
+            note=(f"증권사에 {_usd(cash_diff)} 더 있음 (외화 RP 이자 등, 장부엔 안 씀)" if cash_diff > cash_tolerance
+                  else f"허용 −{_usd(cash_tolerance)}, 더 많은 쪽은 통과"),
         ),
         Check(
             key="open_orders", label="오늘 미체결 주문",
