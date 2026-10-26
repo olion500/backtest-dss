@@ -26,6 +26,10 @@ MAX_DATASET_AGE_DAYS = 7
 
 MARKET_TZ = ZoneInfo("America/New_York")
 
+# yf.download keeps its results in shared module state: two requests downloading at once got each
+# other's tickers (TQQQ came back with SOXL and QQQ columns), so one download at a time.
+_YAHOO_LOCK = threading.Lock()
+
 
 def market_today() -> date:
     """Today's US session date: every date in the data, accounts and journal is a NY session date."""
@@ -127,6 +131,18 @@ class MarketDataClient:
         return frame
 
     @staticmethod
+    def _only_ticker(frame: pd.DataFrame | None, ticker: str) -> pd.DataFrame | None:
+        """Keep only ``ticker``'s columns of a (Price, Ticker) frame: another ticker's columns
+        would flatten into duplicate Close columns."""
+        if frame is None or not isinstance(frame.columns, pd.MultiIndex) or frame.columns.nlevels != 2:
+            return frame
+        tickers = frame.columns.get_level_values(1)
+        if ticker not in tickers:
+            return frame.iloc[:, :0]
+        frame = frame.loc[:, tickers == ticker]
+        return frame.dropna(how="all")
+
+    @staticmethod
     def _drop_live_bar(frame: pd.DataFrame) -> pd.DataFrame:
         """Drop today's in-progress bar while the US session is still open,
         so the newest close is always an official close."""
@@ -141,17 +157,19 @@ class MarketDataClient:
         if frame is not None:
             return frame
         try:
-            frame = yf.download(
-                ticker,
-                start=start,
-                end=end,
-                progress=False,
-                auto_adjust=False,
-                repair=True,
-                threads=False,
-            )
+            with _YAHOO_LOCK:
+                frame = yf.download(
+                    ticker,
+                    start=start,
+                    end=end,
+                    progress=False,
+                    auto_adjust=False,
+                    repair=True,
+                    threads=False,
+                )
         except Exception as exc:
             raise MarketDataError(f"{ticker} 가격 데이터를 불러오지 못했습니다.") from exc
+        frame = self._only_ticker(frame, ticker)
         if frame is None or frame.empty:
             raise MarketDataError(f"{ticker} 가격 데이터가 비어 있습니다.")
         self._store(key, frame)

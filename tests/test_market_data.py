@@ -92,3 +92,16 @@ def test_no_gap_fetch_when_dataset_is_current(client, monkeypatch):
 def test_yfinance_price_repair_dependency_is_installed():
     # download(repair=True) imports scipy; without it yfinance returns an empty frame for every ticker.
     import scipy  # noqa: F401
+
+
+def test_yahoo_frame_keeps_only_the_requested_ticker():
+    # Concurrent yf.download calls returned TQQQ with SOXL columns (2026-10-26).
+    dates = pd.DatetimeIndex(pd.to_datetime(["2026-10-22", "2026-10-23"]), name="Date")
+    columns = pd.MultiIndex.from_product([COLUMNS, ["SOXL", "TQQQ"]], names=["Price", "Ticker"])
+    frame = pd.DataFrame([[1.0] * 12, [2.0] * 12], index=dates, columns=columns)
+    frame.loc[pd.Timestamp("2026-10-22"), (slice(None), "TQQQ")] = float("nan")
+
+    only = MarketDataClient._only_ticker(frame, "TQQQ")
+    assert list(only.columns.get_level_values(1).unique()) == ["TQQQ"]
+    assert list(only.index) == [pd.Timestamp("2026-10-23")]
+    assert MarketDataClient._only_ticker(frame, "QQQ").empty
