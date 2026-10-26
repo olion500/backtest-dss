@@ -59,7 +59,7 @@
 일봉 OHLCV CSV(`data/tickers.txt`의 종목). `scripts/update_market_data.py`가 새 봉을 덧붙입니다.
 `data/broker_closes.csv`(증권사 전일 종가)가 있는 날은 Yahoo 종가 대신 그 값을 씁니다. Yahoo가 임시 종가를
 확정처럼 준 적이 있습니다(SOXL 2026-10-21: $98.50, 실제 $103.24). 매 거래일 09:35 `data` 잡이 갱신해 GitHub에 커밋하고,
-trader 잡들은 GitHub의 `data/`를 읽습니다(`DONGPA_DATA_URL`).
+trader 잡들과 웹(Cloud Run)은 GitHub의 `data/`를 읽습니다(`DONGPA_DATA_URL`, 없으면 이미지의 `data/`).
 읽는 쪽(`web/api/app/services/market_data.py`의 `MarketDataClient`)은 CSV를 먼저 쓰고, 마지막 행 이후만
 Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니다.
 

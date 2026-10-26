@@ -120,6 +120,8 @@ viewer = gcp.cloudrunv2.Service(
             "envs": [
                 {"name": "DONGPA_RATE_LIMIT", "value": RATE_LIMIT},
                 {"name": "DONGPA_TRADER_RUNS", "value": TRADER_RUNS},
+                # The data job's commits (broker closes) instead of the data/ baked into the image
+                *([{"name": "DONGPA_DATA_URL", "value": DATA_URL}] if DATA_URL else []),
             ],
             "ports": {"container_port": 8080, "name": "http1"},
             "resources": {"cpu_idle": True, "startup_cpu_boost": True, "limits": {"cpu": "1", "memory": "1Gi"}},

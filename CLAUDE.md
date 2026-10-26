@@ -62,7 +62,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 ### Data Flow
 
 1. **Input**: User specifies tickers (target, momentum, benchmark) and date range
-2. **Data**: daily OHLCV from `data/*.csv` (committed daily by the `data` job; `scripts/update_market_data.py` appends new bars, `data/broker_closes.csv` overrides Yahoo closes), live yfinance only as a fallback
+2. **Data**: daily OHLCV from `data/*.csv` (committed daily by the `data` job; `scripts/update_market_data.py` appends new bars, `data/broker_closes.csv` overrides Yahoo closes; the web on Cloud Run and the trader jobs read it from GitHub raw via `DONGPA_DATA_URL`), live yfinance only for the bars after it
 3. **Mode Decision**: Weekly RSI calculated from momentum ticker (QQQ), mode determined by RSI delta and thresholds
 4. **Execution Logic**:
    - Daily LOC buy if `close <= prev_close * (1 + buy_cond_pct)`
