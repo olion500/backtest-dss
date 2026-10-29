@@ -8,7 +8,7 @@ implements :class:`Broker`, plus an entry in ``trader.broker.BROKERS``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Mapping, Protocol, runtime_checkable
@@ -88,6 +88,23 @@ class Order:
     fill_price: Decimal | None
     state: OrderState
     reason: str = ""  # rejection reason, when the broker gives one
+
+
+@dataclass(frozen=True)
+class Reservation:
+    """An order the broker sends by itself on each session from ``start`` to ``end`` (the unfilled rest)."""
+
+    reservation_id: str
+    accepted_on: date  # the broker's reservation date, needed to cancel it
+    symbol: str
+    side: Side
+    type: OrderType
+    qty: Decimal
+    price: Decimal | None
+    start: date | None
+    end: date | None
+    filled_qty: Decimal
+    cancelled: bool
 
 
 @runtime_checkable

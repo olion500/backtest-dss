@@ -13,6 +13,7 @@ from trader.expected import Expected
 from trader.plan import describe
 from trader.runner import run_check, run_orders, run_stop
 from trader.stop import StopPlan
+from trader.vr import VRPlan, run_vr_reserve
 
 MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!", "sent": "✓", "declined": "·", "partial": "!"}
 EXIT = {"ok": 0, "closed": 0, "sent": 0, "declined": 0, "halted": 2, "partial": 3, "error": 3}
@@ -57,6 +58,20 @@ def _ask_stop(plan: StopPlan, expected: Expected, last) -> bool:
     return answer.strip().lower() == "y"
 
 
+def _ask_vr(plan: VRPlan, todo: list[OrderRequest]) -> bool:
+    print(f"\n[VR {plan.vr_id}] {plan.symbol} 사이클 {plan.cycle} ({plan.cycle_start} ~ {plan.cycle_end}, 기준 종가 {plan.close_date})")
+    print(f"   V ${plan.v:,.2f}, Pool ${plan.pool:,.2f}, 매수 전부 체결 시 ${plan.buy_cost:,.2f}")
+    print(f"   매도 가능 {plan.sellable}주" + (f" — 매도 {plan.sells_cut}주는 이 계좌에 없어 뺐습니다" if plan.sells_cut else ""))
+    print(f"   기간잔량 지정가 예약, 장 시작 발주: {plan.first_session} ~ {plan.last_session}")
+    for number, order in enumerate(todo, 1):
+        print(f"  {number:>3}. {describe(order)}")
+    try:
+        answer = input(f"이 {len(todo)}건을 예약할까요? 보내려면 y: ")
+    except EOFError:
+        return False
+    return answer.strip().lower() == "y"
+
+
 def _print_orders(record: dict) -> None:
     print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
     for order_id in record.get("cancelled", []):
@@ -96,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     data.add_argument("--account", required=True, help="시세를 물을 계좌 (config/trader/<id>.json 의 id)")
     data.add_argument("--push", action="store_true", help="GitHub의 data/를 받아 갱신하고 커밋 (DONGPA_DATA_REPO, GITHUB_DATA_TOKEN)")
     data.add_argument("--force", action="store_true", help="정규장 밖에서도 실행 (증권사 전일 종가가 하루 전일 수 있음)")
+    vr = sub.add_parser("vr", help="VR 사이클 매수·매도 사다리를 증권사 기간잔량 예약으로 (y로 승인)")
+    vr.add_argument("--vr", default="main", help="config/vr/<id>.json 의 id")
+    vr.add_argument("--credentials", required=True, help="증권사 키 이름 앞부분 (MERITZ_VR → MERITZ_VR_APP_KEY)")
+    vr.add_argument("--limit", type=int, help="앞에서 N건만 보냄 (시험용)")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
@@ -114,6 +133,15 @@ def main(argv: list[str] | None = None) -> int:
         if result.get("commit"):
             print(f"   커밋: {result['commit']}")
         return EXIT.get(result["status"], 3)
+
+    if args.command == "vr":
+        record = run_vr_reserve(args.vr, args.credentials, approve=_ask_vr, limit=args.limit)
+        print(f"[VR {args.vr}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
+        for item in record.get("sent", []):
+            mark = f"예약번호 {item['reservation_id']}" if "reservation_id" in item else f"✗ {item['error']}"
+            print(f"   {describe(OrderRequest(**item['request']))}  {mark}")
+        print(f"   기록: {record['path']}")
+        return EXIT.get(record["status"], 3)
 
     ids = trader_account_ids() if args.all else [args.account]
     if not ids:

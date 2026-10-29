@@ -324,3 +324,55 @@ def test_cancel_row_marks_the_original_cancelled():
     cancelled, still_open = b.orders_today()
     assert cancelled.order_id == "1213426" and cancelled.state is OrderState.CANCELLED
     assert still_open.state is OrderState.OPEN
+
+
+RESERVE_BUY = "/trading/v1/overseas/reserved-orders/buy"
+RESERVATIONS = "/trading/v1/overseas/reserved-orders"
+RESERVE_CANCEL = "/trading/v1/overseas/reserved-orders/cancel"
+RES_ROW = {"rsev_acpt_date": "20261031", "rsev_acpt_srno": "000123", "seln_byov_clcd": "2", "iscd": "TQQQ",
+           "ovrs_stck_symb_iscd": "TQQQ", "rsev_aspr_tpcd": "1", "odqt": "4", "rsev_qty": "4",
+           "ovrs_stck_oder_prc": "66.3500", "oder_sta_date": "20261102", "oder_fin_date": "20261113",
+           "acml_cntg_qty": "0", "rsev_cncl_yn": "N"}
+
+
+def reserve_broker(routes):
+    http = FakeHttp(routes)
+    clock = iter(range(0, 10_000)).__next__
+    return MeritzBroker(CREDS, {"TQQQ": "NASDAQ"}, http=http, clock=lambda: float(clock()), sleep=lambda s: None), http
+
+
+def test_reserve_sends_a_remaining_qty_limit_with_both_dates():
+    from datetime import date
+    b, http = reserve_broker({RESERVE_BUY: [FakeResponse(200, {"rsp_cd": "5620", "data": {"oder_rsev_mst_no": "123", "warn_cls_code": "0"}})]})
+    number = b.reserve(OrderRequest("TQQQ", Side.BUY, OrderType.LIMIT, 4, Decimal("66.35")), date(2026, 11, 2), date(2026, 11, 13))
+    assert number == "123"
+    assert http.posts == [(RESERVE_BUY, {
+        "ovrs_stck_symb_iscd": "TQQQ", "ovrs_exch_vndr_idno": "0537", "rsev_aspr_tpcd": "1", "odqt": 4,
+        "ovrs_stck_oder_prc": 66.35, "oder_rsev_cls_code": "2", "oder_rsev_hour_clcd": "0",
+        "oder_sta_date": "20261102", "oder_fin_date": "20261113", "warn_cnfr_yn": "N"})]
+
+
+def test_reserve_refuses_an_ordinary_order_answer_and_warnings():
+    from datetime import date
+    order = OrderRequest("TQQQ", Side.BUY, OrderType.LIMIT, 4, Decimal("66.35"))
+    b, _ = reserve_broker({RESERVE_BUY: [FakeResponse(200, {"rsp_cd": "5620", "data": {"oder_rsev_mst_no": "1", "warn_cls_code": "1", "warn_msg": "착오"}})]})
+    with pytest.raises(BrokerError) as err:
+        b.reserve(order, date(2026, 11, 2), date(2026, 11, 13))
+    assert err.value.code == "WARN_1"
+    b, http = reserve_broker({})
+    with pytest.raises(BrokerError) as err:
+        b.reserve(order, date(2026, 11, 2), date(2026, 11, 2))  # 기간잔량 needs end after start
+    assert err.value.code == "BAD_ORDER" and http.posts == []
+
+
+def test_reservations_parse_and_cancel_uses_the_reservation_date():
+    from datetime import date
+    b, http = reserve_broker({RESERVATIONS: [ok([RES_ROW, {**RES_ROW, "rsev_acpt_srno": "124", "seln_byov_clcd": "1", "rsev_cncl_yn": "Y"}])],
+                              RESERVE_CANCEL: [FakeResponse(200, {"rsp_cd": "5620", "data": {"pros_srno": "9"}})]})
+    first, second = b.reservations(date(2026, 10, 17), date(2026, 10, 31))
+    assert http.gets[0][1]["iqry_sta_date"] == "20261017" and http.gets[0][1]["iqry_cls_code"] == "2"
+    assert first.reservation_id == "123" and first.side is Side.BUY and first.qty == Decimal("4")
+    assert first.price == Decimal("66.35") and first.start == date(2026, 11, 2) and first.end == date(2026, 11, 13)
+    assert not first.cancelled and second.cancelled and second.side is Side.SELL
+    b.cancel_reservation(first)
+    assert http.posts == [(RESERVE_CANCEL, {"oder_rsev_mst_date": "20261031", "oder_rsev_mst_no": 123})]

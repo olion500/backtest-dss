@@ -14,13 +14,18 @@ Orders: :meth:`submit` sends LOC/MOC/limit/market. Success is ``rsp_cd`` ``0001`
 ``warn_cls_code`` ``0``; any other warning means the order was not taken. A dropped
 connection on an order is never retried (it may have been taken). :meth:`cancel` looks the
 order up in today's list (the cancel needs its NY order date, type code and open quantity).
+
+Reservations (해외 예약주문): :meth:`reserve` places a 기간잔량 order the broker sends at each
+session's open from the start to the end date, the unfilled rest only. Taken is ``5620``; the
+same reservation sent twice is taken twice, so a lost answer is never resent. The dates always
+go in: without them the reservation is taken but cannot be cancelled (catalog corrections).
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Callable, Mapping
 from zoneinfo import ZoneInfo
@@ -36,6 +41,7 @@ from trader.broker.base import (
     OrderType,
     Position,
     Quote,
+    Reservation,
     Side,
 )
 
@@ -61,6 +67,7 @@ EXCHANGES = {
 US_MARKET = "01"  # ovrs_stck_mrkt_tr_cls_code for the US in market-hours
 
 ORDER_ACCEPTED = "0001"
+RESERVATION_ACCEPTED = "5620"
 # oder_cls_code, oder_cond_cls_code for new orders
 _ORDER_CODES = {
     OrderType.LIMIT: ("01", "0"),
@@ -72,6 +79,12 @@ _ORDER_CODES = {
 # aspr_type_code in order listings
 _ORDER_TYPES = {"1": OrderType.MARKET, "2": OrderType.LIMIT, "5": OrderType.LOC, "7": OrderType.MOC}
 _SIDES = {"1": Side.SELL, "2": Side.BUY}
+
+# rsev_aspr_tpcd for reservations
+_RESERVE_TYPES = {OrderType.LIMIT: "1", OrderType.MARKET: "2", OrderType.LOC: "5", OrderType.MOC: "7"}
+_RESERVE_TYPES_BACK = {code: kind for kind, code in _RESERVE_TYPES.items()}
+RESERVE_REMAINING = "2"  # oder_rsev_cls_code 기간잔량: each session sends what is still unfilled
+RESERVE_AT_OPEN = "0"    # oder_rsev_hour_clcd 장개시
 
 
 def mac_address() -> str:
@@ -168,17 +181,17 @@ class MeritzBroker:
             )
         return body
 
-    def _post_order(self, path: str, body: Mapping[str, object]) -> dict:
+    def _post_order(self, path: str, body: Mapping[str, object], accepted: str = ORDER_ACCEPTED) -> dict:
         for attempt in range(RATE_LIMIT_RETRIES + 1):
             try:
-                return self._post_order_once(path, body)
+                return self._post_order_once(path, body, accepted)
             except BrokerError as exc:
                 if exc.code != RATE_LIMITED or attempt == RATE_LIMIT_RETRIES:
                     raise
                 self._sleep(RATE_LIMIT_WAIT * (attempt + 1))
         raise AssertionError("unreachable")
 
-    def _post_order_once(self, path: str, body: Mapping[str, object]) -> dict:
+    def _post_order_once(self, path: str, body: Mapping[str, object], accepted: str = ORDER_ACCEPTED) -> dict:
         self._throttle(ORDER_KEY, ORDER_INTERVAL)
         headers = {
             "authorization": f"Bearer {self._access_token()}",
@@ -192,7 +205,7 @@ class MeritzBroker:
             raise BrokerError(f"메리츠 주문 응답을 못 받았습니다 (접수됐을 수 있음, 당일 주문 확인): {exc}", code="UNKNOWN_OUTCOME") from None
         payload = _json(response)
         code = payload.get("rsp_cd")
-        if code != ORDER_ACCEPTED:
+        if code != accepted:
             detail = " / ".join(str(x) for x in (payload.get("rsp_msg"), payload.get("rsp_sub_msg")) if x)
             raise BrokerError(f"메리츠 주문 거절 (HTTP {response.status_code}, {code}) {detail}".strip(), code=code)
         return payload
@@ -354,6 +367,60 @@ class MeritzBroker:
         if warn != "0":
             raise BrokerError(f"메리츠 취소 미접수 (경고 {warn}) {str(rows[0].get('warn_msg') or '').strip()}".strip(), code=f"WARN_{warn}")
 
+    # --- reservations ---
+
+    def reserve(self, order: OrderRequest, start: date, end: date) -> str:
+        """Place a 기간잔량 reservation sent at each session's open from ``start`` to ``end``. Returns its number."""
+        vendor, _ = self._exchange(order.symbol)
+        if order.qty <= 0:
+            raise BrokerError(f"주문 수량이 0 이하입니다: {order.qty}", code="BAD_ORDER")
+        if end <= start:
+            raise BrokerError(f"기간잔량 예약은 종료일이 시작일보다 뒤여야 합니다: {start} ~ {end}", code="BAD_ORDER")
+        market = order.type in (OrderType.MOC, OrderType.MARKET)
+        if not market and (order.price is None or order.price <= 0):
+            raise BrokerError(f"{order.type.value} 주문에 가격이 없습니다", code="BAD_ORDER")
+        side = "sell" if order.side is Side.SELL else "buy"
+        payload = self._post_order(f"/trading/v1/overseas/reserved-orders/{side}", {
+            "ovrs_stck_symb_iscd": order.symbol,
+            "ovrs_exch_vndr_idno": vendor,
+            "rsev_aspr_tpcd": _RESERVE_TYPES[order.type],
+            "odqt": order.qty,
+            "ovrs_stck_oder_prc": 0 if market else float(order.price),
+            "oder_rsev_cls_code": RESERVE_REMAINING,
+            "oder_rsev_hour_clcd": RESERVE_AT_OPEN,
+            "oder_sta_date": f"{start:%Y%m%d}",
+            "oder_fin_date": f"{end:%Y%m%d}",
+            "warn_cnfr_yn": "N",
+        }, accepted=RESERVATION_ACCEPTED)
+        rows = _rows(payload)
+        data = rows[0] if rows else {}
+        warn = str(data.get("warn_cls_code") or "0").strip()
+        if warn != "0":
+            raise BrokerError(f"메리츠 예약 미접수 (경고 {warn}) {str(data.get('warn_msg') or '').strip()}".strip(), code=f"WARN_{warn}")
+        number = _dec(data.get("oder_rsev_mst_no"))
+        if number is None:
+            raise BrokerError("메리츠 예약번호가 없습니다 (접수됐을 수 있음, 예약 조회 확인)", code="UNKNOWN_OUTCOME")
+        return str(int(number))
+
+    def reservations(self, since: date, until: date) -> list[Reservation]:
+        """Reservations taken from ``since`` to ``until`` (reservation dates), cancelled ones included."""
+        rows = self._get_pages("/trading/v1/overseas/reserved-orders", {
+            "iqry_sta_date": f"{since:%Y%m%d}",
+            "iqry_fin_date": f"{until:%Y%m%d}",
+            "seln_byov_clcd": "0",
+            "iqry_cls_code": "2",
+            "iqry_idnt_clcd": "0",
+            "oder_rsev_cls_code": "0",
+            "tday_deal_yn": "N",
+        })
+        return [_reservation(row) for row in rows]
+
+    def cancel_reservation(self, reservation: Reservation) -> None:
+        self._post_order("/trading/v1/overseas/reserved-orders/cancel", {
+            "oder_rsev_mst_date": f"{reservation.accepted_on:%Y%m%d}",
+            "oder_rsev_mst_no": int(reservation.reservation_id),
+        }, accepted=RESERVATION_ACCEPTED)
+
 
 def _json(response: requests.Response) -> dict:
     try:
@@ -397,4 +464,32 @@ def _order(row: dict) -> Order:
         fill_price=_dec(row.get("cntg_crnc_prc")) if filled else None,
         state=state,
         reason=str(row.get("ovrs_stck_rfus_reas") or "").strip(),
+    )
+
+
+def _yyyymmdd(value: object) -> date | None:
+    text = str(value or "").strip()
+    try:
+        return datetime.strptime(text, "%Y%m%d").date() if len(text) == 8 else None
+    except ValueError:
+        return None
+
+
+def _reservation(row: dict) -> Reservation:
+    order_type = _RESERVE_TYPES_BACK.get(str(row.get("rsev_aspr_tpcd") or "").strip(), OrderType.LIMIT)
+    accepted = _yyyymmdd(row.get("rsev_acpt_date"))
+    if accepted is None:
+        raise BrokerError(f"메리츠 예약 {row.get('rsev_acpt_srno')}의 예약일자가 없습니다", code="BAD_RESPONSE")
+    return Reservation(
+        reservation_id=str(int(_dec(row.get("rsev_acpt_srno"), Decimal(0)))),
+        accepted_on=accepted,
+        symbol=str(row.get("ovrs_stck_symb_iscd") or row.get("iscd") or "").strip(),
+        side=_SIDES.get(str(row.get("seln_byov_clcd") or ""), Side.BUY),
+        type=order_type,
+        qty=_dec(row.get("rsev_qty") or row.get("odqt"), Decimal(0)),
+        price=None if order_type in (OrderType.MOC, OrderType.MARKET) else _dec(row.get("ovrs_stck_oder_prc")),
+        start=_yyyymmdd(row.get("oder_sta_date")),
+        end=_yyyymmdd(row.get("oder_fin_date")),
+        filled_qty=_dec(row.get("acml_cntg_qty"), Decimal(0)),
+        cancelled=str(row.get("rsev_cncl_yn") or "N").strip().upper() == "Y",
     )
