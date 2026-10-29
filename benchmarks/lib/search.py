@@ -29,12 +29,12 @@ class Fixed:
     def suggest_categorical(self, k, ch): return self.p[k]
 
 
-def suggest_mode(t, p, flat_sl=False):
+def suggest_mode(t, p, flat_sl=False, max_slices=15):
     """flat_sl: one fixed-shape search space where sl 0 = off (multivariate TPE can model it).
     Stored flat params have no ``<p>_sl_on`` key, so replays detect the shape themselves."""
     if flat_sl or (isinstance(t, Fixed) and f'{p}_sl_on' not in t.p):
         sl = t.suggest_float(f'{p}_sl', 0.0, 40.0, step=1.0)
-        return mp(t.suggest_int(f'{p}_slices', 2, 15),
+        return mp(t.suggest_int(f'{p}_slices', 2, max_slices),
                   t.suggest_float(f'{p}_buy', 0.0, 10.0, step=0.25),
                   t.suggest_float(f'{p}_tp', 0.5, 10.0, step=0.25),
                   t.suggest_int(f'{p}_hold', 3, 60), sl if sl >= 3 else 0)
@@ -92,11 +92,11 @@ def suggest_signal(t, fam, idx):
     raise ValueError(fam)
 
 
-def build(t, fam, idx, flat_sl=False):
+def build(t, fam, idx, flat_sl=False, max_slices=15):
     """(daily mode series, defense params, offense params)."""
     ms = suggest_signal(t, fam, idx)
-    O = suggest_mode(t, 'off', flat_sl)
-    D = O if fam == 'single' else suggest_mode(t, 'def', flat_sl)
+    O = suggest_mode(t, 'off', flat_sl, max_slices)
+    D = O if fam == 'single' else suggest_mode(t, 'def', flat_sl, max_slices)
     return ms, D, O
 
 

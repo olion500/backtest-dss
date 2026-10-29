@@ -12,6 +12,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / 'data'
 TICKERS = ['SOXL', 'QQQ', 'SOXX', 'TQQQ', '^VIX', 'TECL', 'UPRO', 'SPY', 'SMH', '^VIX3M', 'FNGU', 'USD', '^IRX']
 
 _cache: dict[str, pd.DataFrame] = {}
+_from_repo: set[str] = set()
 
 
 def load(ticker: str) -> pd.DataFrame:
@@ -20,6 +21,20 @@ def load(ticker: str) -> pd.DataFrame:
         df = pd.read_csv(DATA_DIR / f'{ticker}.csv', parse_dates=['Date'], index_col='Date')
         _cache[ticker] = df[df['Close'].notna()]
     return _cache[ticker]
+
+
+REPO_DATA_DIR = Path(__file__).resolve().parents[2] / 'data'
+
+
+def use_repo_data(tickers=('SOXL', 'QQQ', 'SOXX', '^VIX')):
+    """Serve ``tickers`` from the committed ``data/`` (daily job, broker closes) instead of
+    ``benchmarks/data/``: the latest bars, the same prices the accounts trade on."""
+    for t in tickers:
+        if t in _from_repo: continue
+        df = pd.read_csv(REPO_DATA_DIR / f'{t}.csv', parse_dates=['Date'], index_col='Date')
+        _cache[t.lstrip('^')] = df[df['Close'].notna()]
+        _cache.pop(f"{t.lstrip('^')}__scaled", None)
+        _from_repo.add(t)
 
 
 def scaled(ticker: str) -> pd.DataFrame:
