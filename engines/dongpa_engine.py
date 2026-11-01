@@ -229,10 +229,21 @@ class StrategyParams:
     #        lower step whose price is >= close. The order book's level count only
     #        limits how many rows it displays, so the backtest does not cap steps.
     spread_buy_step: int | None = None
+    # Stop-loss streak breaker: sl_breaker_count stop-losses of offense lots within
+    # sl_breaker_window sessions force defense for the next sl_breaker_days sessions.
+    # The mode signal keeps its own state underneath, so it resumes untouched. 0 = off.
+    # Only stops on or after sl_breaker_start count (None = the whole history), so turning
+    # the breaker on for live accounts leaves the replayed ledger before that date as it was.
+    sl_breaker_count: int = 0
+    sl_breaker_window: int = 10
+    sl_breaker_days: int = 5
+    sl_breaker_start: pd.Timestamp | None = None
 
     def __post_init__(self):
         if self.defense is None or self.offense is None:
             raise ValueError("StrategyParams requires both 'defense' and 'offense' ModeParams")
+        if self.sl_breaker_count > 0 and self.mode_switch_strategy == "btc_overnight":
+            raise ValueError("sl_breaker needs a next-session mode signal; btc_overnight decides the same day")
 
 # ---------------------- Step (spread) buy ladder ----------------------
 
@@ -710,6 +721,11 @@ def run_backtest(
     # only steer LOC orders from the next session on. BTC trades overnight: its signal for
     # day d is already known before the US close.
     same_day_signal = params.mode_switch_strategy == "btc_overnight"
+    base_mode = mode
+    breaker_on = params.sl_breaker_count > 0
+    breaker_start = pd.Timestamp(params.sl_breaker_start) if params.sl_breaker_start is not None else None
+    breaker_stops: list[int] = []
+    breaker_left = 0
     lots = []
     trades = []
     daily_rows = []
@@ -984,7 +1000,26 @@ def run_backtest(
         if raw_sell_qty > Decimal("0"):
             raw_sell_avg = money_to_float(money(raw_sell_amt / raw_sell_qty))
 
-        next_mode = mode if same_day_signal else decide_mode(d, mode, indicators, params)
+        forced_sessions = 0
+        if same_day_signal:
+            next_mode = mode
+        else:
+            base_mode = decide_mode(d, base_mode, indicators, params)
+            next_mode = base_mode
+            if breaker_on:
+                if breaker_start is None or d >= breaker_start:
+                    breaker_stops += [
+                        i for lot, _ in sold
+                        if trades[lot['trade_idx']]["청산사유"] == "SL" and trades[lot['trade_idx']]["매수모드"] == "공세"
+                    ]
+                breaker_stops = [x for x in breaker_stops if x > i - params.sl_breaker_window]
+                if len(breaker_stops) >= params.sl_breaker_count:
+                    breaker_left = max(breaker_left, params.sl_breaker_days)
+                    breaker_stops = []
+                forced_sessions = breaker_left
+                if breaker_left > 0:
+                    next_mode = "defense"
+                breaker_left = max(0, breaker_left - 1)
 
         daily_row = {
             "거래일자": d.strftime("%Y-%m-%d"),
@@ -1023,6 +1058,9 @@ def run_backtest(
             "퉁치기상세": netting_detail,
             "예약요약": order_summary,
         }
+        if breaker_on:
+            # Sessions of forced defense from the next one on (0 = the mode signal decides).
+            daily_row["안전강제(일)"] = forced_sessions
         daily_rows.append(daily_row)
 
         prev_close = close
