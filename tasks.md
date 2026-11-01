@@ -1,6 +1,13 @@
 # Tasks
 
 ## In Progress
+- [ ] 공세 손절 연속 브레이커 실거래 적용 (2026-11-01): 공세 로트 손절 2번/10거래일 → 다음 5거래일 안전. 연구 `docs/transition.md`
+  - [x] 엔진 `StrategyParams.sl_breaker_*` + 웹 스키마·설정 화면, `config/strategy.json` count 2/window 10/days 5/start 2026-11-02
+  - [x] 검증: 연구 훅과 자산곡선 차이 0(5·10·15년), verify_harness·verify_trend_vix OK, pytest 400, 프런트 빌드
+  - [x] 계좌 비교(10-30 종가): 시작일 적용 시 세 계좌 장부·월요일 주문 변화 없음. 소급이면 메인만 현금 $30,350→$37,505, 141→123주(증권사와 어긋남)
+  - [x] 배포 (2026-11-01, 사용자 요청): `make trader-deploy` (orders·stop·data 잡, trader:latest sha256:bed486e5…) + `make deploy` (웹 리비전 dongpa-viewer-00044-v96). 이미지 안 strategy.json에 브레이커 키 확인. 작업 트리에서 빌드(커밋 전)
+  - [x] 커밋·푸시 (2026-11-01, 사용자 요청)
+  - [ ] 11-02 첫 자동 실행(orders 09:45 NY) 기록 확인
 - [ ] MDD 한도별(40·30·20·10%) 최적 전략 (2026-10-29): `python -m benchmarks search_mdd`, 5·10·15년 구간(사용자 요청 2026-10-30, 15년 = 2011-10~) 각각 CAGR×MDD 파레토 → 한도별 ±10% 이웃 중앙값으로 선택, 다른 구간·2022로 교차 확인. 5년은 실제 조건($5만, 스프레드 1주), 10·15년은 확대 가격. 현행 5y 88.2%/-34.7%, 10y 79.1%/-42.7%, 15y 61.6%/-56.6%
   - [x] 탐색·보고 완료 (2026-10-30): 결과 `benchmarks/README.md` 3차, `results/mdd_caps_{5,10,15}y.txt`. 15년 탐색 후보만 세 구간 모두 한도 안. 적용 여부 사용자 결정 대기
   - [x] 정리 (2026-10-30, 사용자 요청): 프리셋 4개 `config/presets/mdd{40,30,20,10}_*_2026-10-30.json`(웹 엔진 경로로 수치 재현 확인), 문서 `benchmarks/mdd_caps.md`. 30% 1위 `ddq`는 엔진에 모드가 없어 프리셋 제외
