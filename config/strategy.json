@@ -20,5 +20,9 @@
   "rsi_mid_high": 57.7,
   "rsi_neutral": 46.9,
   "rsi_mid_low": 44.2,
-  "rsi_low_threshold": 21.5
+  "rsi_low_threshold": 21.5,
+  "sl_breaker_count": 2,
+  "sl_breaker_window": 10,
+  "sl_breaker_days": 5,
+  "sl_breaker_start": "2026-11-02"
 }
