@@ -199,6 +199,15 @@ def test_strategy_from_raw_defaults_match_the_recommended_strategy():
     assert strategy.enable_netting is False
 
 
+def test_breaker_keys_reach_the_engine():
+    from web.api.app.services.backtest import build_engine_params, strategy_from_raw
+    assert strategy_from_raw({}).sl_breaker_count == 0
+    raw = {"sl_breaker_count": 2, "sl_breaker_window": 10, "sl_breaker_days": 5, "sl_breaker_start": "2026-11-02"}
+    params, _ = build_engine_params(strategy_from_raw(raw), 10_000)
+    assert (params.sl_breaker_count, params.sl_breaker_window, params.sl_breaker_days) == (2, 10, 5)
+    assert params.sl_breaker_start == pd.Timestamp("2026-11-02")
+
+
 def test_default_request_uses_first_account(monkeypatch):
     from web.api.app.services import backtest as svc
     from web.api.app.services.accounts import Account

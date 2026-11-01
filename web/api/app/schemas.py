@@ -41,6 +41,12 @@ class StrategySettings(BaseModel):
     vix_ticker: str = "^VIX"
     vix_low: float = Field(default=26, ge=0, le=200)
     vix_high: float = Field(default=34, ge=0, le=200)
+    # Stop-loss streak breaker: count offense stop-losses within window sessions force defense
+    # for days sessions (0 = off); only stops from start on count (None = the whole history).
+    sl_breaker_count: int = Field(default=0, ge=0, le=20)
+    sl_breaker_window: int = Field(default=10, ge=1, le=250)
+    sl_breaker_days: int = Field(default=5, ge=1, le=250)
+    sl_breaker_start: date | None = None
     defense: ModeSettings = ModeSettings(
         slices=7,
         buy_cond_pct=3,
@@ -68,6 +74,8 @@ class StrategySettings(BaseModel):
             raise ValueError("ma_short_period는 ma_long_period보다 작아야 합니다.")
         if self.mode_switch_strategy == "trend_vix" and self.vix_low > self.vix_high:
             raise ValueError("vix_low는 vix_high보다 클 수 없습니다.")
+        if self.mode_switch_strategy == "btc_overnight" and self.sl_breaker_count > 0:
+            raise ValueError("손절 브레이커는 btc_overnight 모드 전환과 함께 쓸 수 없습니다.")
         if not (
             self.rsi_low_threshold
             <= self.rsi_mid_low

@@ -33,6 +33,12 @@ export interface StrategySettings {
   vix_ticker: string;
   vix_low: number;
   vix_high: number;
+  /** Stop-loss streak breaker: count offense stops within window sessions → defense for days sessions (0 = off). */
+  sl_breaker_count: number;
+  sl_breaker_window: number;
+  sl_breaker_days: number;
+  /** Only stops from this date on count (null = the whole history). */
+  sl_breaker_start: string | null;
   defense: ModeSettings;
   offense: ModeSettings;
 }

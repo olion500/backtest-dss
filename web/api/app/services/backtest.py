@@ -91,6 +91,10 @@ def build_engine_params(
         trend_band_pct=settings.trend_band_pct,
         vix_low=settings.vix_low,
         vix_high=settings.vix_high,
+        sl_breaker_count=settings.sl_breaker_count,
+        sl_breaker_window=settings.sl_breaker_window,
+        sl_breaker_days=settings.sl_breaker_days,
+        sl_breaker_start=pd.Timestamp(settings.sl_breaker_start) if settings.sl_breaker_start else None,
         defense=_mode_params(settings.defense),
         offense=_mode_params(settings.offense),
     )
@@ -355,6 +359,10 @@ def strategy_from_raw(raw: dict) -> StrategySettings:
         vix_ticker=raw.get("vix_ticker", "^VIX"),
         vix_low=raw.get("vix_low", 26),
         vix_high=raw.get("vix_high", 34),
+        sl_breaker_count=raw.get("sl_breaker_count", 0),
+        sl_breaker_window=raw.get("sl_breaker_window", 10),
+        sl_breaker_days=raw.get("sl_breaker_days", 5),
+        sl_breaker_start=raw.get("sl_breaker_start"),
         defense=ModeSettings(
             slices=raw.get("defense_slices", 7),
             buy_cond_pct=raw.get("defense_buy", 3),

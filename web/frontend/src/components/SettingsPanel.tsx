@@ -205,6 +205,15 @@ export function SettingsPanel({ request, presets, vrAccounts, onChange, onReset,
                 <p className="setting-help">모멘텀 종목이 이평 +밴드 위 &amp; VIX 안정 → 안전 모드, 아니면 공세 모드(약세장 저가매수). 범위 안에서는 직전 상태 유지.</p>
               </>
             )}
+            {strategy.mode_switch_strategy !== "btc_overnight" && (
+              <>
+                <FieldRow label={<>손절 브레이커 <small>횟수 0=off</small></>} value={strategy.sl_breaker_count} min={0} onChange={(next) => updateStrategy("sl_breaker_count", Number(next))} />
+                <FieldRow label={<>브레이커 창 <small>거래일</small></>} value={strategy.sl_breaker_window} min={1} onChange={(next) => updateStrategy("sl_breaker_window", Number(next))} />
+                <FieldRow label={<>안전 강제 <small>거래일</small></>} value={strategy.sl_breaker_days} min={1} onChange={(next) => updateStrategy("sl_breaker_days", Number(next))} />
+                <FieldRow label={<>브레이커 시작일 <small>비우면 전체</small></>} value={strategy.sl_breaker_start ?? ""} type="date" onChange={(next) => updateStrategy("sl_breaker_start", next ? String(next) : null)} />
+                <p className="setting-help">공세 로트 손절이 창 안에 횟수만큼 나오면 다음 거래일부터 강제 일수만큼 안전 모드. 시작일 이전 손절은 세지 않아 그 전 장부는 그대로.</p>
+              </>
+            )}
           </SettingCard>
 
           <ModeCard title={<><i className="mode-dot safe" />안전 모드 // SAFE</>} value={strategy.defense} onChange={(value) => updateStrategy("defense", value)} />
