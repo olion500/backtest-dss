@@ -34,4 +34,5 @@
 - `docs/dongpa_strategy.md`: 전략 규칙, 모드 전환, 파라미터.
 - `docs/loc_netting.md`, `docs/loc_spread_buy_strategy.md`: 퉁치기, 스프레드 매수.
 - `docs/vr_sheet.md`: VR 구글 시트 규칙과 웹 VR 탭.
+- `docs/transition.md`: 공세→안전 전환 손실 진단과 대책 비교(손절 연속 브레이커, 매수 중지).
 - `benchmarks/README.md`: 벤치마크 실행·추가 방법과 연구 결과.
