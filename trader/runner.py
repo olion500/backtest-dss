@@ -271,7 +271,7 @@ def run_stop(
             return _finish(record, store, "halted", f"손절 주문을 만들 수 없습니다: {exc}")
         record["stop_lots"] = [asdict(lot) for lot in plan.lots]
         record["cancel"] = [asdict(order) for order in plan.cancel]
-        record["plan"] = [asdict(order) for order in ((plan.sell,) if plan.sell else ()) + plan.buys]
+        record["plan"] = [asdict(order) for order in ((plan.sell,) if plan.sell else ()) + plan.resend + plan.buys]
         if plan.sell is None and not plan.buys:
             if plan.lots:
                 return _finish(record, store, "ok", "손절 lot은 이미 MOC 매도가 걸려 있습니다")
@@ -321,6 +321,16 @@ def run_stop(
                 return _finish(record, store, "partial", f"익절 주문 {len(cancelled)}건 취소 후 MOC 실패: {exc}")
             sent.append({"request": asdict(plan.sell), "order_id": order.order_id})
             done.append(f"손절 {len(plan.lots)}개 lot {plan.sell.qty}주 MOC")
+            # Netting's moved sell was cancelled whole; the lots not stopping get their part back.
+            for request in plan.resend:
+                try:
+                    order = broker.submit(request)
+                except BrokerError as exc:
+                    sent.append({"request": asdict(request), "error": str(exc), "error_code": exc.code})
+                    record["error_code"] = exc.code
+                    return _finish(record, store, "partial", f"{', '.join(done)} 접수, 퉁치기 매도 재접수 실패: {exc}")
+                sent.append({"request": asdict(request), "order_id": order.order_id})
+                done.append(f"퉁치기 매도 {request.qty}주 ${request.price} 재접수")
 
         for number, request in enumerate(plan.buys):
             try:

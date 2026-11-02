@@ -48,6 +48,8 @@ def _ask_stop(plan: StopPlan, expected: Expected, last) -> bool:
         print(f"   취소: 주문번호 {order.order_id} 매도 LOC {order.qty.normalize():f}주 ${order.price}")
     if plan.sell:
         print(f"   전송: {describe(plan.sell)}")
+    for order in plan.resend:
+        print(f"   재접수 (퉁치기 매도 중 손절 아닌 몸): {describe(order)}")
     for order in plan.buys:
         print(f"   전송 (하한 밑 매수): {describe(order)}")
     question = "익절 주문을 취소하고 MOC로 손절할까요?" if plan.sell else f"하한 밑 매수 {len(plan.buys)}건을 보낼까요?"

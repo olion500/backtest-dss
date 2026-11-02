@@ -468,6 +468,53 @@ def test_stop_plan_refuses_when_the_tp_order_is_not_there():
         plan_stop(expected(), Decimal("90"), [sell("11", 39, "114.31"), *TP_ORDERS[1:]])
 
 
+# Netting (docs/loc_netting.md): lots A 50 @93.67 (TP 96.86, SL 76.72) and B 20 @90.00 (TP 93.06, SL 60),
+# buy 97.70 × 55. Cheapest sells go first: B's 20 and 35 of A's 50 are offset, A keeps 15 at its TP,
+# and the 55 offset shares move to one sell at 97.71 (the buy limit + $0.01).
+NETTED_LOTS = (
+    Lot("2026-10-15", 20, Decimal("90.00"), Decimal("93.06"), Decimal("60.00")),
+    Lot("2026-10-16", 50, Decimal("93.67"), Decimal("96.86"), Decimal("76.72")),
+)
+NETTED_SHEET = (
+    {"구분": "매도 (퉁치기)", "주문가": 96.86, "수량": 15},
+    {"구분": "매수", "주문가": 93.05, "수량": 20},
+    {"구분": "매수", "주문가": 96.85, "수량": 35},
+    {"구분": "매도 (익절)", "주문가": 97.71, "수량": 55},
+)
+NETTED_ORDERS = [sell("41", 15, "96.86"), sell("42", 55, "97.71")]
+
+
+def netted(**overrides):
+    return expected(qty=70, lots=NETTED_LOTS, orders=NETTED_SHEET, **overrides)
+
+
+def test_stop_plan_cancels_a_netted_tp_and_puts_back_the_other_lots_moved_sell():
+    plan = plan_stop(netted(), Decimal("76"), NETTED_ORDERS)
+    assert [o.order_id for o in plan.cancel] == ["41", "42"]
+    assert (plan.sell.type, plan.sell.qty) == (OrderType.MOC, 50)
+    assert [(o.side, o.type, o.qty, o.price) for o in plan.resend] == [(Side.SELL, OrderType.LOC, 20, Decimal("97.71"))]
+
+
+def test_stop_plan_sells_a_lot_netting_moved_entirely():
+    # 2026-10-30 main: TP 105.88 × 107 against buy 106.79 × 102 → 5 left at the TP, 102 moved to 106.80.
+    lot = Lot("2026-10-29", 107, Decimal("102.39"), Decimal("105.88"), Decimal("83.86"))
+    sheet = ({"구분": "매도 (익절)", "주문가": 106.80000000000001, "수량": 102},
+             {"구분": "매도 (퉁치기)", "주문가": 105.88, "수량": 5},
+             {"구분": "매수", "주문가": 105.86999999999999, "수량": 102})
+    ledger = expected(qty=107, lots=(lot,), orders=sheet)
+    plan = plan_stop(ledger, Decimal("81"), [sell("51", 102, "106.80"), sell("52", 5, "105.88")])
+    assert sorted(o.order_id for o in plan.cancel) == ["51", "52"] and plan.sell.qty == 107 and plan.resend == ()
+    # Netting took all of a lot: nothing at its TP, all of it in the moved sell.
+    whole = expected(qty=50, lots=(NETTED_LOTS[1],), orders=({"구분": "매도 (익절)", "주문가": 97.71, "수량": 50},))
+    plan = plan_stop(whole, Decimal("76"), [sell("61", 50, "97.71")])
+    assert [o.order_id for o in plan.cancel] == ["61"] and plan.sell.qty == 50 and plan.resend == ()
+
+
+def test_stop_plan_refuses_when_the_moved_sell_is_not_open():
+    with pytest.raises(StopError, match="96.86"):
+        plan_stop(netted(), Decimal("76"), NETTED_ORDERS[:1])
+
+
 STOP_TIME = datetime(2026, 10, 19, 15, 45, tzinfo=NY)
 
 
@@ -537,6 +584,15 @@ def test_stop_sends_no_moc_until_the_cancel_shows(tmp_path):
     broker = FakeBroker(True, orders=list(TP_ORDERS), last=Decimal("89"), cancel_fails=True)
     record, _ = stop_run(tmp_path, broker)
     assert record["status"] == "halted" and broker.submitted == []
+
+
+def test_stop_puts_the_moved_sell_back_after_the_moc(tmp_path):
+    broker = FakeBroker(True, held=[soxl("70")], orders=list(NETTED_ORDERS), last=Decimal("76"))
+    record, _ = stop_run(tmp_path, broker, ledger=netted())
+    assert record["status"] == "sent" and broker.cancelled == ["41", "42"]
+    assert [(o.type, o.qty, o.price) for o in broker.submitted] == [
+        (OrderType.MOC, 50, None), (OrderType.LOC, 20, Decimal("97.71")),
+    ]
 
 
 def test_stop_records_a_failed_moc_as_partial(tmp_path):
