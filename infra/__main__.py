@@ -199,18 +199,21 @@ if DATA_URL:
     TRADER_ENVS.append({"name": "DONGPA_DATA_URL", "value": DATA_URL})
 # Each step decides for itself whether it is time (holidays, early closes, its window)
 # and records "closed" when it is not, so the clock only has to wake it.
-# step: (schedule, args, envs, timeout)
+# step: (schedule, args, envs, timeout[, time zone]) — America/New_York unless given
 TRADER_STEPS = {
     "orders": ("45 9 * * 1-5", ["orders", "--all", "--auto"], TRADER_ENVS, "240s"),
     # 12:45 is the stop check on early-close days; on a regular day it records "closed".
     "stop": ("45 12,15 * * 1-5", ["stop", "--all", "--auto"], TRADER_ENVS, "240s"),
+    # 08:00 KST Tue–Sat = after every Mon–Fri NY close (18:00/19:00 NY): fills vs the close, the day's
+    # Discord summary. Without --auto it only records (first runs, checked by hand before it posts).
+    "report": ("0 8 * * 2-6", ["report", "--all"], TRADER_ENVS, "240s", "Asia/Seoul"),
 }
 if DATA_REPO and DATA_TOKEN_ENV in TRADER_SECRET_ENVS:
     # In session (the broker's previous close is final then), ten minutes before orders read data/.
     TRADER_STEPS["data"] = ("35 9 * * 1-5", ["data", "--account", DATA_ACCOUNT, "--push"], [
         *map(secret_env, TRADER_SECRET_ENVS), {"name": "DONGPA_DATA_REPO", "value": DATA_REPO},
     ], "600s")
-for step, (schedule, args, envs, timeout) in TRADER_STEPS.items():
+for step, (schedule, args, envs, timeout, *zone) in TRADER_STEPS.items():
     job = gcp.cloudrunv2.Job(
         f"trader-{step}",
         project=PROJECT,
@@ -249,7 +252,7 @@ for step, (schedule, args, envs, timeout) in TRADER_STEPS.items():
         region=REGION,
         name=f"dongpa-trader-{step}",
         schedule=schedule,
-        time_zone="America/New_York",
+        time_zone=zone[0] if zone else "America/New_York",
         attempt_deadline="60s",
         retry_config={"retry_count": 0},
         http_target={

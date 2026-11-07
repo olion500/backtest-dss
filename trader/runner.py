@@ -5,12 +5,14 @@ Steps (NY time):
   orders 09:45  check again, then the order sheet as LOC/MOC once a person approves it,
                 or unattended (``--auto``) when the account's ``auto_trade`` is on
   stop   close−15m  price vs each lot's stop → cancel those lots' TP LOC → one MOC sell
+  report 08:00 KST  after the close: today's sent orders vs the broker's fills, lot outcomes (read only)
 
 Record ``status``: ``ok`` (would trade), ``halted`` (a check failed, nothing sent),
 ``closed`` (no regular session under way), ``error`` (a call failed).
 The orders step adds ``declined`` (not approved or ``auto_trade`` off, nothing sent), ``sent`` (every order
 taken) and ``partial`` (stopped at the first order the broker did not take). The stop step uses
 the same words; its ``partial`` means some TP orders were cancelled but the MOC did not go out.
+The report step says ``ok`` (filled as the close says) or ``mismatch``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from trader.config import TraderAccount, TraderConfigError, load_trader_account
 from trader.expected import Expected, UnknownAccount, expected_state
 from trader.plan import PlanError, fit_collar, plan_orders
 from trader.reconcile import DEFAULT_CASH_TOLERANCE, reconcile
+from trader.report import bought_qty, check_fills, closing_price, lot_outcomes, sent_today, stop_warnings
 from trader.runlog import LocalRunStore, RunStore, run_store
 from trader.stop import StopError, StopPlan, plan_stop
 
@@ -345,6 +348,89 @@ def run_stop(
             done.append(f"하한 밑 매수 LOC {len(plan.buys)}건")
         return _finish(record, store, "sent", f"{', '.join(done)} 접수 (현재가 ${quote.last})")
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
+        record["error_code"] = getattr(exc, "code", None)
+        return _finish(record, store, "error", str(exc))
+
+
+def _account_fees(account_id: str) -> tuple[Decimal, Decimal]:
+    from web.api.app.services.accounts import load_accounts
+
+    account = next((item for item in load_accounts() if item.id == account_id), None)
+    if account is None:
+        return Decimal(0), Decimal(0)
+    return Decimal(str(account.fee_pct)), Decimal(str(account.sec_fee_pct))
+
+
+def run_report(
+    account_id: str,
+    now: datetime | None = None,
+    clock: Callable[[], datetime] = ny_now,
+    broker_builder: BrokerBuilder = _default_broker,
+    load_account: Callable[[str], TraderAccount] = load_trader_account,
+    fees: Callable[[str], tuple[Decimal, Decimal]] = _account_fees,
+    store: RunStore | None = None,
+) -> dict:
+    """After the close: today's sent orders vs the broker's fills, and what the lots did. Read only.
+
+    Runs any time after the session's close on the same NY date (scheduled at 08:00 KST,
+    18:00/19:00 NY). The close is the price today's LOC/MOC fills got (the closing
+    auction); with no fill, the broker's last price, which after hours may not be the close.
+    """
+    now = now or clock()
+    record = _new_record(account_id, "report", now, False)
+    try:
+        session = us_session(now.date())
+        record["calendar"] = session.to_dict()
+        if not session.is_open:
+            return _finish(record, store, "closed", "휴장")
+        if now < session.close:
+            return _finish(record, store, "closed", f"장 마감 후에 보고합니다 (마감 뉴욕 {session.close:%H:%M})")
+        account = load_account(account_id)
+        record.update(broker=account.broker, auto_trade=account.auto_trade)
+        today = [r for r in (store or run_store()).recent(account_id, limit=20) if r.get("session") == record["session"]]
+        morning = next((r for r in sorted(today, key=lambda r: r.get("started_at", ""))
+                        if r.get("step") == "orders" and r.get("expected")), None)
+        stops = [r for r in today if r.get("step") == "stop"]
+        expected = (morning or {}).get("expected") or {}
+        symbol = expected.get("symbol") or next((r["expected"]["symbol"] for r in today if r.get("expected")), "SOXL")
+        broker = broker_builder(account)
+        quote = broker.quote(symbol)
+        record["quote"] = asdict(quote)
+        record["symbol"] = symbol
+        record["prev_close"] = expected.get("prev_close")
+        record["orders_status"] = (morning or {}).get("status")
+
+        broker_orders = [_jsonable(asdict(order)) for order in broker.orders_today() if order.symbol == symbol]
+        sent = sent_today(today)
+        close, source = closing_price(sent, broker_orders, quote.last)
+        record["close"], record["close_source"] = close, source
+        checks, stray = check_fills(sent, broker_orders, close)
+        stopped = [lot for r in stops for lot in r.get("stop_lots", []) if r.get("status") in ("sent", "partial")]
+        lots = expected.get("lots", [])
+        fee_pct, sec_fee_pct = fees(account_id)
+        outcomes = lot_outcomes(lots, expected.get("orders", []), stopped, close, fee_pct, sec_fee_pct)
+        warnings = stop_warnings(lots, stopped, close)
+        position = next((p for p in broker.positions() if p.symbol == symbol), None)
+        cash = broker.cash("USD")
+
+        record["fills"] = [{**asdict(c), "ok": c.ok} for c in checks]
+        record["stray"] = stray
+        record["lots_closed"] = [asdict(o) for o in outcomes]
+        record["bought_qty"] = bought_qty(checks, sum(o.qty for o in outcomes)) if morning else None
+        record["warnings"] = warnings
+        record["position_qty"] = position.qty if position else Decimal(0)
+        record["cash"] = cash.estimated
+
+        bad = [c for c in checks if not c.ok]
+        problems = [f"{len(bad)}건이 종가 기준 예상과 다르게 체결"] if bad else []
+        if stray:
+            problems.append(f"자동매매가 안 낸 체결 {len(stray)}건")
+        problems += warnings
+        if problems:
+            return _finish(record, store, "mismatch", "; ".join(problems))
+        note = "" if morning else " (오늘 주문 기록 없음)"
+        return _finish(record, store, "ok", f"{len(checks)}건 모두 종가 기준 예상대로{note}")
+    except (BrokerError, TraderConfigError) as exc:
         record["error_code"] = getattr(exc, "code", None)
         return _finish(record, store, "error", str(exc))
 

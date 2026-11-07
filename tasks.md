@@ -4,8 +4,10 @@
 - [ ] 자동매매 디스코드 알림 (2026-11-07, 사용자 결정: 카카오는 토큰 갱신·푸시 불확실, 공식 봇은 사업자 필요 → 디스코드 웹훅. 10-17의 "알림 없음" 결정을 바꿈)
   - [x] 1단계 이상 알림: `trader/notify.py`, 스케줄 실행만(`orders/stop --auto`, `data --push`). halted·partial·error·예외·기록 저장 실패 빨강/주황, 주문 접수·손절 매도 초록. 시크릿 `DISCORD_WEBHOOK_URL`(Makefile·infra). 테스트 `tests/test_trader_notify.py`, pytest 413
   - [x] 웹훅 .env `DISCORD_WEBHOOK_URL` (2026-11-08), 로컬에서 테스트 메시지 3건 전송 성공
+  - [x] 메시지 형식 (2026-11-08, 사용자 결정): 평소엔 마감 보고만(계좌별 손익 칸), 아침·손절 초록은 뺌. 문제는 즉시 따로. 채널 #동파. 채널에 보내기 전 대화에서 미리보기 먼저
   - [ ] 배포: `make trader-secrets` → `make infra-up`(잡 env) → `make trader-deploy`
-  - [ ] 2단계 마감 후 체결 요약: 엔진 예상 체결 vs 증권사 실제 체결(`filled_qty`/`fill_price`) 비교, 마감 뒤 `report` 잡. 먼저 마감 후 체결 필드 확정 시점 확인
+  - [x] 2단계 `python -m trader report` (`trader/report.py`): 보낸 주문 vs 증권사 체결(LOC 규칙, 종가 = 증권사 현재가), lot 결과·손익, 손절 판단 대 종가. infra `report` 잡 08:00 KST(사용자 요청, Asia/Seoul로 예약, 체결 확정 뒤라 종가 = 오늘 체결가, 없으면 현재가). pytest 434
+  - [ ] 첫 실행 11/10 08:00 KST는 `--auto` 없이 기록만 → 기록 확인(체결·종가) 후 infra에서 `--auto` 켜기
   - [ ] 잡 자체가 안 돌았을 때(컨테이너 실패) 감지: Cloud Monitoring 알림 등
 - [ ] 공세 손절 연속 브레이커 실거래 적용 (2026-11-01): 공세 로트 손절 2번/10거래일 → 다음 5거래일 안전. 연구 `docs/transition.md`
   - [x] 엔진 `StrategyParams.sl_breaker_*` + 웹 스키마·설정 화면, `config/strategy.json` count 2/window 10/days 5/start 2026-11-02

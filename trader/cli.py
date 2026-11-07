@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import argparse
 import json
+from decimal import Decimal
 
 from trader.broker import BROKERS
 from trader.broker.base import OrderRequest
 from trader.config import load_repo_env, trader_account_ids
 from trader.datasync import run_data
 from trader.expected import Expected
-from trader.notify import crash_embed, run_embed, send
+from trader.notify import build_embeds, crash_embed, order_text, send
 from trader.plan import describe
-from trader.runner import run_check, run_orders, run_stop
+from trader.runner import run_check, run_orders, run_report, run_stop
 from trader.stop import StopPlan
 from trader.vr import VRPlan, run_vr_reserve
 
-MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!", "sent": "✓", "declined": "·", "partial": "!"}
-EXIT = {"ok": 0, "closed": 0, "sent": 0, "declined": 0, "halted": 2, "partial": 3, "error": 3}
+MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!", "sent": "✓", "declined": "·", "partial": "!", "mismatch": "✗"}
+EXIT = {"ok": 0, "closed": 0, "sent": 0, "declined": 0, "halted": 2, "mismatch": 2, "partial": 3, "error": 3}
 
 
 def _print_check(record: dict) -> None:
@@ -90,6 +91,26 @@ def _print_orders(record: dict) -> None:
         print(f"   ! 기록 저장소에 못 써서 로컬에 남김: {record['store_error']}")
 
 
+def _print_report(record: dict) -> None:
+    print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
+    if "close" in record:
+        source = "체결가" if record["close_source"] == "fill" else "증권사 현재가, 시간외일 수 있음"
+        print(f"   {record.get('symbol')} 종가 ${record['close']} ({source})")
+    for fill in record.get("fills", []):
+        mark = "✓" if fill["ok"] else "✗"
+        actual = "목록에 없음" if fill["actual_qty"] is None else f"{Decimal(str(fill['actual_qty'])).normalize():f}주"
+        print(f"   {mark} {order_text(fill['request'])}  예상 {fill['expected_qty']}주 / 체결 {actual}")
+    for order in record.get("stray", []):
+        print(f"   ✗ 기록에 없는 체결: 주문번호 {order['order_id']} {order['side']} {order['filled_qty']}주")
+    for lot in record.get("lots_closed", []):
+        print(f"   {lot['kind']} {lot['buy_date']} {lot['qty']}주 ${lot['buy_price']} → {lot['pnl']}")
+    for warning in record.get("warnings", []):
+        print(f"   ! {warning}")
+    if "position_qty" in record:
+        print(f"   매수(엔진) {record.get('bought_qty')}주 · 보유 {record['position_qty']}주 · 예수금 ${record['cash']}")
+    print(f"   기록: {record['path']}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m trader", description="동파법 자동매매")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
     stop.add_argument("--auto", action="store_true", help="묻지 않음: auto_trade 가 켜진 계좌만 전송 (스케줄 실행용)")
     stop.add_argument("--force", action="store_true", help="손절 확인 시각 전에도 실행 (장중, 주문 마감 전만)")
+    report = sub.add_parser("report", help="마감 후: 오늘 낸 주문이 종가대로 체결됐는지, lot별 결과 (읽기 전용)")
+    target = report.add_mutually_exclusive_group(required=True)
+    target.add_argument("--account", help="config/trader/<id>.json 의 id")
+    target.add_argument("--all", action="store_true", help="config/trader 의 모든 계좌")
+    report.add_argument("--auto", action="store_true", help="스케줄 실행: 결과를 디스코드로 보냄")
     data = sub.add_parser("data", help="data/ 일봉 갱신: Yahoo + 증권사 전일 종가 (정규장 중)")
     data.add_argument("--account", required=True, help="시세를 물을 계좌 (config/trader/<id>.json 의 id)")
     data.add_argument("--push", action="store_true", help="GitHub의 data/를 받아 갱신하고 커밋 (DONGPA_DATA_REPO, GITHUB_DATA_TOKEN)")
@@ -123,18 +149,19 @@ def main(argv: list[str] | None = None) -> int:
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
     # Only the scheduled runs alert: nobody is watching them. A person at the terminal reads it there.
     scheduled = getattr(args, "auto", False) or (args.command == "data" and args.push)
-    alerts: list[dict] = []
+    records: list[dict] = []
+    crash: list[dict] = []
     try:
-        return _dispatch(args, alerts)
+        return _dispatch(args, records)
     except Exception as exc:
-        alerts.append(crash_embed(args.command, exc))
+        crash.append(crash_embed(args.command, exc))
         raise
     finally:
         if scheduled:
-            send(alerts)
+            send(build_embeds(args.command, records) + crash)
 
 
-def _dispatch(args: argparse.Namespace, alerts: list[dict]) -> int:
+def _dispatch(args: argparse.Namespace, records: list[dict]) -> int:
     if args.command == "brokers":
         print("\n".join(sorted(BROKERS)))
         return 0
@@ -148,7 +175,7 @@ def _dispatch(args: argparse.Namespace, alerts: list[dict]) -> int:
             print(f"   바뀐 파일: {', '.join(result['changed']) or '없음'}")
         if result.get("commit"):
             print(f"   커밋: {result['commit']}")
-        alerts.append(run_embed("data", result))
+        records.append(result)
         return EXIT.get(result["status"], 3)
 
     if args.command == "vr":
@@ -176,7 +203,15 @@ def _dispatch(args: argparse.Namespace, alerts: list[dict]) -> int:
                 _print_check(record)
             else:
                 _print_orders(record)
-            alerts.append(run_embed(args.command, record))
+            records.append(record)
+            worst = max(worst, EXIT.get(record["status"], 3))
+        return worst
+
+    if args.command == "report":
+        for account_id in ids:
+            record = run_report(account_id)
+            _print_report(record)
+            records.append(record)
             worst = max(worst, EXIT.get(record["status"], 3))
         return worst
 

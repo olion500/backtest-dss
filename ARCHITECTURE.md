@@ -79,6 +79,7 @@ Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니�
   - `check`: 달력 + 대조만 (읽기 전용)
   - `orders`: 대조 → 주문표를 LOC/MOC로 전송
   - `stop`: 마감 직전 현재가로 손절 lot을 골라 익절 주문을 취소하고 MOC 매도. 사다리 하한 밑 매수 단계(주문표 `spread_extension`) 중 현재가 −10% 안의 것도 LOC로 냄 (백테스트는 하한 없이 종가가 닿은 단계를 다 체결)
+  - `report` (`report.py`): 마감 후 오늘 낸 주문이 종가대로 체결됐는지(증권사 체결과 비교), lot별 결과·손익 (읽기 전용)
   - `data` (`datasync.py`): 증권사 전일 종가 → `data/broker_closes.csv`, Yahoo 갱신, `--push`면 GitHub에 커밋 (`github.py`)
 - `expected.py`: 엔진이 말하는 "계좌에 있어야 할 것". 웹의 `run_order_book_view`를 그대로 불러서,
   화면에 보이는 주문표와 다른 주문표를 계산할 수 없게 합니다.
@@ -88,8 +89,8 @@ Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니�
   (`meritz.py`), `BROKERS`에 등록합니다. 증권사 고유의 코드·필드 이름은 어댑터 밖으로 나오지 않습니다.
 - `runlog.py`: 실행 기록 저장소. 로컬(`var/trader`) 또는 GCS(`DONGPA_TRADER_RUNS`).
 - `config.py`: `config/trader` 읽기와 증권사 키(환경변수 `<BROKER>_<ID>_APP_KEY`).
-- `notify.py`: 스케줄 실행(`orders --auto`, `stop --auto`, `data --push`)의 디스코드 알림(`DISCORD_WEBHOOK_URL`, 없으면 끔).
-  `halted`·`partial`·`error`·예외·기록 저장 실패는 빨강/주황, 주문 접수·손절 매도는 초록 한 줄. 알림 실패는 실행을 막지 않습니다.
+- `notify.py`: 스케줄 실행(`--auto`, `data --push`)의 디스코드 알림(`DISCORD_WEBHOOK_URL`, 없으면 끔). 평소엔 마감 보고 하나뿐,
+  `halted`·`partial`·`error`·`mismatch`·예외·기록 저장 실패는 바로 따로. 알림 실패는 실행을 막지 않습니다.
 
 ### `benchmarks/` — 연구
 
@@ -140,6 +141,7 @@ Cloud Scheduler가 뉴욕 시간(`America/New_York`, 월–금)으로 깨웁니�
 | `dongpa-trader-orders` | 09:45 | 22:45 | 23:45 | 대조 → 주문표 전송 |
 | `dongpa-trader-stop` | 12:45 | 다음 날 01:45 | 다음 날 02:45 | 조기 마감일의 손절 확인 (평일엔 `closed`) |
 | `dongpa-trader-stop` | 15:45 | 다음 날 04:45 | 다음 날 05:45 | 손절 확인 → 익절 LOC 취소 → MOC, 하한 밑 매수 |
+| `dongpa-trader-report` | 19:00 / 18:00 | 다음 날 08:00 | 다음 날 08:00 | 체결 대 종가 확인 → 디스코드 마감 보고 (한국 시간으로 예약) |
 
 정의는 `infra/__main__.py`의 `TRADER_STEPS`입니다.
 
