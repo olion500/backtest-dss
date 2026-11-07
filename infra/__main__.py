@@ -19,8 +19,10 @@ no key ever passes through Pulumi's state. This program only names the secrets
 (``TRADER_SECRET_ENVS``) and lets the trader's service account read them.
 """
 
+import json
 import os
 import re
+from pathlib import Path
 
 import pulumi
 import pulumi_gcp as gcp
@@ -43,9 +45,36 @@ IAP_MEMBERS = [m.strip() for m in env("IAP_MEMBERS", "").split(",") if m.strip()
 TRADER_BUCKET = env("TRADER_BUCKET", f"{PROJECT}-dongpa-trader")
 RATE_LIMIT = env("DONGPA_RATE_LIMIT", "12")
 TRADER_IMAGE = env("TRADER_IMAGE", f"{REGION}-docker.pkg.dev/{PROJECT}/dongpa/dongpa-trader:latest")
-TRADER_SECRET_ENVS = [name.strip() for name in env("TRADER_SECRET_ENVS", "").split(",") if name.strip()]
 DATA_TOKEN_ENV = "GITHUB_DATA_TOKEN"
-# Broker keys and DISCORD_WEBHOOK_URL (alerts): every trader job gets them, the PAT only the data job.
+WEBHOOK_ENV = "DISCORD_WEBHOOK_URL"
+TRADER_DIR = Path(__file__).resolve().parents[1] / "config" / "trader"
+
+
+def trader_key_prefixes() -> set[str] | None:
+    """Key prefixes of the accounts the jobs trade (config/trader, as trader/config.py names them).
+
+    ``None`` (no settings here): every key. Keys in .env for anything else, such as an
+    account traded only by hand, stay out of the jobs.
+    """
+    paths = sorted(TRADER_DIR.glob("*.json"))
+    if not paths:
+        return None
+    prefixes = set()
+    for path in paths:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        prefixes.add((raw.get("credentials_env") or f"{raw['broker']}_{path.stem}").upper().rstrip("_"))
+    return prefixes
+
+
+def job_secret(name: str, prefixes: set[str] | None) -> bool:
+    if name in (DATA_TOKEN_ENV, WEBHOOK_ENV) or prefixes is None:
+        return True
+    return any(name in (f"{prefix}_APP_KEY", f"{prefix}_APP_SECRET") for prefix in prefixes)
+
+
+TRADER_SECRET_ENVS = [name.strip() for name in env("TRADER_SECRET_ENVS", "").split(",")
+                      if name.strip() and job_secret(name.strip(), trader_key_prefixes())]
+# The traded accounts' broker keys and DISCORD_WEBHOOK_URL (alerts): every trader job; the PAT only the data job.
 BROKER_SECRET_ENVS = [name for name in TRADER_SECRET_ENVS if name != DATA_TOKEN_ENV]
 DATA_REPO = env("DONGPA_DATA_REPO", "")    # owner/name; empty: no data job, the jobs read the app's default data source
 DATA_ACCOUNT = env("DONGPA_DATA_ACCOUNT", "main")

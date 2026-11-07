@@ -7,6 +7,7 @@
   - [x] 메시지 형식 (2026-11-08, 사용자 결정): 평소엔 마감 보고만(계좌별 손익 칸), 아침·손절 초록은 뺌. 문제는 즉시 따로. 채널 #동파. 채널에 보내기 전 대화에서 미리보기 먼저
   - [ ] 배포: `make trader-secrets` → `make infra-up`(잡 env) → `make trader-deploy`
   - [x] 2단계 `python -m trader report` (`trader/report.py`): 보낸 주문 vs 증권사 체결(LOC 규칙, 종가 = 증권사 현재가), lot 결과·손익, 손절 판단 대 종가. infra `report` 잡 08:00 KST(사용자 요청, Asia/Seoul로 예약, 체결 확정 뒤라 종가 = 오늘 체결가, 없으면 현재가). pytest 434
+  - [x] 배포 (2026-11-08): trader-secrets(웹훅 + 처음으로 VR 키도 올라감), infra-up(report 잡·스케줄러, 잡 env에 웹훅). 사용자 결정: VR 키는 잡에서 뺌 → infra가 config/trader 계좌의 키만 잡에 넣음
   - [ ] 첫 실행 11/10 08:00 KST는 `--auto` 없이 기록만 → 기록 확인(체결·종가) 후 infra에서 `--auto` 켜기
   - [ ] 잡 자체가 안 돌았을 때(컨테이너 실패) 감지: Cloud Monitoring 알림 등
 - [ ] 공세 손절 연속 브레이커 실거래 적용 (2026-11-01): 공세 로트 손절 2번/10거래일 → 다음 5거래일 안전. 연구 `docs/transition.md`
