@@ -74,6 +74,7 @@ def main(argv):
 | `drawdowns` | 큰 낙폭 구간(고점·저점·회복일)과 연도별 수익 |
 | `mix` | 후보를 계좌 분리로 섞었을 때 (연 1회 리밸런싱 포함) |
 | `vr_compare`, `vr_dca` | 라오어 VR 거치식·적립식 vs 현행 vs 보유 |
+| `grandpa` | 일본 할아버지 분할 매수·매도 규칙 vs 현행 vs 보유 (`lib/grandpa.py`, 결과 `results/grandpa_compare.txt`) |
 | `transition` | 공세→안전 전환 손실 대책(전환 시 공세 로트 처리, 조기 안전, 공세 손절 연속 브레이커) 최근 5년 학습 → 10·15년 시험 (`lib/transition.py`, 결과 `results/transition.txt`) |
 | `search_breaker` | 현행 RSI 전략 + 공세 손절 연속 브레이커 함께 Optuna 탐색(최근 5년) → 시험 구간 비교 (`docs/transition.md` 6절) |
 | `search_mdd` | MDD 한도(40·30·20·10%)별 최적 전략, 5·10·15년 구간별 파레토 탐색 → `results/mdd_caps_<Y>y.txt` |
