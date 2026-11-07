@@ -10,6 +10,7 @@ from trader.broker.base import OrderRequest
 from trader.config import load_repo_env, trader_account_ids
 from trader.datasync import run_data
 from trader.expected import Expected
+from trader.notify import crash_embed, run_embed, send
 from trader.plan import describe
 from trader.runner import run_check, run_orders, run_stop
 from trader.stop import StopPlan
@@ -120,7 +121,20 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
+    # Only the scheduled runs alert: nobody is watching them. A person at the terminal reads it there.
+    scheduled = getattr(args, "auto", False) or (args.command == "data" and args.push)
+    alerts: list[dict] = []
+    try:
+        return _dispatch(args, alerts)
+    except Exception as exc:
+        alerts.append(crash_embed(args.command, exc))
+        raise
+    finally:
+        if scheduled:
+            send(alerts)
 
+
+def _dispatch(args: argparse.Namespace, alerts: list[dict]) -> int:
     if args.command == "brokers":
         print("\n".join(sorted(BROKERS)))
         return 0
@@ -134,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   바뀐 파일: {', '.join(result['changed']) or '없음'}")
         if result.get("commit"):
             print(f"   커밋: {result['commit']}")
+        alerts.append(run_embed("data", result))
         return EXIT.get(result["status"], 3)
 
     if args.command == "vr":
@@ -161,6 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_check(record)
             else:
                 _print_orders(record)
+            alerts.append(run_embed(args.command, record))
             worst = max(worst, EXIT.get(record["status"], 3))
         return worst
 

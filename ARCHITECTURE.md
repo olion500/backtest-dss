@@ -88,6 +88,8 @@ Yahoo에서 받아 채웁니다. 장중에는 오늘의 임시 봉을 버립니�
   (`meritz.py`), `BROKERS`에 등록합니다. 증권사 고유의 코드·필드 이름은 어댑터 밖으로 나오지 않습니다.
 - `runlog.py`: 실행 기록 저장소. 로컬(`var/trader`) 또는 GCS(`DONGPA_TRADER_RUNS`).
 - `config.py`: `config/trader` 읽기와 증권사 키(환경변수 `<BROKER>_<ID>_APP_KEY`).
+- `notify.py`: 스케줄 실행(`orders --auto`, `stop --auto`, `data --push`)의 디스코드 알림(`DISCORD_WEBHOOK_URL`, 없으면 끔).
+  `halted`·`partial`·`error`·예외·기록 저장 실패는 빨강/주황, 주문 접수·손절 매도는 초록 한 줄. 알림 실패는 실행을 막지 않습니다.
 
 ### `benchmarks/` — 연구
 

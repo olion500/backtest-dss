@@ -1,6 +1,12 @@
 # Tasks
 
 ## In Progress
+- [ ] 자동매매 디스코드 알림 (2026-11-07, 사용자 결정: 카카오는 토큰 갱신·푸시 불확실, 공식 봇은 사업자 필요 → 디스코드 웹훅. 10-17의 "알림 없음" 결정을 바꿈)
+  - [x] 1단계 이상 알림: `trader/notify.py`, 스케줄 실행만(`orders/stop --auto`, `data --push`). halted·partial·error·예외·기록 저장 실패 빨강/주황, 주문 접수·손절 매도 초록. 시크릿 `DISCORD_WEBHOOK_URL`(Makefile·infra). 테스트 `tests/test_trader_notify.py`, pytest 413
+  - [x] 웹훅 .env `DISCORD_WEBHOOK_URL` (2026-11-08), 로컬에서 테스트 메시지 3건 전송 성공
+  - [ ] 배포: `make trader-secrets` → `make infra-up`(잡 env) → `make trader-deploy`
+  - [ ] 2단계 마감 후 체결 요약: 엔진 예상 체결 vs 증권사 실제 체결(`filled_qty`/`fill_price`) 비교, 마감 뒤 `report` 잡. 먼저 마감 후 체결 필드 확정 시점 확인
+  - [ ] 잡 자체가 안 돌았을 때(컨테이너 실패) 감지: Cloud Monitoring 알림 등
 - [ ] 공세 손절 연속 브레이커 실거래 적용 (2026-11-01): 공세 로트 손절 2번/10거래일 → 다음 5거래일 안전. 연구 `docs/transition.md`
   - [x] 엔진 `StrategyParams.sl_breaker_*` + 웹 스키마·설정 화면, `config/strategy.json` count 2/window 10/days 5/start 2026-11-02
   - [x] 검증: 연구 훅과 자산곡선 차이 0(5·10·15년), verify_harness·verify_trend_vix OK, pytest 400, 프런트 빌드

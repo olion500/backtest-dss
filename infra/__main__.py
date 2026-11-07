@@ -45,6 +45,7 @@ RATE_LIMIT = env("DONGPA_RATE_LIMIT", "12")
 TRADER_IMAGE = env("TRADER_IMAGE", f"{REGION}-docker.pkg.dev/{PROJECT}/dongpa/dongpa-trader:latest")
 TRADER_SECRET_ENVS = [name.strip() for name in env("TRADER_SECRET_ENVS", "").split(",") if name.strip()]
 DATA_TOKEN_ENV = "GITHUB_DATA_TOKEN"
+# Broker keys and DISCORD_WEBHOOK_URL (alerts): every trader job gets them, the PAT only the data job.
 BROKER_SECRET_ENVS = [name for name in TRADER_SECRET_ENVS if name != DATA_TOKEN_ENV]
 DATA_REPO = env("DONGPA_DATA_REPO", "")    # owner/name; empty: no data job, the jobs read the app's default data source
 DATA_ACCOUNT = env("DONGPA_DATA_ACCOUNT", "main")

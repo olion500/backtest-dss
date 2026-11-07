@@ -16,9 +16,9 @@ PULUMI_STACK ?= prod
 PULUMI_UP_FLAGS ?=
 DEPLOY_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-viewer:latest
 TRADER_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-trader:latest
-# Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET) and the data job's GITHUB_DATA_TOKEN:
-# each becomes a Secret Manager secret.
-TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^([A-Z][A-Z0-9_]*_APP_(KEY|SECRET)|GITHUB_DATA_TOKEN)=.' .env | cut -d= -f1 | paste -sd, -)
+# Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET), the data job's GITHUB_DATA_TOKEN
+# and the alerts' DISCORD_WEBHOOK_URL: each becomes a Secret Manager secret.
+TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^([A-Z][A-Z0-9_]*_APP_(KEY|SECRET)|GITHUB_DATA_TOKEN|DISCORD_WEBHOOK_URL)=.' .env | cut -d= -f1 | paste -sd, -)
 # Pulumi CLI (curl -fsSL https://get.pulumi.com | sh). The stack has no secrets, so the passphrase is empty.
 # infra/__main__.py reads the .env values from the environment; GOOGLE_* configure the gcp provider.
 PULUMI ?= $(HOME)/.pulumi/bin/pulumi
@@ -48,7 +48,7 @@ help:
 	@echo "make infra-preview Show what Pulumi would change on GCP (infra/)"
 	@echo "make infra-up      Apply infra/ to GCP"
 	@echo "make trader-check  Reconcile every account in config/trader (read only)"
-	@echo "make trader-secrets Put the broker keys and GITHUB_DATA_TOKEN from .env into Secret Manager"
+	@echo "make trader-secrets Put the broker keys, GITHUB_DATA_TOKEN and DISCORD_WEBHOOK_URL from .env into Secret Manager"
 	@echo "make trader-deploy Build, push and roll the trader image on the Cloud Run jobs"
 	@echo "make clean         Remove the built Docker image"
 
