@@ -1,0 +1,5 @@
+{
+  "broker": "meritz",
+  "credentials_env": "MERITZ_VR",
+  "auto_trade": false
+}

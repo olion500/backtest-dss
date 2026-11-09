@@ -56,7 +56,7 @@ def trader_key_prefixes() -> set[str] | None:
     ``None`` (no settings here): every key. Keys in .env for anything else, such as an
     account traded only by hand, stay out of the jobs.
     """
-    paths = sorted(TRADER_DIR.glob("*.json"))
+    paths = sorted(TRADER_DIR.glob("*.json")) + sorted((TRADER_DIR / "vr").glob("*.json"))
     if not paths:
         return None
     prefixes = set()
@@ -236,6 +236,9 @@ TRADER_STEPS = {
     # 08:00 KST Tue–Sat = after every Mon–Fri NY close (18:00/19:00 NY): fills vs the close, the day's
     # Discord summary. Without --auto it only records (first runs, checked by hand before it posts).
     "report": ("0 8 * * 2-6", ["report", "--all"], TRADER_ENVS, "240s", "Asia/Seoul"),
+    # VR: daily, but it acts only between the last close before a new cycle and that cycle's first
+    # open (saves the broker balance, places the cycle's reservations); other days record "closed".
+    "vr": ("30 8 * * *", ["vr", "--all", "--auto"], TRADER_ENVS, "300s", "Asia/Seoul"),
 }
 if DATA_REPO and DATA_TOKEN_ENV in TRADER_SECRET_ENVS:
     # In session (the broker's previous close is final then), ten minutes before orders read data/.

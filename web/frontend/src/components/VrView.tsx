@@ -166,7 +166,7 @@ export function VrView({ result }: { result: VRResult }) {
         <article>
           <span>이번 사이클 체결 // FILLS</span>
           <strong>{current.bought || current.sold ? `매수 ${current.bought}주 · 매도 ${current.sold}주` : "체결 없음"}</strong>
-          <small>{outlook.day}/{outlook.cycle_days}일째 · 일별 가격으로 추정</small>
+          <small>{outlook.day}/{outlook.cycle_days}일째 · 일별 가격으로 추정 · 시작 {current.shares_start.toLocaleString()}주 {current.actual ? "(증권사 잔고 + 외부 계좌)" : "(추정)"}</small>
           <small>평가금 V 대비 {pct(vGap)} ({usd(current.v_min)} ~ {usd(current.v_max)} 밴드)</small>
         </article>
         <article>
@@ -195,7 +195,7 @@ export function VrView({ result }: { result: VRResult }) {
 
       <footer className="footer">
         <span>VR // {account.name}</span>
-        <span>실제 체결과 다르면 config/vr/{account.id}.json의 adjustments에 사이클 시작 보유·Pool을 적으세요</span>
+        <span>사이클 시작은 자동매매가 읽은 증권사 잔고 + config/vr/{account.id}.json의 external(다른 계좌 보유·현금) 기준, 없으면 추정</span>
       </footer>
     </div>
   );

@@ -1,12 +1,17 @@
 """VR (value rebalancing) accounts from ``config/vr/<id>.json`` and their current cycle.
 
 The whole state is rebuilt from the account file and daily prices on every request
-(fills are estimated, see :mod:`engines.vr_engine`).
+(fills are estimated, see :mod:`engines.vr_engine`). A cycle the trader saw start
+(``python -m trader vr --auto``) starts from the broker's balance instead: the broker
+account's shares and USD cash read before its first session, plus ``external`` (shares
+and cash held elsewhere, never traded), kept in the run store as ``_state/vr-<id>/actuals.json``.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -19,6 +24,13 @@ from web.api.app.serializers import json_value
 from web.api.app.services.market_data import market_data_client, market_today
 
 PriceProvider = Callable[[str, date, date], pd.DataFrame]
+ACTUALS = "actuals.json"
+log = logging.getLogger(__name__)
+
+
+def record_id(vr_id: str) -> str:
+    """The VR account's name in the run store (records and state)."""
+    return f"vr-{vr_id}"
 
 
 class DepositChange(BaseModel):
@@ -31,6 +43,14 @@ class Adjustment(BaseModel):
     shares: int | None = Field(default=None, ge=0)
     pool: float | None = None
     v: float | None = Field(default=None, gt=0)
+
+
+class External(BaseModel):
+    """Shares and cash (USD) of this VR held outside the broker account, from ``from`` on."""
+
+    from_: date = Field(alias="from")
+    shares: int = Field(default=0, ge=0)
+    pool: float = Field(default=0.0, ge=0)
 
 
 class VRAccount(BaseModel):
@@ -57,6 +77,7 @@ class VRAccount(BaseModel):
     sell_unit: int = Field(default=1, ge=1, le=1000)
     sell_cap_pct: float = Field(default=40, gt=0, le=1000)
     adjustments: list[Adjustment] = []
+    external: list[External] = []
 
     @model_validator(mode="before")
     @classmethod
@@ -67,13 +88,43 @@ class VRAccount(BaseModel):
             data["origin_date"] = date.fromisoformat(str(data["start_date"])) - timedelta(weeks=int(data["start_week"]))
         return data
 
-    def engine_config(self) -> VRConfig:
-        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "deposit_changes", "adjustments"})
+    def external_at(self, day: date) -> External | None:
+        """The ``external`` entry in force on ``day`` (the latest one from before it)."""
+        return next((item for item in sorted(self.external, key=lambda e: e.from_, reverse=True) if item.from_ <= day), None)
+
+    def actuals(self, balances: dict) -> dict:
+        """Engine ``actuals`` from the broker balances by cycle start: broker + external."""
+        out = {}
+        for start, balance in (balances or {}).items():
+            day = date.fromisoformat(start)
+            ext = self.external_at(day)
+            out[day] = {
+                "shares": int(balance["shares"]) + (ext.shares if ext else 0),
+                "pool": round(float(Decimal(str(balance["cash"]))) + (ext.pool if ext else 0.0), 2),
+            }
+        return out
+
+    def engine_config(self, balances: dict | None = None) -> VRConfig:
+        fields = self.model_dump(exclude={"id", "name", "order", "ticker", "deposit_changes", "adjustments", "external"})
         return VRConfig(
             **fields,
             deposit_changes=[{"from": item.from_, "deposit": item.deposit} for item in self.deposit_changes],
             adjustments=[item.model_dump() for item in self.adjustments],
+            actuals=self.actuals(balances or {}),
         )
+
+
+def load_balances(vr_id: str, store=None) -> dict:
+    """Broker balances saved at each cycle start: {cycle start: {shares, cash, …}}. Empty when unreachable."""
+    try:
+        if store is None:
+            from trader.runlog import run_store
+
+            store = run_store()
+        return store.read_state(record_id(vr_id), ACTUALS).get("cycles", {})
+    except Exception as exc:  # no bucket access (local dev): estimates only, never a broken page
+        log.warning("VR 실제 잔고를 못 읽음: %s", exc)
+        return {}
 
 
 def load_vr_account_models(vr_dir: Path = VR_DIR) -> list[VRAccount]:
@@ -120,6 +171,7 @@ def _cycle_row(cycle: Cycle) -> dict:
         "shares": cycle.shares,
         "close": cycle.close,
         "close_date": cycle.close_date,
+        "actual": cycle.actual,
         "stock_value": round(cycle.stock_value, 2) if cycle.stock_value is not None else None,
         "pool": cycle.pool,
         "total": round(total, 2) if total is not None else None,
@@ -179,13 +231,18 @@ def _outlook(account: VRAccount, config: VRConfig, cycle: Cycle, as_of: date) ->
     }
 
 
-def run_vr_view(account: VRAccount, provider: PriceProvider | None = None, today: date | None = None) -> dict:
+def run_vr_view(
+    account: VRAccount,
+    provider: PriceProvider | None = None,
+    today: date | None = None,
+    balances: dict | None = None,
+) -> dict:
     today = today or market_today()
     # An account starting later still shows its first cycle's orders.
     as_of = max(today, account.start_date)
     download = provider or market_data_client.download
     prices = download(account.ticker, account.start_date - timedelta(days=10), as_of + timedelta(days=1))
-    config = account.engine_config()
+    config = account.engine_config(load_balances(account.id) if balances is None else balances)
     cycles = run_vr(prices, config, as_of)
     current = cycles[-1]
     cost = _holding_cost(account, cycles)

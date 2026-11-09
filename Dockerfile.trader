@@ -22,6 +22,8 @@ COPY config/strategy.json ./config/
 COPY config/accounts ./config/accounts
 COPY config/presets ./config/presets
 COPY config/trader ./config/trader
+# VR accounts: `vr --auto` builds the same ladder as the web VR tab
+COPY config/vr ./config/vr
 COPY engines ./engines
 COPY trader ./trader
 # The engine ledger is built through the web's order-book service (trader/expected.py)

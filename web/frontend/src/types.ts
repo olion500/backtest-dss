@@ -231,6 +231,8 @@ export interface VRCycle {
   shares: number;
   close: number | null;
   close_date: string | null;
+  /** Started from the broker's balance (+ external holdings), saved by `trader vr --auto` */
+  actual: boolean;
   stock_value: number | null;
   pool: number;
   total: number | null;

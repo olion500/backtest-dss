@@ -64,14 +64,14 @@ def test_account_config_reads_cash_flows(tmp_path):
 
 def test_flow_after_the_last_close_goes_into_todays_order_sheet():
     from engines.order_book_engine import BacktestState
+    from web.api.app.schemas import CashFlow
     from web.api.app.services.backtest import _pending_cash_flows, default_request
 
     request = default_request().model_copy(update={
         "start_date": date(2026, 10, 14),
         "end_date": date(2026, 11, 9),
-        "cash_flows": [{"date": date(2026, 11, 2), "amount": -100.0}, {"date": date(2026, 11, 9), "amount": -734.19}],
+        "cash_flows": [CashFlow(date=date(2026, 11, 2), amount=-100.0), CashFlow(date=date(2026, 11, 9), amount=-734.19)],
     })
-    request = request.model_validate(request.model_dump())
     state = BacktestState(date(2026, 11, 6), "defense", 3385.22, 8, 45.97, 300.0, 50.0)
     after = _pending_cash_flows(request, state)
     assert after.current_cash == 2651.03  # the 11-02 flow is already in the ledger

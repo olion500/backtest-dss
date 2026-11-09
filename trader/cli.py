@@ -15,7 +15,7 @@ from trader.notify import build_embeds, crash_embed, order_text, send
 from trader.plan import describe
 from trader.runner import run_check, run_orders, run_report, run_stop
 from trader.stop import StopPlan
-from trader.vr import VRPlan, run_vr_reserve
+from trader.vr import VRPlan, load_vr_trader, run_vr_auto, run_vr_reserve, vr_trader_ids
 
 MARKS = {"ok": "✓", "halted": "✗", "closed": "·", "error": "!", "sent": "✓", "declined": "·", "partial": "!", "mismatch": "✗"}
 EXIT = {"ok": 0, "closed": 0, "sent": 0, "declined": 0, "halted": 2, "mismatch": 2, "partial": 3, "error": 3}
@@ -91,6 +91,20 @@ def _print_orders(record: dict) -> None:
         print(f"   ! 기록 저장소에 못 써서 로컬에 남김: {record['store_error']}")
 
 
+def _print_vr(record: dict) -> None:
+    print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
+    if record.get("balance"):
+        balance, external = record["balance"], record.get("external") or {}
+        print(f"   사이클 시작 잔고: 증권사 {balance['shares']}주 ${balance['cash']}"
+              f" + 외부 {external.get('shares', 0)}주 ${external.get('pool', 0)}")
+    if record.get("cash_short"):
+        print(f"   ! 매수 전부 체결 시 이 계좌 예수금이 ${record['cash_short']} 모자랍니다")
+    for item in record.get("sent", []):
+        mark = f"예약번호 {item['reservation_id']}" if "reservation_id" in item else f"✗ {item['error']}"
+        print(f"   {describe(OrderRequest(**item['request']))}  {mark}")
+    print(f"   기록: {record['path']}")
+
+
 def _print_report(record: dict) -> None:
     print(f"[{record['account']}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
     if "close" in record:
@@ -141,9 +155,13 @@ def main(argv: list[str] | None = None) -> int:
     data.add_argument("--push", action="store_true", help="GitHub의 data/를 받아 갱신하고 커밋 (DONGPA_DATA_REPO, GITHUB_DATA_TOKEN)")
     data.add_argument("--force", action="store_true", help="정규장 밖에서도 실행 (증권사 전일 종가가 하루 전일 수 있음)")
     vr = sub.add_parser("vr", help="VR 사이클 매수·매도 사다리를 증권사 기간잔량 예약으로 (y로 승인)")
-    vr.add_argument("--vr", default="main", help="config/vr/<id>.json 의 id")
-    vr.add_argument("--credentials", required=True, help="증권사 키 이름 앞부분 (MERITZ_VR → MERITZ_VR_APP_KEY)")
+    target = vr.add_mutually_exclusive_group()
+    target.add_argument("--vr", default="main", help="config/vr/<id>.json 의 id")
+    target.add_argument("--all", action="store_true", help="config/trader/vr 의 모든 VR 계좌 (--auto 와 함께)")
+    vr.add_argument("--credentials", help="증권사 키 이름 앞부분 (MERITZ_VR → MERITZ_VR_APP_KEY); 없으면 config/trader/vr/<id>.json")
     vr.add_argument("--limit", type=int, help="앞에서 N건만 보냄 (시험용)")
+    vr.add_argument("--auto", action="store_true",
+                    help="스케줄 실행: 새 사이클 첫 장 전에만 잔고 저장 + 예약 (auto_trade 켜진 계좌만, 묻지 않음)")
     sub.add_parser("brokers", help="지원하는 증권사")
     args = parser.parse_args(argv)
     load_repo_env()  # broker keys and DONGPA_TRADER_RUNS from .env
@@ -179,12 +197,17 @@ def _dispatch(args: argparse.Namespace, records: list[dict]) -> int:
         return EXIT.get(result["status"], 3)
 
     if args.command == "vr":
-        record = run_vr_reserve(args.vr, args.credentials, approve=_ask_vr, limit=args.limit)
-        print(f"[VR {args.vr}] {MARKS.get(record['status'], '?')} {record['status']} — {record['message']}")
-        for item in record.get("sent", []):
-            mark = f"예약번호 {item['reservation_id']}" if "reservation_id" in item else f"✗ {item['error']}"
-            print(f"   {describe(OrderRequest(**item['request']))}  {mark}")
-        print(f"   기록: {record['path']}")
+        if args.auto:
+            worst = 0
+            for vr_id in (vr_trader_ids() if args.all else [args.vr]):
+                record = run_vr_auto(vr_id)
+                _print_vr(record)
+                records.append(record)
+                worst = max(worst, EXIT.get(record["status"], 3))
+            return worst
+        credentials = args.credentials or load_vr_trader(args.vr).env_prefix
+        record = run_vr_reserve(args.vr, credentials, approve=_ask_vr, limit=args.limit)
+        _print_vr(record)
         return EXIT.get(record["status"], 3)
 
     ids = trader_account_ids() if args.all else [args.account]

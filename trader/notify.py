@@ -18,7 +18,7 @@ from decimal import Decimal
 import requests
 
 WEBHOOK_ENV = "DISCORD_WEBHOOK_URL"
-STEP_NAMES = {"orders": "주문", "stop": "손절", "data": "시세", "report": "마감"}
+STEP_NAMES = {"orders": "주문", "stop": "손절", "data": "시세", "report": "마감", "vr": "VR 예약"}
 STATUS_NAMES = {"error": "오류", "halted": "멈춤", "partial": "일부 실패", "mismatch": "예상과 다름"}
 COLORS = {"error": 0xE74C3C, "halted": 0xE74C3C, "partial": 0xE67E22, "mismatch": 0xE67E22, "ok": 0x2ECC71}
 MARKS = {"error": "🚨", "halted": "⛔", "partial": "⚠️", "mismatch": "⚠️"}
@@ -34,6 +34,8 @@ TIMEOUT = 10
 def build_embeds(step: str, records: list[dict]) -> list[dict]:
     """A step's alerts: one embed per run needing a person, then (report) the day's summary."""
     embeds = [_problem(step, record) for record in records if _needs_person(record)]
+    if step == "vr":
+        embeds += [_vr(record) for record in records if record.get("status") in ("sent", "declined") and record.get("cycle")]
     if step == "report":
         done = [record for record in records if record.get("status") in ("ok", "mismatch")]
         if done:
@@ -107,6 +109,25 @@ def _report(records: list[dict]) -> dict:
     note = "종가는 증권사 현재가 기준 (오늘 체결 없음, 시간외 가격일 수 있음)" if first.get("close_source") == "quote" else ""
     return _embed(f"📊 {_day(first.get('session'))} 마감 — {first.get('symbol', '')} ${close}{change}  {verdict}",
                   note, COLORS["mismatch" if off else "ok"], fields, first)
+
+
+def _vr(record: dict) -> dict:
+    """A new VR cycle: where it starts (broker + external) and what was reserved."""
+    cycle = record["cycle"]
+    balance, external = record.get("balance") or {}, record.get("external") or {}
+    lines = [f"**{record.get('message', '')}**",
+             f"V ${float(cycle['v']):,.2f} · Pool ${float(cycle['pool_start']):,.2f} · 보유 {cycle['shares_start']}주"]
+    if balance:
+        lines.append(f"시작 잔고: 증권사 {balance['shares']}주 ${Decimal(str(balance['cash'])):,.2f}"
+                     f" + 외부 {external.get('shares', 0)}주 ${float(external.get('pool', 0)):,.2f}")
+    fields = []
+    sent = [order_text(item["request"]) for item in record.get("sent", []) if "reservation_id" in item]
+    if sent:
+        fields.append(_field(f"예약 {len(sent)}건", "\n".join(sent), inline=False))
+    if record.get("cash_short"):
+        fields.append(_field("⚠️ 예수금 부족", f"매수가 전부 체결되면 이 계좌 예수금이 ${Decimal(record['cash_short']):,.2f} 모자랍니다. 체결 전에 채우세요.", inline=False))
+    color = COLORS["ok"] if record["status"] != "declined" else COLORS["partial"]
+    return _embed(f"🔁 {_who(record)} 사이클 {cycle['index']} ({cycle['start']} ~ {cycle['end']})", "\n".join(lines), color, fields, record)
 
 
 def _account_day(record: dict) -> str:

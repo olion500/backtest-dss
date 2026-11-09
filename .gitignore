@@ -19,6 +19,7 @@ config/accounts/*.json
 config/vr/*.json
 # 자동매매 계좌 설정 (자격증명 파일 경로). 자격증명 자체는 레포 밖에 둔다
 config/trader/*.json
+config/trader/vr/*.json
 # 자동매매 실행 기록
 /var/
 

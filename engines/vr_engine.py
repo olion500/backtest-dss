@@ -19,7 +19,11 @@ Sale proceeds go to the pool but are not spent by this cycle's buy orders.
 
 Everything is derived from the config and prices, so the state can be rebuilt any time.
 ``adjustments`` replace shares / pool / V at a cycle start when the real account drifted from
-the estimate.
+the estimate. ``actuals`` do the same from the broker: the real shares and pool read before the
+cycle's first session, so a cycle starts from the account, not from the estimated fills of the
+one before. They win over ``adjustments``. The real pool already holds whatever was paid in
+(the user pays in monthly, not per cycle), so the cycle's deposit is not added to it again;
+V still grows by the deposit, as the VR rule says.
 """
 
 from __future__ import annotations
@@ -56,6 +60,7 @@ class VRConfig:
     sell_unit: int = 1
     sell_cap_pct: float = 40.0
     adjustments: list[dict] = field(default_factory=list)  # [{"date": date, "shares"?, "pool"?, "v"?}]
+    actuals: dict = field(default_factory=dict)  # {cycle start: {"shares", "pool"}} from the broker
 
 
 @dataclass
@@ -86,6 +91,7 @@ class Cycle:
     pool: float = 0.0
     close: float | None = None
     close_date: date | None = None
+    actual: bool = False  # started from the broker's balance (``actuals``)
     days: list[dict] = field(default_factory=list)  # {date, close, shares, pool} after each session
 
     @property
@@ -226,20 +232,24 @@ def run_vr(prices: pd.DataFrame, config: VRConfig, today: date) -> list[Cycle]:
         deposit = 0.0
         g = _g(config, index)
         adjust = _adjustment(config, start, end)
+        actual = config.actuals.get(start)
+        if actual:
+            adjust = {**adjust, "shares": actual["shares"], "pool": actual["pool"]}
         shares = int(adjust.get("shares", shares))
         pool = float(adjust.get("pool", pool))
         if cycles:
             prev = cycles[-1]
             deposit = _deposit(config, start)
             v = next_v(prev.v, pool, shares * last_close, _g(config, index - 1), config.advanced, deposit)
-            pool += deposit
+            if not actual:
+                pool += deposit
             principal += deposit
         v = float(adjust.get("v", v))
         cycle = Cycle(
             index=index, week=week_of(config, start), start=start, end=end, g=g, v=round(v, 2),
             v_min=v * (1 - config.band_pct / 100), v_max=v * (1 + config.band_pct / 100),
             deposit=deposit, principal=principal, shares_start=shares, pool_start=pool,
-            orders=build_orders(shares, v, pool, last_close, config),
+            orders=build_orders(shares, v, pool, last_close, config), actual=bool(actual),
         )
         for day, bar in bars[(bars.index >= pd.Timestamp(start)) & (bars.index <= pd.Timestamp(end))].iterrows():
             for order in cycle.orders:

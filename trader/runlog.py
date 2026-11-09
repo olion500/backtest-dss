@@ -5,6 +5,9 @@ picks the root: ``gs://<bucket>/<prefix>`` for Cloud Storage (so the deployed we
 sees runs made anywhere) or a directory path. Unset, it follows the Makefile:
 ``gs://<TRADER_BUCKET or GCP_PROJECT-dongpa-trader>/runs`` when a GCP project is
 configured, else ``var/trader`` (gitignored).
+
+Besides the records, a store keeps small state documents that must outlive the records'
+90-day window: ``<root>/_state/<account>/<name>`` (VR: the broker balance at each cycle start).
 """
 
 from __future__ import annotations
@@ -26,6 +29,17 @@ class RunStore(Protocol):
     def save(self, account_id: str, record: dict) -> str: ...
 
     def recent(self, account_id: str, limit: int = 20) -> list[dict]: ...
+
+    def read_state(self, account_id: str, name: str) -> dict: ...
+
+    def write_state(self, account_id: str, name: str, data: dict) -> str: ...
+
+
+STATE_DIR = "_state"
+
+
+def state_name(account_id: str, name: str) -> str:
+    return f"{STATE_DIR}/{account_id}/{name}"
 
 
 def record_name(account_id: str, record: dict) -> str:
@@ -61,6 +75,21 @@ class LocalRunStore:
             except (OSError, json.JSONDecodeError):
                 continue
         return out
+
+    def read_state(self, account_id: str, name: str) -> dict:
+        try:
+            loaded = json.loads((self.root / state_name(account_id, name)).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def write_state(self, account_id: str, name: str, data: dict) -> str:
+        path = self.root / state_name(account_id, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(_dumps(data), encoding="utf-8")
+        tmp.replace(path)
+        return str(path)
 
 
 class GcsRunStore:
@@ -100,6 +129,20 @@ class GcsRunStore:
             except Exception:  # a broken or vanished record must not hide the rest
                 continue
         return out
+
+    def read_state(self, account_id: str, name: str) -> dict:
+        from google.api_core.exceptions import NotFound
+
+        try:
+            loaded = json.loads(self.bucket.blob(self._key(state_name(account_id, name))).download_as_text(encoding="utf-8"))
+        except NotFound:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def write_state(self, account_id: str, name: str, data: dict) -> str:
+        key = self._key(state_name(account_id, name))
+        self.bucket.blob(key).upload_from_string(_dumps(data), content_type="application/json; charset=utf-8")
+        return f"gs://{self.bucket.name}/{key}"
 
 
 def default_target() -> str:

@@ -49,7 +49,7 @@
 
 - `strategy.json`: 모든 계좌가 함께 쓰는 동파법 매매 숫자.
 - `accounts/<id>.json`: 계좌별 시작일·시작 금액·사다리·수수료·입출금(`cash_flows`). 엔진은 시작일부터 다시 계산해 지금 장부를 얻습니다.
-- `presets/`: 저장해 둔 전략 후보. `vr/`: VR 계좌.
+- `presets/`: 저장해 둔 전략 후보. `vr/`: VR 계좌(다른 계좌 보유·현금 `external` 포함). `trader/vr/`: VR 자동매매 설정.
 - `trader/<id>.json`: 자동매매 설정(증권사, `auto_trade`). 비밀값은 없습니다.
 
 개인 계좌 파일(`*.json`)은 gitignore이고 `*.sample`만 커밋됩니다.

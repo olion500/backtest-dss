@@ -121,7 +121,7 @@ trader-image-push: check-env
 	docker push $(TRADER_IMAGE)
 
 trader-deploy: trader-image-push
-	for step in orders stop report $(if $(DONGPA_DATA_REPO),data,); do \
+	for step in orders stop report vr $(if $(DONGPA_DATA_REPO),data,); do \
 		gcloud run jobs update dongpa-trader-$$step --project $(GCP_PROJECT) --region $(GCP_REGION) --image $(TRADER_IMAGE) || exit 1; \
 	done
 
