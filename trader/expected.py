@@ -62,6 +62,7 @@ def expected_state(account_id: str, today: date | None = None) -> Expected:
         "spread_floor_pct": account.spread_floor_pct,
         "fee_pct": account.fee_pct,
         "sec_fee_pct": account.sec_fee_pct,
+        "cash_flows": account.cash_flows,
     })
     view = run_order_book_view(request)
     book = view["order_book"]

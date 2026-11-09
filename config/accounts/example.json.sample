@@ -7,5 +7,6 @@
   "spread_buy_step": 1,
   "fee_pct": 0.0,
   "sec_fee_pct": 0.0,
-  "spread_floor_pct": 20.0
+  "spread_floor_pct": 20.0,
+  "cash_flows": []
 }

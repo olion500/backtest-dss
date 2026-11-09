@@ -7,6 +7,7 @@ Dongpa Backtest Engine (LOC-only, Daily N-Tranche Buy)
 """
 import math
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 import numpy as np
 import pandas as pd
@@ -188,6 +189,10 @@ class CapitalParams:
     # only fills the net shares, so a day's costs are charged on the net amounts.
     fee_pct: float = 0.0
     sec_fee_pct: float = 0.0
+    # Deposits (+) / withdrawals (−) as (date, amount): applied before that session's
+    # orders (a weekend date applies to the next session), and the tranche base resets
+    # to the new cash. Dates before the first session apply on it.
+    cash_flows: tuple[tuple[date, float], ...] = ()
 
 @dataclass(frozen=True)
 class StrategyParams:
@@ -705,7 +710,9 @@ def run_backtest(
 
     dates = df.index
     cash = money(cap.initial_cash)
-    initial_cash = cash
+    principal = cash  # initial cash + deposits − withdrawals so far
+    flows = sorted((pd.Timestamp(when), to_decimal(amount)) for when, amount in cap.cash_flows)
+    flow_idx = 0
 
     if len(dates) == 0:
         return BacktestResult(
@@ -745,6 +752,17 @@ def run_backtest(
 
     for i, d in enumerate(dates):
         close = money(df.loc[d, 'Close'])
+
+        flow_today = Decimal("0")
+        while flow_idx < len(flows) and flows[flow_idx][0] <= d:
+            flow_today += flows[flow_idx][1]
+            flow_idx += 1
+        if flow_today != Decimal("0"):
+            flow_today = money(flow_today)
+            cash = money(cash + flow_today)
+            principal = money(principal + flow_today)
+            tranche_base_cash = cash
+            peak_equity += float(flow_today)  # money moved, not a drawdown
 
         if same_day_signal:
             mode = decide_mode(d, mode, indicators, params)
@@ -965,8 +983,8 @@ def run_backtest(
             drawdown_pct = round(((float(equity) / peak_equity) - 1) * 100, 2)
 
         cumulative_return = 0.0
-        if initial_cash != Decimal("0"):
-            cumulative_return = round(float((realized_cumulative / initial_cash) * Decimal("100")), 2)
+        if principal != Decimal("0"):
+            cumulative_return = round(float((realized_cumulative / principal) * Decimal("100")), 2)
 
         raw_buy_qty = buy_qty_executed
         raw_buy_amt = buy_amt_value
@@ -1039,6 +1057,7 @@ def run_backtest(
             "매도거래ID목록": ",".join(str(tid) for tid in sell_trade_ids) if sell_trade_ids else None,
             "실현손익": money_to_float(realized_today),
             "수수료": money_to_float(fees_today),
+            "입출금": money_to_float(flow_today),
             "현금": money_to_float(cash),
             "보유수량": shares_to_float(position_qty, params.allow_fractional_shares),
             "평가금액": money_to_float(position_val),

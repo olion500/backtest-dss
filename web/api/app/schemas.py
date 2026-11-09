@@ -10,6 +10,20 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 TICKER_PATTERN = re.compile(r"^[A-Za-z0-9.^=-]{1,20}$")
 
 
+class CashFlow(BaseModel):
+    """A deposit (+) or withdrawal (−), applied before ``date``'s session (US date)."""
+
+    date: date
+    amount: float = Field(ge=-100_000_000, le=100_000_000)
+
+    @field_validator("amount")
+    @classmethod
+    def nonzero(cls, value: float) -> float:
+        if value == 0:
+            raise ValueError("입출금액은 0일 수 없습니다.")
+        return value
+
+
 class ModeSettings(BaseModel):
     slices: int = Field(ge=1, le=500)
     buy_cond_pct: float = Field(ge=-100, le=100)
@@ -99,6 +113,8 @@ class BacktestRequest(BaseModel):
     # Broker costs, % of the filled amount (commission both ways, SEC fee on sells)
     fee_pct: float = Field(default=0.0, ge=0, le=1)
     sec_fee_pct: float = Field(default=0.0, ge=0, le=1)
+    # Deposits / withdrawals after the start (accounts: config cash_flows)
+    cash_flows: list[CashFlow] = []
     strategy: StrategySettings
 
     @model_validator(mode="after")

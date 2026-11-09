@@ -12,6 +12,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from engines.config_store import ACCOUNTS_DIR, load_accounts as read_accounts
+from web.api.app.schemas import CashFlow
 
 
 class Account(BaseModel):
@@ -25,6 +26,7 @@ class Account(BaseModel):
     spread_floor_pct: float = Field(default=0.0, ge=0, le=90)
     fee_pct: float = Field(default=0.0, ge=0, le=1)
     sec_fee_pct: float = Field(default=0.0, ge=0, le=1)
+    cash_flows: list[CashFlow] = []
 
 
 def load_accounts(accounts_dir: Path = ACCOUNTS_DIR) -> list[Account]:
@@ -43,6 +45,7 @@ def load_accounts(accounts_dir: Path = ACCOUNTS_DIR) -> list[Account]:
                 spread_floor_pct=raw["spread_floor_pct"],
                 fee_pct=raw["fee_pct"],
                 sec_fee_pct=raw["sec_fee_pct"],
+                cash_flows=list(raw["cash_flows"] or []),
             ))
         except ValidationError:
             continue  # a broken file should not hide the other accounts

@@ -144,6 +144,12 @@ large tranches. Preset: `config/presets/trend_vix_2026-10-12.json`. Research and
 - Recalculated every day based on current tranche base and mode's N_slices
 - Tranche base resets to current cash after every sell (no ratchet behavior)
 
+**Deposits / withdrawals** (per account `cash_flows`: `[{"date": "YYYY-MM-DD", "amount": ±x}]`, US session date):
+- Applied before that session's orders (weekend → next session), then the tranche base resets to the new cash; the ledger before it replays unchanged
+- A flow dated after the last close through today goes straight into today's order sheet cash/budget (`_pending_cash_flows`)
+- Journal `입출금`; `누적수익률(%)` is over principal (initial + flows), the journal drawdown ignores flows (the equity curve does not)
+- Both images bake `config/accounts` in: after adding a flow, `make deploy` and `make trader-deploy`
+
 **Broker costs** (per account: `fee_pct`, `sec_fee_pct` in `config/accounts/<id>.json`, default 0):
 - Commission `fee_pct` % on buys and sells, SEC fee `sec_fee_pct` % on sells (at least $0.01), each rounded to the cent
 - With netting on, costs are charged on the day's **net** fill (the broker only fills the net shares); lots and cash still settle gross

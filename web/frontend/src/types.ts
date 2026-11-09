@@ -55,7 +55,14 @@ export interface BacktestRequest {
   /** Broker costs, % of the filled amount: commission both ways, SEC fee on sells. */
   fee_pct: number;
   sec_fee_pct: number;
+  /** Deposits (+) / withdrawals (−) after the start, applied before that session (US date). */
+  cash_flows?: CashFlow[];
   strategy: StrategySettings;
+}
+
+export interface CashFlow {
+  date: string;
+  amount: number;
 }
 
 /** config/strategy.json (live) or config/presets/<id>.json, from GET /api/v1/presets. */
@@ -79,6 +86,7 @@ export interface Account {
   spread_floor_pct: number;
   fee_pct: number;
   sec_fee_pct: number;
+  cash_flows: CashFlow[];
 }
 
 export type CellValue = string | number | boolean | null;

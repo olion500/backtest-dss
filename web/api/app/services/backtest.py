@@ -68,6 +68,7 @@ def build_engine_params(
     spread_buy_step: int | None = None,
     fee_pct: float = 0.0,
     sec_fee_pct: float = 0.0,
+    cash_flows: tuple[tuple[date, float], ...] = (),
 ) -> tuple[StrategyParams, CapitalParams]:
     params = StrategyParams(
         target_ticker=settings.target_ticker,
@@ -98,7 +99,7 @@ def build_engine_params(
         defense=_mode_params(settings.defense),
         offense=_mode_params(settings.offense),
     )
-    return params, CapitalParams(initial_cash=initial_cash, fee_pct=fee_pct, sec_fee_pct=sec_fee_pct)
+    return params, CapitalParams(initial_cash=initial_cash, fee_pct=fee_pct, sec_fee_pct=sec_fee_pct, cash_flows=cash_flows)
 
 
 def _execute(
@@ -134,6 +135,7 @@ def _execute(
         spread_buy_step=request.spread_buy_step,
         fee_pct=request.fee_pct,
         sec_fee_pct=request.sec_fee_pct,
+        cash_flows=tuple((flow.date, flow.amount) for flow in request.cash_flows),
     )
     result = run_backtest(target, momentum_raw, params, capital, btc_data=btc_raw, vix_data=vix_raw)
     indicators = None
@@ -260,6 +262,20 @@ def _fresh_account(request: BacktestRequest, execution: Execution, state: Backte
     return replace(execution, result=empty), state
 
 
+def _pending_cash_flows(request: BacktestRequest, state: BacktestState) -> BacktestState:
+    """Flows dated after the last close through the sheet's session: the engine has no
+    row for them yet, but the order sheet already trades with that cash (tranche base reset)."""
+    pending = sum(
+        flow.amount for flow in request.cash_flows
+        if state.last_date < flow.date <= request.end_date
+    )
+    if not pending:
+        return state
+    cash = round(state.current_cash + pending, 2)
+    mode = request.strategy.offense if state.current_mode == "offense" else request.strategy.defense
+    return replace(state, current_cash=cash, tranche_budget=cash / max(1, mode.slices))
+
+
 def run_order_book_view(
     request: BacktestRequest,
     provider: PriceProvider | None = None,
@@ -279,6 +295,7 @@ def run_order_book_view(
     if seed is not None:
         execution, state = _fresh_account(request, execution, state)
         result = execution.result
+    state = _pending_cash_flows(request, state)
     if result.trade_log.empty or "상태" not in result.trade_log:
         open_trades = pd.DataFrame()
     else:
@@ -418,5 +435,6 @@ def default_request() -> BacktestRequest:
         spread_floor_pct=account.spread_floor_pct if account else 0.0,
         fee_pct=account.fee_pct if account else 0.0,
         sec_fee_pct=account.sec_fee_pct if account else 0.0,
+        cash_flows=account.cash_flows if account else [],
         strategy=strategy,
     )
