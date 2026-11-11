@@ -234,8 +234,8 @@ TRADER_STEPS = {
     # 12:45 is the stop check on early-close days; on a regular day it records "closed".
     "stop": ("45 12,15 * * 1-5", ["stop", "--all", "--auto"], TRADER_ENVS, "240s"),
     # 08:00 KST Tue–Sat = after every Mon–Fri NY close (18:00/19:00 NY): fills vs the close, the day's
-    # Discord summary. Without --auto it only records (first runs, checked by hand before it posts).
-    "report": ("0 8 * * 2-6", ["report", "--all"], TRADER_ENVS, "240s", "Asia/Seoul"),
+    # Discord summary (--auto posts it; without it the run only records).
+    "report": ("0 8 * * 2-6", ["report", "--all", "--auto"], TRADER_ENVS, "240s", "Asia/Seoul"),
     # VR: daily, but it acts only between the last close before a new cycle and that cycle's first
     # open (saves the broker balance, places the cycle's reservations); other days record "closed".
     "vr": ("30 8 * * *", ["vr", "--all", "--auto"], TRADER_ENVS, "300s", "Asia/Seoul"),
