@@ -1,0 +1,24 @@
+# What `gcloud builds submit` uploads (make deploy / trader-deploy). Without this file gcloud
+# falls back to .gitignore and leaves out config/accounts, config/trader and config/vr,
+# which the images need. Keep it in step with .dockerignore.
+.git
+__pycache__
+*.py[cod]
+*.jsonl
+runs
+.env
+.DS_Store
+tests/
+docs/
+*.md
+.coverage
+.ruff_cache/
+.venv/
+outputs/
+web/frontend/node_modules/
+web/frontend/dist/
+.pytest_cache/
+.stitch/
+.claude/
+infra/
+var/

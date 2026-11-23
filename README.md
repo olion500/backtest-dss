@@ -31,7 +31,7 @@ make web        # 이미지를 만들고 실행합니다
 
 브라우저에서 http://localhost:8000 을 엽니다.
 
-코드를 고치면서 보려면 터미널 두 개에서 실행합니다.
+코드를 고치면서 보려면 터미널 두 개에서 실행합니다. [mise](https://mise.jdx.dev/)가 있으면 `make install`이 Python, uv, node를 맞춰 설치합니다.
 
 ```bash
 make install web-install   # 처음 한 번

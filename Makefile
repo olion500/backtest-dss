@@ -19,16 +19,20 @@ TRADER_IMAGE := $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/dongpa/$(APP_NAME)-t
 # Broker keys in .env (<BROKER>_<ACCOUNT>_APP_KEY / _APP_SECRET), the data job's GITHUB_DATA_TOKEN
 # and the alerts' DISCORD_WEBHOOK_URL: each becomes a Secret Manager secret.
 TRADER_SECRET_ENVS := $(shell test -f .env && grep -oE '^([A-Z][A-Z0-9_]*_APP_(KEY|SECRET)|GITHUB_DATA_TOKEN|DISCORD_WEBHOOK_URL)=.' .env | cut -d= -f1 | paste -sd, -)
-# Pulumi CLI (curl -fsSL https://get.pulumi.com | sh). The stack has no secrets, so the passphrase is empty.
+# Pulumi CLI (mise.toml). The stack has no secrets, so the passphrase is empty.
 # infra/__main__.py reads the .env values from the environment; GOOGLE_* configure the gcp provider.
-PULUMI ?= $(HOME)/.pulumi/bin/pulumi
-PULUMI_ENV := PULUMI_CONFIG_PASSPHRASE="" PULUMI_SKIP_UPDATE_CHECK=1 PATH="$(HOME)/.pulumi/bin:$$PATH" \
+PULUMI ?= mise exec -- pulumi
+PULUMI_ENV := PULUMI_CONFIG_PASSPHRASE="" PULUMI_SKIP_UPDATE_CHECK=1 \
 	PULUMI_BACKEND_URL="$(PULUMI_STATE)" GOOGLE_PROJECT="$(GCP_PROJECT)" GOOGLE_REGION="$(GCP_REGION)" \
 	GCP_PROJECT="$(GCP_PROJECT)" GCP_REGION="$(GCP_REGION)" CLOUD_RUN_SERVICE="$(CLOUD_RUN_SERVICE)" \
 	VIEWER_DOMAIN="$(VIEWER_DOMAIN)" IAP_MEMBERS="$(IAP_MEMBERS)" TRADER_BUCKET="$(TRADER_BUCKET)" \
 	VIEWER_IMAGE="$(DEPLOY_IMAGE)" DONGPA_RATE_LIMIT="$(DONGPA_RATE_LIMIT)" \
 	TRADER_IMAGE="$(TRADER_IMAGE)" TRADER_SECRET_ENVS="$(TRADER_SECRET_ENVS)" \
 	DONGPA_DATA_REPO="$(DONGPA_DATA_REPO)" DONGPA_DATA_ACCOUNT="$(DONGPA_DATA_ACCOUNT)"
+# Deploy images are built on Cloud Build (cloudbuild.yaml), so deploying needs no local Docker.
+# The upload follows .gcloudignore, not .gitignore: the gitignored account configs must go in.
+cloud-build = gcloud builds submit --project $(GCP_PROJECT) --config cloudbuild.yaml \
+	--substitutions _DOCKERFILE=$(1),_IMAGE=$(2) .
 
 .PHONY: help check-env install test web-install web-api web-frontend web-build web image-push deploy infra-init infra-preview infra-up trader-check trader-image-push trader-deploy trader-secrets clean
 
@@ -40,20 +44,21 @@ help:
 	@echo "make web-install   Install frontend dependencies"
 	@echo "make web-api       Run the FastAPI API on port 8000 (reload)"
 	@echo "make web-frontend  Run the Vite dev server on port 5173"
-	@echo "make web-build     Build the production image"
-	@echo "make web           Build and run the app on port 8000"
-	@echo "make image-push    Build and push the image to Artifact Registry"
-	@echo "make deploy        Build, push, and roll the new image on Cloud Run"
+	@echo "make web-build     Build the production image locally (needs Docker)"
+	@echo "make web           Build and run the app on port 8000 (needs Docker)"
+	@echo "make image-push    Build the image on Cloud Build into Artifact Registry"
+	@echo "make deploy        Build the image on Cloud Build and roll it on Cloud Run"
 	@echo "make infra-init    First time only: create the Pulumi state bucket and stack"
 	@echo "make infra-preview Show what Pulumi would change on GCP (infra/)"
 	@echo "make infra-up      Apply infra/ to GCP"
 	@echo "make trader-check  Reconcile every account in config/trader (read only)"
 	@echo "make trader-secrets Put the broker keys, GITHUB_DATA_TOKEN and DISCORD_WEBHOOK_URL from .env into Secret Manager"
-	@echo "make trader-deploy Build, push and roll the trader image on the Cloud Run jobs"
+	@echo "make trader-deploy Build the trader image on Cloud Build and roll it on the Cloud Run jobs"
 	@echo "make clean         Remove the built Docker image"
 
 install:
-	uv sync
+	mise install
+	mise exec -- uv sync
 
 test:
 	uv run --group dev python -m pytest tests/ -v
@@ -78,9 +83,8 @@ web: web-build
 check-env:
 	@test -n "$(GCP_PROJECT)" || { echo "GCP_PROJECT is not set — copy .env.example to .env first"; exit 1; }
 
-image-push: check-env web-build
-	docker tag $(APP_NAME)-viewer:latest $(DEPLOY_IMAGE)
-	docker push $(DEPLOY_IMAGE)
+image-push: check-env
+	$(call cloud-build,Dockerfile.web,$(DEPLOY_IMAGE))
 
 deploy: image-push
 	# Only the image: env, scaling, IAP and IAM belong to infra/ (Pulumi).
@@ -116,9 +120,7 @@ trader-secrets: check-env
 
 # config/trader (auto_trade) is baked into this image: change it, then make trader-deploy.
 trader-image-push: check-env
-	docker build --file Dockerfile.trader --tag $(APP_NAME)-trader:latest .
-	docker tag $(APP_NAME)-trader:latest $(TRADER_IMAGE)
-	docker push $(TRADER_IMAGE)
+	$(call cloud-build,Dockerfile.trader,$(TRADER_IMAGE))
 
 trader-deploy: trader-image-push
 	for step in orders stop report vr $(if $(DONGPA_DATA_REPO),data,); do \

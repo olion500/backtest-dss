@@ -9,7 +9,7 @@ make infra-preview   # what would change ("unchanged" when nobody edited the con
 make infra-up        # apply
 ```
 
-Needs the Pulumi CLI (`curl -fsSL https://get.pulumi.com | sh`), gcloud and
+Needs the Pulumi CLI (`make install`, from `mise.toml`), gcloud (`brew install --cask gcloud-cli`) and
 application-default credentials (`gcloud auth application-default login`).
 The stack holds no secrets, so its passphrase is empty. Stack files (`Pulumi.<stack>.yaml`)
 are per person and gitignored.
@@ -26,6 +26,7 @@ are per person and gitignored.
 | Domain mapping `$VIEWER_DOMAIN` | only when set |
 | Bucket `$TRADER_BUCKET` | trader run records (`runs/`); the viewer's service account reads |
 | APIs secretmanager / cloudscheduler | for the trader jobs |
+| API cloudbuild | `make deploy` / `make trader-deploy` build the images there |
 | Service account `dongpa-trader` | writes run records, reads the broker key secrets, runs the jobs |
 | Cloud Run Jobs `dongpa-trader-orders` / `-stop` | `python -m trader <step> --all --auto`. The image is ignored: `make trader-deploy` rolls it |
 | Cloud Scheduler `dongpa-trader-orders` / `-stop` | NY time, weekdays: orders 09:45, stop 12:45 and 15:45 (each step skips what is not its time) |

@@ -1,0 +1,6 @@
+# One image per run: make image-push / trader-image-push pass the Dockerfile and the tag.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env: [DOCKER_BUILDKIT=1]  # the Dockerfiles use RUN --mount=type=cache
+    args: [build, --file, $_DOCKERFILE, --tag, $_IMAGE, .]
+images: [$_IMAGE]

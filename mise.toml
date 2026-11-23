@@ -1,0 +1,12 @@
+# Local dev tools (https://mise.jdx.dev): `make install` (runs `mise install`), `make web-install`.
+[tools]
+python = "3.13"  # same as the images (python:3.13-slim)
+uv = "latest"
+node = "22"      # same as Dockerfile.web
+pulumi = "latest"  # make infra-*; gcloud (brew install --cask gcloud-cli) is not managed here
+
+[env]
+# uv does not read this file: left alone it builds .venv on the newest Python of its
+# own (3.15, where exchange_calendars segfaults on import). Use the one above.
+UV_PYTHON = "3.13"
+UV_PYTHON_PREFERENCE = "only-system"

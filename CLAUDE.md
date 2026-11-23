@@ -47,7 +47,7 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 - `expected.py` builds the engine ledger through the web order-book service; `reconcile.py` (pure) compares it with the broker (engine prev close vs the broker's `prdy_clpr` first, then qty/cash/open orders); any failed check halts the run. Cash halts only on a shortfall (−$5): Meritz's USD RP interest lands in the broker balance nightly, so a surplus passes and is shown
 - `data --account main [--push]` (`datasync.py`, in session only): the broker's previous closes → `data/broker_closes.csv`, then `scripts/update_market_data.py` (Yahoo, broker closes override). `--push` reads data/ from GitHub and commits the change (`github.py`, REST, `DONGPA_DATA_REPO` + `GITHUB_DATA_TOKEN` PAT)
 - `calendar.py`: NYSE holidays/early closes (`exchange_calendars`); a run needs both it and the broker to call today a session. Stop-loss check = close − 15 min
-- Settings `config/trader/<id>.json` (broker, `auto_trade`; gitignored, not in the web image). Broker keys live in `.env` as `<BROKER>_<ID>_APP_KEY` / `_APP_SECRET` (`MERITZ_MAIN_APP_KEY`; `credentials_env` overrides the prefix for ids like Korean names); `python -m trader` loads `.env`, `.dockerignore` keeps it out of images
+- Settings `config/trader/<id>.json` (broker, `auto_trade`; gitignored, not in the web image). Broker keys live in `.env` as `<BROKER>_<ID>_APP_KEY` / `_APP_SECRET` (`MERITZ_MAIN_APP_KEY`; `credentials_env` overrides the prefix for ids like Korean names); `python -m trader` loads `.env`, `.dockerignore` / `.gcloudignore` keep it out of images and the Cloud Build upload
 - Cloud: `Dockerfile.trader` (config/trader baked in, no keys, no data/) on Cloud Run Jobs `dongpa-trader-data` (09:35 NY, commits data/) / `-orders` (09:45) / `-stop` (12:45, 15:45) / `-report` (08:00 KST, scheduled in Asia/Seoul), Cloud Scheduler on NY time. orders/stop read data/ from GitHub raw (`DONGPA_DATA_URL`). Keys: `make trader-secrets` → Secret Manager → env; `make trader-deploy` after changing config/trader or code
 - Run records: `<root>/<account>/<date>/<HHMMSS>-<step>.json`; root from `DONGPA_TRADER_RUNS` (`gs://<TRADER_BUCKET>/runs` from `.env` and on Cloud Run, default `var/trader`, gitignored). The web reads them (`GET /api/v1/trader/status?account=`, `web/api/app/services/trader.py`) for the order book's auto-trade panel (`AutoTradePanel.tsx`: price map + day timeline); it never sees broker settings
 
@@ -79,12 +79,12 @@ Dongpa is a backtester and daily LOC order-book tool (React + FastAPI web app, `
 
 ### Local Development
 ```bash
-make install          # Python dependencies (uv sync)
+make install          # Tools (mise.toml: Python 3.13, uv, node 22; points uv at that Python) + Python dependencies (uv sync)
 make web-install      # Frontend dependencies
 make web-api          # FastAPI on :8000 (reload)
 make web-frontend     # Vite dev server on :5173
 make web              # Build the image and run the app on :8000
-make deploy           # Push the image and roll it on Cloud Run (needs .env, see .env.example)
+make deploy           # Build the image on Cloud Build and roll it on Cloud Run (needs .env, gcloud; no local Docker)
 make infra-preview    # Pulumi diff for GCP (infra/), make infra-up to apply
 make trader-check     # Read-only reconcile of every config/trader account, records to DONGPA_TRADER_RUNS
 ```

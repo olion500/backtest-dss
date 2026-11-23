@@ -92,7 +92,7 @@ apis = {
     name: gcp.projects.Service(
         f"api-{name}", project=PROJECT, service=f"{name}.googleapis.com", deletion_policy="ABANDON", opts=keep,
     )
-    for name in ("run", "artifactregistry", "iap", "storage", "secretmanager", "cloudscheduler")
+    for name in ("run", "artifactregistry", "iap", "storage", "secretmanager", "cloudscheduler", "cloudbuild")
 }
 
 # --- container images ---
