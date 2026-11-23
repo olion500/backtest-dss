@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
+from trader.broker.base import usd
+
 CENT = Decimal("0.01")
 HUNDRED = Decimal(100)
 EXPIRY_KINDS = ("매도 (MOC)", "매도 (만료)")
@@ -139,9 +141,9 @@ def stop_warnings(lots: list[dict], stopped: list[dict], close: Decimal) -> list
         if sl is None and not sold:
             continue
         if sl is not None and close <= sl and not sold:
-            out.append(f"{lot['buy_date']} 매수분 {lot['qty']}주: 종가 ${close} ≤ 손절가 ${sl}인데 손절 안 함")
+            out.append(f"{lot['buy_date']} 매수분 {lot['qty']}주: 종가 {usd(close)} ≤ 손절가 {usd(sl)}인데 손절 안 함")
         elif sold and sl is not None and close > sl:
-            out.append(f"{lot['buy_date']} 매수분 {lot['qty']}주: 손절했지만 종가 ${close} > 손절가 ${sl} (엔진은 보유)")
+            out.append(f"{lot['buy_date']} 매수분 {lot['qty']}주: 손절했지만 종가 {usd(close)} > 손절가 {usd(sl)} (엔진은 보유)")
     return out
 
 

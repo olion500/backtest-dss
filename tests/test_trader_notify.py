@@ -3,7 +3,7 @@ import pytest
 import requests
 
 from trader import cli
-from trader.notify import COLORS, build_embeds, send
+from trader.notify import COLORS, build_embeds, order_text, send
 
 
 def _record(status, account="main", step="orders", **extra):
@@ -128,3 +128,9 @@ def test_a_crash_alerts_and_still_raises(monkeypatch):
     with pytest.raises(RuntimeError):
         cli.main(["orders", "--all", "--auto"])
     assert "RuntimeError: expected ledger unavailable" in sent[0][-1]["description"]
+
+
+def test_prices_show_two_decimals():
+    assert order_text({"side": "buy", "type": "loc", "qty": 3, "price": "45.9700"}) == "매수 LOC 3주 $45.97"
+    assert order_text({"side": "sell", "type": "loc", "qty": 3, "price": "44.1"}) == "매도 LOC 3주 $44.10"
+    assert order_text({"side": "sell", "type": "moc", "qty": 3, "price": None}) == "매도 MOC 3주 시장가"

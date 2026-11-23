@@ -25,7 +25,7 @@ from enum import Enum
 from typing import Callable
 
 from trader.broker import make_broker
-from trader.broker.base import Broker, BrokerError, OrderRequest, OrderState
+from trader.broker.base import Broker, BrokerError, OrderRequest, OrderState, usd
 from trader.calendar import Session, last_closed_session, ny_now, us_session
 from trader.config import TraderAccount, TraderConfigError, load_trader_account
 from trader.expected import Expected, UnknownAccount, expected_state
@@ -278,7 +278,7 @@ def run_stop(
         if plan.sell is None and not plan.buys:
             if plan.lots:
                 return _finish(record, store, "ok", "손절 lot은 이미 MOC 매도가 걸려 있습니다")
-            return _finish(record, store, "ok", f"손절 없음 (현재가 ${quote.last})")
+            return _finish(record, store, "ok", f"손절 없음 (현재가 {usd(quote.last)})")
 
         if approve is None:
             if not account.auto_trade:
@@ -333,7 +333,7 @@ def run_stop(
                     record["error_code"] = exc.code
                     return _finish(record, store, "partial", f"{', '.join(done)} 접수, 퉁치기 매도 재접수 실패: {exc}")
                 sent.append({"request": asdict(request), "order_id": order.order_id})
-                done.append(f"퉁치기 매도 {request.qty}주 ${request.price} 재접수")
+                done.append(f"퉁치기 매도 {request.qty}주 {usd(request.price)} 재접수")
 
         for number, request in enumerate(plan.buys):
             try:
@@ -346,7 +346,7 @@ def run_stop(
             sent.append({"request": asdict(request), "order_id": order.order_id})
         if plan.buys:
             done.append(f"하한 밑 매수 LOC {len(plan.buys)}건")
-        return _finish(record, store, "sent", f"{', '.join(done)} 접수 (현재가 ${quote.last})")
+        return _finish(record, store, "sent", f"{', '.join(done)} 접수 (현재가 {usd(quote.last)})")
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
         record["error_code"] = getattr(exc, "code", None)
         return _finish(record, store, "error", str(exc))

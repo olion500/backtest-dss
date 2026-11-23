@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from engines.order_book_engine import MOC_SELL
-from trader.broker.base import Order, OrderState, OrderType, OrderRequest, Side
+from trader.broker.base import Order, OrderState, OrderType, OrderRequest, Side, usd
 from trader.expected import Expected, Lot
 from trader.plan import fit_collar
 
@@ -88,7 +88,7 @@ def moved_sells(expected: Expected) -> tuple[Decimal | None, int]:
     moved = [(price, qty) for price, qty in rows if price not in tps]
     prices = {price for price, _ in moved}
     if len(prices) > 1:
-        raise StopError(f"익절가가 아닌 매도가가 여러 개입니다: {', '.join(f'${p}' for p in sorted(prices))}")
+        raise StopError(f"익절가가 아닌 매도가가 여러 개입니다: {', '.join(usd(p) for p in sorted(prices))}")
     return (prices.pop() if prices else None), sum(qty for _, qty in moved)
 
 
@@ -133,8 +133,8 @@ def plan_stop(expected: Expected, last: Decimal, orders_today: list[Order]) -> S
         open_qty = sum(int(o.qty) for o in moved)
         if price is None or sheet_qty < moved_qty or open_qty != sheet_qty:
             lot, tp, qty = taken[0]
-            where = f"퉁치기로 옮긴 매도 ${price} {sheet_qty}주 중 미체결 {open_qty}주" if price else "퉁치기로 옮긴 매도 없음"
-            raise StopError(f"{lot.buy_date} {lot.qty}주: 익절 LOC ${tp} {qty}주가 미체결 목록에 없습니다 ({where})")
+            where = f"퉁치기로 옮긴 매도 {usd(price)} {sheet_qty}주 중 미체결 {open_qty}주" if price else "퉁치기로 옮긴 매도 없음"
+            raise StopError(f"{lot.buy_date} {lot.qty}주: 익절 LOC {usd(tp)} {qty}주가 미체결 목록에 없습니다 ({where})")
         cancel.extend(moved)
         if sheet_qty > moved_qty:
             resend = (OrderRequest(expected.symbol, Side.SELL, OrderType.LOC, sheet_qty - moved_qty, price),)

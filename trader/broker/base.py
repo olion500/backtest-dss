@@ -14,6 +14,11 @@ from enum import Enum
 from typing import Mapping, Protocol, runtime_checkable
 
 
+def usd(value) -> str:
+    """A price as people read it: two decimals, whatever precision the broker or engine carried."""
+    return f"${Decimal(str(value)):,.2f}"
+
+
 class BrokerError(RuntimeError):
     """A broker call failed. ``code`` is the broker's own code when it sent one."""
 

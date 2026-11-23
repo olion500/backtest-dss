@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Callable
 
-from trader.broker.base import BrokerError, OrderRequest, OrderType, Reservation, Side
+from trader.broker.base import BrokerError, OrderRequest, OrderType, Reservation, Side, usd
 from trader.broker.meritz import MeritzBroker
 from trader.calendar import _nyse, last_closed_session, ny_now, us_session
 from trader.config import DEFAULT_LISTINGS, TRADER_DIR, TraderAccount, TraderConfigError, load_trader_account
@@ -289,7 +289,7 @@ def _place(record: dict, store, broker, view: dict, vr_id: str, now: datetime, a
     record["existing"] = [asdict(r) for r in existing]
     todo, strangers = split_existing(plan, existing)
     if strangers:
-        listed = ", ".join(f"{r.reservation_id} {r.side.value} {r.qty.normalize():f}주 ${r.price}" for r in strangers)
+        listed = ", ".join(f"{r.reservation_id} {r.side.value} {r.qty.normalize():f}주 {usd(r.price)}" for r in strangers)
         return _finish(record, store, "halted", f"주문표에 없는 예약이 {len(strangers)}건 있어 보내지 않았습니다: {listed}")
     if limit is not None:
         todo = todo[:limit]

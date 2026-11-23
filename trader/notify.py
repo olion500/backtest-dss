@@ -17,6 +17,8 @@ from decimal import Decimal
 
 import requests
 
+from trader.broker.base import usd
+
 WEBHOOK_ENV = "DISCORD_WEBHOOK_URL"
 STEP_NAMES = {"orders": "주문", "stop": "손절", "data": "시세", "report": "마감", "vr": "VR 예약"}
 STATUS_NAMES = {"error": "오류", "halted": "멈춤", "partial": "일부 실패", "mismatch": "예상과 다름"}
@@ -86,15 +88,15 @@ def _fill_gap(fill: dict, close) -> str:
     if request.get("type") == "moc" or request.get("price") is None:
         why = "시장가는 항상 체결"
     elif request.get("side") == "buy":
-        why = f"종가 ${close} {'≤' if want else '>'} 지정가"
+        why = f"종가 {usd(close)} {'≤' if want else '>'} 지정가"
     else:
-        why = f"종가 ${close} {'≥' if want else '<'} 지정가"
+        why = f"종가 {usd(close)} {'≥' if want else '<'} 지정가"
     expected = f"{want}주 체결" if want else "미체결"
     if fill.get("actual_qty") is None:
         actual = "증권사 목록에 없음"
     else:
         got = Decimal(str(fill["actual_qty"]))
-        actual = (f"{_qty(got)}주 체결" + (f" @ ${fill['fill_price']}" if fill.get("fill_price") else "")) if got else "미체결"
+        actual = (f"{_qty(got)}주 체결" + (f" @ {usd(fill['fill_price'])}" if fill.get("fill_price") else "")) if got else "미체결"
     return f"예상: {expected} ({why})\n실제: {actual}"
 
 
@@ -107,7 +109,7 @@ def _report(records: list[dict]) -> dict:
     verdict = f"⚠️ {', '.join(off)} 예상과 다름" if off else "✅ 예상대로"
     fields = [_field(f"{'⚠️ ' if record['status'] == 'mismatch' else ''}{_who(record)}", _account_day(record)) for record in records]
     note = "종가는 증권사 현재가 기준 (오늘 체결 없음, 시간외 가격일 수 있음)" if first.get("close_source") == "quote" else ""
-    return _embed(f"📊 {_day(first.get('session'))} 마감 — {first.get('symbol', '')} ${close}{change}  {verdict}",
+    return _embed(f"📊 {_day(first.get('session'))} 마감 — {first.get('symbol', '')} {usd(close)}{change}  {verdict}",
                   note, COLORS["mismatch" if off else "ok"], fields, first)
 
 
@@ -155,7 +157,7 @@ def crash_embed(step: str, exc: BaseException) -> dict:
 
 def order_text(order: dict) -> str:
     """A sent order as a record stores it (plain strings)."""
-    price = f"${order['price']}" if order.get("price") is not None else "시장가"
+    price = usd(order['price']) if order.get("price") is not None else "시장가"
     return f"{_side(order)} {str(order.get('type', '')).upper()} {order.get('qty')}주 {price}"
 
 
