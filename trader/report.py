@@ -2,7 +2,9 @@
 
 Each order the trader sent today (orders + stop steps, minus the ones stop cancelled)
 should have filled by a simple rule: a buy LOC when ``close <= limit``, a sell LOC when
-``close >= limit``, an MOC always. That is compared with the broker's fills. The day's
+``close >= limit``, an MOC always. The limit is the sheet's: an order the price collar
+sent at another price (``sheet_price``) is still expected to fill as the engine fills it,
+so a miss between the two prices is a mismatch. That is compared with the broker's fills. The day's
 outcome per lot comes from the morning ledger (the engine's view, before netting):
 TP lots at or under the close, the lots the stop step sold, expiring lots; bought shares
 follow from the net fills (netting keeps the net the same).
@@ -27,6 +29,7 @@ class FillCheck:
     expected_qty: int
     actual_qty: Decimal | None  # None: not on the broker's list
     fill_price: Decimal | None
+    sheet_price: Decimal | None = None  # the sheet's limit when the collar sent another price
 
     @property
     def ok(self) -> bool:
@@ -65,7 +68,8 @@ def sent_today(records: list[dict]) -> list[dict]:
             continue
         for item in record.get("sent", []):
             if "order_id" in item and str(item["order_id"]) not in cancelled:
-                out.append({"order_id": str(item["order_id"]), "request": item["request"]})
+                out.append({"order_id": str(item["order_id"]), "request": item["request"],
+                            **({"sheet_price": item["sheet_price"]} if item.get("sheet_price") is not None else {})})
     return out
 
 
@@ -75,10 +79,12 @@ def check_fills(sent: list[dict], broker_orders: list[dict], close: Decimal) -> 
     checks = []
     for item in sent:
         order = by_id.get(item["order_id"])
+        sheet_price = _dec(item.get("sheet_price"))
         checks.append(FillCheck(
             order_id=item["order_id"],
             request=item["request"],
-            expected_qty=expected_fill(item["request"], close),
+            sheet_price=sheet_price,
+            expected_qty=expected_fill({**item["request"], "price": sheet_price} if sheet_price is not None else item["request"], close),
             actual_qty=None if order is None else Decimal(str(order.get("filled_qty") or 0)),
             fill_price=None if order is None or order.get("fill_price") is None else Decimal(str(order["fill_price"])),
         ))

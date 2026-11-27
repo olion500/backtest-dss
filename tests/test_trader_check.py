@@ -653,3 +653,71 @@ def test_stop_step_records_a_failed_extension_buy_as_partial(tmp_path):
     ledger = expected(extension=({"구분": "매수 (+21주)", "주문가": 88.5, "수량": 1},))
     record, _ = stop_run(tmp_path, broker, ledger=ledger)
     assert record["status"] == "partial" and record["sent"][1]["error_code"] == "IGW50002"
+
+
+# --- stop step: orders the morning's collar moved ---
+# 2026-11-25: prev close $32.60, buys at $33.00 sent at $29.92 (last $25.15 × 1.19), close $32.02.
+
+COLLARED_SHEET = (
+    {"구분": "매도 (익절)", "주문가": 114.31, "수량": 40},
+    {"구분": "매수", "주문가": 33.0, "수량": 55},
+    {"구분": "매수 (+1주)", "주문가": 32.76, "수량": 1},
+    {"구분": "매수 (+2주)", "주문가": 29.78, "수량": 1},
+)
+COLLARED_OPEN = [sell("21", 40, "114.31"), buy("22", "29.92", qty=55), buy("23", "29.92"), buy("24", "29.78")]
+NO_STOPS = tuple(replace(lot, sl=None) for lot in LOTS)
+
+
+def collared(**overrides):
+    return expected(orders=COLLARED_SHEET, lots=NO_STOPS, **overrides)
+
+
+def test_collared_buys_go_back_to_the_sheets_limit_once_the_price_allows():
+    plan = plan_stop(collared(), Decimal("30.56"), COLLARED_OPEN)
+    assert plan.sell is None and plan.buys == ()
+    assert [(l.order.order_id, l.request.qty, l.request.price, l.sheet_price) for l in plan.lifts] == [
+        ("22", 55, Decimal("33.00"), Decimal("33.00")), ("23", 1, Decimal("32.76"), Decimal("32.76")),
+    ]
+
+
+def test_collared_orders_move_only_as_far_as_the_collar_allows_now():
+    plan = plan_stop(collared(), Decimal("27.00"), COLLARED_OPEN)  # 27 × 1.19 = 32.13
+    assert [l.request.price for l in plan.lifts] == [Decimal("32.13"), Decimal("32.13")]
+    assert plan_stop(collared(), Decimal("25.00"), COLLARED_OPEN).lifts == ()  # 29.75: no nearer than 29.92
+
+
+def test_orders_at_the_sheets_price_and_below_floor_steps_are_left_alone():
+    in_place = [sell("21", 40, "114.31"), buy("22", "33.00", qty=55), buy("23", "32.76"), buy("24", "29.78")]
+    assert plan_stop(collared(), Decimal("30.56"), in_place).lifts == ()
+    # A below-floor step already out is not taken for the collared 1-share buy.
+    ledger = collared(extension=({"구분": "매수 (+17주)", "주문가": 25.53, "수량": 1},))
+    plan = plan_stop(ledger, Decimal("27.50"), [buy("30", "25.53"), *COLLARED_OPEN])
+    assert [l.order.order_id for l in plan.lifts] == ["22", "23"] and plan.buys == ()
+
+
+def test_a_collared_sell_comes_back_down():
+    sheet = ({"구분": "매도 (익절)", "주문가": 60.0, "수량": 10},)
+    plan = plan_stop(expected(orders=sheet, lots=NO_STOPS), Decimal("70"), [sell("41", 10, "70.01")])
+    assert [(l.request.side, l.request.price) for l in plan.lifts] == [(Side.SELL, Decimal("60.00"))]
+
+
+def test_stop_step_cancels_then_resends_collared_orders(tmp_path):
+    broker = FakeBroker(True, orders=list(COLLARED_OPEN), last=Decimal("27.00"), held=[soxl()])
+    record, asked = stop_run(tmp_path, broker, ledger=collared())
+    assert record["status"] == "sent" and len(asked) == 1 and "지정가 복구 2건" in record["message"]
+    assert broker.cancelled == ["22", "23"] and record["cancelled"] == ["22", "23"]
+    assert [(o.side, o.qty, o.price) for o in broker.submitted] == [(Side.BUY, 55, Decimal("32.13")), (Side.BUY, 1, Decimal("32.13"))]
+    assert [item["sheet_price"] for item in record["sent"]] == [Decimal("33.00"), Decimal("32.76")]
+
+
+def test_stop_step_resends_nothing_whose_cancel_does_not_show(tmp_path):
+    broker = FakeBroker(True, orders=list(COLLARED_OPEN), last=Decimal("30.56"), cancel_shows=False)
+    record, _ = stop_run(tmp_path, broker, ledger=collared())
+    assert record["status"] == "partial" and broker.submitted == [] and "취소가 확인되지" in record["message"]
+
+
+def test_orders_record_the_sheets_price_of_a_collared_order(tmp_path):
+    broker = FakeBroker(True, last=Decimal("80"))
+    record, _ = send(tmp_path, broker)
+    moved = [item for item in record["sent"] if "sheet_price" in item]
+    assert [(item["request"]["price"], item["sheet_price"]) for item in moved] == [(Decimal("95.20"), Decimal("96.85"))]

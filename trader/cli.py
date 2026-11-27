@@ -52,9 +52,12 @@ def _ask_stop(plan: StopPlan, expected: Expected, last) -> bool:
         print(f"   전송: {describe(plan.sell)}")
     for order in plan.resend:
         print(f"   재접수 (퉁치기 매도 중 손절 아닌 몸): {describe(order)}")
+    for lift in plan.lifts:
+        print(f"   지정가 복구 (주문번호 {lift.order.order_id} ${lift.order.price} 취소 후): {describe(lift.request)}")
     for order in plan.buys:
         print(f"   전송 (하한 밑 매수): {describe(order)}")
-    question = "익절 주문을 취소하고 MOC로 손절할까요?" if plan.sell else f"하한 밑 매수 {len(plan.buys)}건을 보낼까요?"
+    question = ("익절 주문을 취소하고 MOC로 손절할까요?" if plan.sell
+                else f"지정가 복구 {len(plan.lifts)}건, 하한 밑 매수 {len(plan.buys)}건을 보낼까요?")
     try:
         answer = input(f"{question} 보내려면 y: ")
     except EOFError:
@@ -113,7 +116,8 @@ def _print_report(record: dict) -> None:
     for fill in record.get("fills", []):
         mark = "✓" if fill["ok"] else "✗"
         actual = "목록에 없음" if fill["actual_qty"] is None else f"{Decimal(str(fill['actual_qty'])).normalize():f}주"
-        print(f"   {mark} {order_text(fill['request'])}  예상 {fill['expected_qty']}주 / 체결 {actual}")
+        sheet = f" (주문서 ${fill['sheet_price']})" if fill.get("sheet_price") else ""
+        print(f"   {mark} {order_text(fill['request'])}{sheet}  예상 {fill['expected_qty']}주 / 체결 {actual}")
     for order in record.get("stray", []):
         print(f"   ✗ 기록에 없는 체결: 주문번호 {order['order_id']} {order['side']} {order['filled_qty']}주")
     for lot in record.get("lots_closed", []):

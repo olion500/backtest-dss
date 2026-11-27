@@ -18,6 +18,13 @@ The same step sends the spread buys below the sheet's floor (``Expected.extensio
 the backtest fills every step the close reaches, the sheet only lays them down to the
 floor. Only steps within ``EXTENSION_REACH`` under the last price go out; a step
 already open (same price and quantity) is not sent again.
+
+It also undoes the morning's collar (``fit_collar``): a LOC the orders step had to send
+away from the sheet's limit, because the price then was more than 19% from it, fills
+by the wrong rule if the close comes back between the two (2026-11-25: buys at $33.00
+went out at $29.92, the close was $32.02, the engine bought and the account did not).
+Such an order is cancelled and sent again at the sheet's limit, or as near as the
+price now allows.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from engines.order_book_engine import MOC_SELL
 from trader.broker.base import Order, OrderState, OrderType, OrderRequest, Side, usd
 from trader.expected import Expected, Lot
-from trader.plan import fit_collar
+from trader.plan import PlanError, fit_collar, plan_orders
 
 CENT = Decimal("0.01")
 # How far below the last price a below-floor step is still worth sending: the close
@@ -48,6 +55,14 @@ class StopPlan:
     sell: OrderRequest | None   # one MOC for all their shares (None: nothing to do)
     buys: tuple[OrderRequest, ...] = ()  # spread steps below the sheet's floor, LOC
     resend: tuple[OrderRequest, ...] = ()  # netting's moved sell, back for the lots not stopping
+    lifts: tuple["Lift", ...] = ()  # LOCs the morning's collar held away from the sheet's limit
+
+
+@dataclass(frozen=True)
+class Lift:
+    order: Order           # open, at the collared price
+    request: OrderRequest  # the same order at the sheet's limit, or as near as the collar allows now
+    sheet_price: Decimal
 
 
 def _cents(value: Decimal) -> Decimal:
@@ -78,6 +93,51 @@ def extension_buys(expected: Expected, last: Decimal, orders_today: list[Order])
     return tuple(fit_collar(buys, last))
 
 
+def collar_lifts(expected: Expected, last: Decimal, orders_today: list[Order], skip: frozenset[str] = frozenset(),
+                 sides: tuple[Side, ...] = (Side.BUY, Side.SELL)) -> tuple[Lift, ...]:
+    """Open LOCs that sit past the sheet's limit (a buy below it, a sell above it) and can move nearer now.
+
+    The sheet is rebuilt from the same ledger the morning used. A sheet order with an open
+    order at its exact price is in place; what is left pairs up by side and quantity.
+    """
+    try:
+        sheet = [o for o in plan_orders(expected) if o.type is OrderType.LOC and o.price is not None and o.side in sides]
+    except PlanError:
+        return ()  # the morning could not send this sheet either
+    open_locs = [
+        o for o in orders_today
+        if o.symbol == expected.symbol and o.type is OrderType.LOC and o.state is OrderState.OPEN
+        and o.price is not None and o.order_id not in skip
+    ]
+    # Below-floor steps this step sent earlier are not the sheet's.
+    for row in expected.extension:
+        key = (Side.BUY, int(row["수량"]), _cents(Decimal(str(row["주문가"]))))
+        match = next((o for o in open_locs if (o.side, int(o.qty), _cents(o.price)) == key), None)
+        if match:
+            open_locs.remove(match)
+    left: list[OrderRequest] = []
+    for order in sheet:
+        match = next((o for o in open_locs if (o.side, int(o.qty), _cents(o.price)) == (order.side, order.qty, _cents(order.price))), None)
+        if match:
+            open_locs.remove(match)
+        else:
+            left.append(order)
+    lifts: list[Lift] = []
+    for order in left:
+        held = next((
+            o for o in open_locs if o.side is order.side and int(o.qty) == order.qty
+            and (o.price < order.price if order.side is Side.BUY else o.price > order.price)
+        ), None)
+        if held is None:
+            continue
+        open_locs.remove(held)
+        request = fit_collar([order], last)[0]
+        nearer = request.price > held.price if order.side is Side.BUY else request.price < held.price
+        if nearer:
+            lifts.append(Lift(held, request, order.price))
+    return tuple(lifts)
+
+
 def moved_sells(expected: Expected) -> tuple[Decimal | None, int]:
     """Price and shares of the sheet's LOC sells that sit at no lot's TP: netting's moved sell."""
     tps = {_cents(lot.tp) for lot in expected.lots if lot.tp is not None}
@@ -96,7 +156,7 @@ def plan_stop(expected: Expected, last: Decimal, orders_today: list[Order]) -> S
     buys = extension_buys(expected, last, orders_today)
     lots = stop_lots(expected, last)
     if not lots:
-        return StopPlan((), (), None, buys)
+        return StopPlan((), (), None, buys, lifts=collar_lifts(expected, last, orders_today))
     open_sells = [
         o for o in orders_today
         if o.symbol == expected.symbol and o.side is Side.SELL and o.state is OrderState.OPEN
@@ -140,4 +200,6 @@ def plan_stop(expected: Expected, last: Decimal, orders_today: list[Order]) -> S
             resend = (OrderRequest(expected.symbol, Side.SELL, OrderType.LOC, sheet_qty - moved_qty, price),)
     qty = sum(lot.qty for lot in selling)
     sell = OrderRequest(expected.symbol, Side.SELL, OrderType.MOC, qty) if qty else None
-    return StopPlan(lots, tuple(cancel), sell, buys, resend)
+    # With a stop under way the sells are being cancelled and re-sent as they are: only buys move.
+    lifts = collar_lifts(expected, last, orders_today, frozenset(o.order_id for o in cancel), sides=(Side.BUY,))
+    return StopPlan(lots, tuple(cancel), sell, buys, resend, lifts)

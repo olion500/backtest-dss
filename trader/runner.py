@@ -4,7 +4,8 @@ Steps (NY time):
   check  09:40  calendar, engine ledger vs broker account  (read only)
   orders 09:45  check again, then the order sheet as LOC/MOC once a person approves it,
                 or unattended (``--auto``) when the account's ``auto_trade`` is on
-  stop   close−15m  price vs each lot's stop → cancel those lots' TP LOC → one MOC sell
+  stop   close−15m  price vs each lot's stop → cancel those lots' TP LOC → one MOC sell;
+                orders the morning's price collar moved go back to the sheet's limit
   report 08:00 KST  after the close: today's sent orders vs the broker's fills, lot outcomes (read only)
 
 Record ``status``: ``ok`` (would trade), ``halted`` (a check failed, nothing sent),
@@ -191,11 +192,10 @@ def run_orders(
         moved = [{"request": asdict(before), "price": after.price} for before, after in zip(plan, fitted) if before != after]
         if moved:
             record["collar"] = {"last": last, "moved": moved}
-        plan = fitted
 
         sent: list[dict] = []
         record["sent"] = sent
-        for request in plan:
+        for request, sheet in zip(fitted, plan):
             try:
                 order = broker.submit(request)
             except BrokerError as exc:
@@ -203,7 +203,7 @@ def run_orders(
                 sent.append({"request": asdict(request), "error": str(exc), "error_code": exc.code})
                 record["error_code"] = exc.code
                 return _finish(record, store, "partial", f"{len(sent) - 1}/{len(plan)}건 접수 후 멈춤: {exc}")
-            sent.append({"request": asdict(request), "order_id": order.order_id})
+            sent.append({"request": asdict(request), "order_id": order.order_id, **_sheet_price(request, sheet.price)})
         sleep(REJECT_WAIT)
         ids = {item["order_id"] for item in sent}
         rejected = [o for o in broker.orders_today() if o.order_id in ids and o.state is OrderState.REJECTED]
@@ -274,8 +274,11 @@ def run_stop(
             return _finish(record, store, "halted", f"손절 주문을 만들 수 없습니다: {exc}")
         record["stop_lots"] = [asdict(lot) for lot in plan.lots]
         record["cancel"] = [asdict(order) for order in plan.cancel]
-        record["plan"] = [asdict(order) for order in ((plan.sell,) if plan.sell else ()) + plan.resend + plan.buys]
-        if plan.sell is None and not plan.buys:
+        record["lift"] = [{"order_id": lift.order.order_id, "price": lift.order.price, "sheet_price": lift.sheet_price,
+                           "request": asdict(lift.request)} for lift in plan.lifts]
+        record["plan"] = [asdict(order) for order in ((plan.sell,) if plan.sell else ()) + plan.resend
+                          + tuple(lift.request for lift in plan.lifts) + plan.buys]
+        if plan.sell is None and not plan.buys and not plan.lifts:
             if plan.lots:
                 return _finish(record, store, "ok", "손절 lot은 이미 MOC 매도가 걸려 있습니다")
             return _finish(record, store, "ok", f"손절 없음 (현재가 {usd(quote.last)})")
@@ -294,9 +297,9 @@ def run_stop(
         sent: list[dict] = []
         record["sent"] = sent
         done: list[str] = []
+        cancelled: list[str] = []
+        record["cancelled"] = cancelled
         if plan.sell is not None:
-            cancelled: list[str] = []
-            record["cancelled"] = cancelled
             for order in plan.cancel:
                 try:
                     broker.cancel(order.order_id)
@@ -335,11 +338,53 @@ def run_stop(
                 sent.append({"request": asdict(request), "order_id": order.order_id})
                 done.append(f"퉁치기 매도 {request.qty}주 {usd(request.price)} 재접수")
 
+        if plan.lifts:
+            # Cancel first and wait: a sell's shares, a buy's cash are held until the cancel shows.
+            # Whatever did get cancelled is sent again even when a later cancel fails.
+            before = ''.join(d + ', ' for d in done)
+            trouble = ""
+            lifted = []
+            for lift in plan.lifts:
+                try:
+                    broker.cancel(lift.order.order_id)
+                except BrokerError as exc:
+                    record["error_code"] = exc.code
+                    trouble = f"주문 {lift.order.order_id} 취소 실패: {exc}"
+                    break
+                cancelled.append(lift.order.order_id)
+                lifted.append(lift)
+            waiting = {lift.order.order_id for lift in lifted}
+            for _ in range(CANCEL_POLLS):
+                waiting -= {o.order_id for o in broker.orders_today() if o.state is OrderState.CANCELLED}
+                if not waiting:
+                    break
+                sleep(1)
+            if waiting:
+                trouble = trouble or f"취소가 확인되지 않아 다시 내지 않은 주문: {', '.join(sorted(waiting))}"
+            again = 0
+            for lift in lifted:
+                if lift.order.order_id in waiting:
+                    continue
+                try:
+                    order = broker.submit(lift.request)
+                except BrokerError as exc:
+                    sent.append({"request": asdict(lift.request), "error": str(exc), "error_code": exc.code})
+                    record["error_code"] = exc.code
+                    trouble = f"취소한 주문을 다시 내지 못했습니다: {exc}"
+                    break
+                sent.append({"request": asdict(lift.request), "order_id": order.order_id,
+                             **_sheet_price(lift.request, lift.sheet_price)})
+                again += 1
+            if trouble:
+                status = "partial" if sent or cancelled else "halted"
+                return _finish(record, store, status, f"{before}지정가 복구 {len(plan.lifts)}건 중 {len(lifted)}건 취소, {again}건 다시 접수 후 멈춤: {trouble}")
+            done.append(f"지정가 복구 {len(plan.lifts)}건")
+
         for number, request in enumerate(plan.buys):
             try:
                 order = broker.submit(request)
             except BrokerError as exc:
-                status = "partial" if sent else "halted"
+                status = "partial" if sent or cancelled else "halted"
                 sent.append({"request": asdict(request), "error": str(exc), "error_code": exc.code})
                 record["error_code"] = exc.code
                 return _finish(record, store, status, f"{''.join(d + ', ' for d in done)}하한 밑 매수 {number}/{len(plan.buys)}건 접수 후 실패: {exc}")
@@ -350,6 +395,11 @@ def run_stop(
     except (BrokerError, TraderConfigError, UnknownAccount) as exc:
         record["error_code"] = getattr(exc, "code", None)
         return _finish(record, store, "error", str(exc))
+
+
+def _sheet_price(request: OrderRequest, sheet_price: Decimal | None) -> dict:
+    """The sheet's limit, kept only when the order went out at another price (the collar)."""
+    return {} if sheet_price is None or request.price == sheet_price else {"sheet_price": sheet_price}
 
 
 def _account_fees(account_id: str) -> tuple[Decimal, Decimal]:

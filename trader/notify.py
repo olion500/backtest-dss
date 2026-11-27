@@ -85,12 +85,13 @@ def _problem(step: str, record: dict) -> dict:
 def _fill_gap(fill: dict, close) -> str:
     request = fill["request"]
     want = fill["expected_qty"]
+    limit = f"주문서 지정가 {usd(fill['sheet_price'])}, 가격 제한으로 {usd(request['price'])}에 보냄" if fill.get("sheet_price") else "지정가"
     if request.get("type") == "moc" or request.get("price") is None:
         why = "시장가는 항상 체결"
     elif request.get("side") == "buy":
-        why = f"종가 {usd(close)} {'≤' if want else '>'} 지정가"
+        why = f"종가 {usd(close)} {'≤' if want else '>'} {limit}"
     else:
-        why = f"종가 {usd(close)} {'≥' if want else '<'} 지정가"
+        why = f"종가 {usd(close)} {'≥' if want else '<'} {limit}"
     expected = f"{want}주 체결" if want else "미체결"
     if fill.get("actual_qty") is None:
         actual = "증권사 목록에 없음"

@@ -144,3 +144,12 @@ def test_report_only_after_a_sessions_close(tmp_path, now):
 def test_report_after_an_early_close(tmp_path):
     early = datetime(2026, 11, 27, 18, 0, tzinfo=NY)  # the day after Thanksgiving closes at 13:00
     assert report(tmp_path, ReportBroker({"2": 59}), now=early)["status"] != "closed"
+
+
+def test_a_collared_order_is_judged_by_the_sheets_limit():
+    # 2026-11-25: buy at $33.00 sent at $29.92 (price collar); close $32.02: the engine buys, the account does not.
+    sent = [{"request": req("buy", 55, "29.92"), "order_id": "1", "sheet_price": "33.00"}]
+    record = {"step": "orders", "started_at": "2026-11-25T09:45:00-05:00", "sent": sent}
+    checks, _ = check_fills(sent_today([record]), [broker_order("1", sent[0]["request"], 0)], Decimal("32.02"))
+    assert checks[0].expected_qty == 55 and not checks[0].ok and checks[0].sheet_price == Decimal("33.00")
+    assert bought_qty(checks, 0) == 55
